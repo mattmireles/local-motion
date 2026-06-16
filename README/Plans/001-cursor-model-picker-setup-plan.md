@@ -33,19 +33,19 @@ turns the manual fallback into a polished assisted setup flow with verification.
 
 ### Goals
 
-- [ ] Make `Prepare Cursor` one primary action after a model is running.
-- [ ] Make the primary `Prepare Cursor` click verify the local endpoint, copy a
+- [x] Make `Prepare Cursor` one primary action after a model is running.
+- [x] Make the primary `Prepare Cursor` click verify the local endpoint, copy a
   full setup block, and open Cursor settings filtered to Models when supported.
-- [ ] Add recovery copy buttons for Base URL, API key, and model ID, with
+- [x] Add recovery copy buttons for Base URL, API key, and model ID, with
   visible confirmation and error states.
-- [ ] Add one-click copy buttons for Base URL, API key, model ID, and a full
+- [x] Add one-click copy buttons for Base URL, API key, model ID, and a full
   setup block.
-- [ ] Detect when the running Local Motion endpoint changes and mark existing
+- [x] Detect when the running Local Motion endpoint changes and mark existing
   Cursor setup values stale.
-- [ ] Add a verification action that calls the local proxy model-list endpoint
+- [x] Add a verification action that calls the local proxy model-list endpoint
   with the required bearer token and confirms the model ID is reachable before
   prompting the user to configure Cursor.
-- [ ] Keep the Cursor integration instruction-only unless a future verified
+- [x] Keep the Cursor integration instruction-only unless a future verified
   Cursor API or schema contract exists.
 
 ### Non-Goals
@@ -642,6 +642,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 | `src/cursor/cursorIntegration.ts` | Modify | Replace raw instructions with typed setup view model. |
 | `src/app/localMotionController.ts` | Modify | Add copy, verify, and stale-state actions. |
 | `src/ui/setupPanel.ts` | Modify | Add checklist UI and copy controls. |
+| `src/ui/setupPanelHtml.ts` | Add | Keep webview document rendering separate from panel message routing. |
 | `src/state.ts` | Modify | Persist last copied Cursor setup values. |
 | `src/runtime/openAiProxy.ts` | Modify | No expected change unless verification needs a small helper endpoint; `/v1/models` already exists. |
 | `tests/pure-logic.test.mjs` | Modify | Add setup view model and stale-state tests. |
