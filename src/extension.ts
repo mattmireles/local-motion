@@ -29,14 +29,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.automagicalSetup", async () => {
-      try {
-        const result = await SetupPanel.runAutomagicalSetup(controller, output);
-        if (result) {
-          await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
-        }
-      } catch {
-        // SetupPanel reports command-started automagical errors into the webview.
-      }
+      await runAutomagicalSetupCommand(controller, output);
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.retryAutomagicalSetup", async () => {
+      await runAutomagicalSetupCommand(controller, output);
     })
   );
   context.subscriptions.push(
@@ -54,6 +52,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export async function deactivate(): Promise<void> {
   await runtime?.stop();
+}
+
+async function runAutomagicalSetupCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
+  try {
+    const result = await SetupPanel.runAutomagicalSetup(controller, output);
+    if (result) {
+      await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
+    }
+  } catch {
+    // SetupPanel reports command-started automagical errors into the webview.
+  }
 }
 
 async function maybeOpenSetupOnboarding(

@@ -425,3 +425,13 @@ test("host-started automagical setup reports errors to the webview", async () =>
   assert.equal(panelSource.includes("hostStartedResumeAutomagicalSetup"), true);
   assert.equal(panelSource.includes("type: \"error\""), true);
 });
+
+test("retry automagical setup command is registered and contributed", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const commands = packageJson.contributes.commands.map((command) => command.command);
+  assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.retryAutomagicalSetup"), true);
+  assert.equal(commands.includes("localMotion.retryAutomagicalSetup"), true);
+
+  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
+  assert.equal(extensionSource.includes("localMotion.retryAutomagicalSetup"), true);
+});

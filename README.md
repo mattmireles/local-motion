@@ -40,6 +40,9 @@ download the default compatible GGUF model. Disable
 `localMotion.runAutomagicalSetupOnFirstStartup` to make first startup open the
 setup panel without starting the install.
 
+If first-start setup fails or is cancelled, run
+`Local Motion: Retry Automagical Setup`.
+
 After Automagical Setup succeeds, Local Motion can restart the installed model
 and prepare Cursor automatically on future editor startups without downloading a
 new model. Disable `localMotion.resumeAutomagicalSetupOnStartup` to turn that

@@ -407,6 +407,10 @@ can select the Local Motion model through the native model picker.
   `automagical dependency install has no second confirmation prompt`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Retry setup: `Local Motion: Retry Automagical Setup` is a command-palette
+  alias for the same automagical path, so users can recover explicitly after a
+  cancelled or failed first-start install/download. Guarded by regression test
+  `retry automagical setup command is registered and contributed`.
 - First-run onboarding: the extension activates on `onStartupFinished` and opens
   the setup panel once when no model is installed, so a new user does not have to
   discover a command before seeing the automagical path. This is guarded by
