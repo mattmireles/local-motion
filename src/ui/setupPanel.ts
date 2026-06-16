@@ -9,10 +9,7 @@ import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
   private static current: SetupPanel | undefined;
-  private readonly readyPromise: Promise<void>;
-  private resolveReady: (() => void) | undefined;
-  private isReady = false;
-  private setupOperationActive = false;
+  private readonly session: SetupWebviewSession;
 
   static show(
     controller: LocalMotionController,
@@ -20,7 +17,7 @@ export class SetupPanel {
   ): SetupPanel {
     if (SetupPanel.current) {
       SetupPanel.current.panel.reveal(vscode.ViewColumn.One);
-      void SetupPanel.current.postInitialState();
+      void SetupPanel.current.session.postInitialState();
       return SetupPanel.current;
     }
 
@@ -42,17 +39,103 @@ export class SetupPanel {
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
+    controller: LocalMotionController,
+    output: vscode.OutputChannel
+  ) {
+    this.session = new SetupWebviewSession(this.panel.webview, controller, output);
+    this.panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: []
+    };
+    this.panel.onDidDispose(() => {
+      SetupPanel.current = undefined;
+    });
+  }
+
+  private async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    return this.session.hostStartedAutomagicalSetup();
+  }
+}
+
+export class SetupViewProvider implements vscode.WebviewViewProvider {
+  static readonly viewType = "localMotion.agentView";
+  private static readonly containerCommand = "workbench.view.extension.localMotion";
+  private session: SetupWebviewSession | undefined;
+  private viewResolve: (() => void) | undefined;
+  private viewPromise: Promise<void> | undefined;
+
+  constructor(
+    private readonly controller: LocalMotionController,
+    private readonly output: vscode.OutputChannel
+  ) {}
+
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: []
+    };
+    this.session = new SetupWebviewSession(webviewView.webview, this.controller, this.output);
+    this.viewResolve?.();
+    this.viewPromise = undefined;
+    this.viewResolve = undefined;
+    webviewView.onDidDispose(() => {
+      this.session = undefined;
+    });
+  }
+
+  async show(): Promise<void> {
+    await vscode.commands.executeCommand(SetupViewProvider.containerCommand);
+    await this.waitForView();
+    await this.refresh();
+  }
+
+  async refresh(): Promise<void> {
+    await this.session?.postInitialState();
+  }
+
+  async runAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    await vscode.commands.executeCommand(SetupViewProvider.containerCommand);
+    await this.waitForView();
+    if (this.session) {
+      return this.session.hostStartedAutomagicalSetup();
+    }
+    return SetupPanel.runAutomagicalSetup(this.controller, this.output);
+  }
+
+  private async waitForView(): Promise<void> {
+    if (this.session) {
+      return;
+    }
+    if (!this.viewPromise) {
+      this.viewPromise = new Promise((resolve) => {
+        this.viewResolve = resolve;
+      });
+    }
+    await Promise.race([
+      this.viewPromise,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 3_000);
+      })
+    ]);
+  }
+}
+
+class SetupWebviewSession {
+  private readonly readyPromise: Promise<void>;
+  private resolveReady: (() => void) | undefined;
+  private isReady = false;
+  private setupOperationActive = false;
+
+  constructor(
+    private readonly webview: vscode.Webview,
     private readonly controller: LocalMotionController,
     private readonly output: vscode.OutputChannel
   ) {
     this.readyPromise = new Promise((resolve) => {
       this.resolveReady = resolve;
     });
-    this.panel.webview.html = this.html();
-    this.panel.onDidDispose(() => {
-      SetupPanel.current = undefined;
-    });
-    this.panel.webview.onDidReceiveMessage((message: SetupRequest) => void this.handleMessage(message));
+    this.webview.html = this.html();
+    this.webview.onDidReceiveMessage((message: SetupRequest) => void this.handleMessage(message));
   }
 
   private async handleMessage(message: SetupRequest): Promise<void> {
@@ -106,7 +189,7 @@ export class SetupPanel {
     }
   }
 
-  private async postInitialState(): Promise<void> {
+  async postInitialState(): Promise<void> {
     await this.postInitialRuntimeState();
     if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
       await this.postDefaultQuantizations();
@@ -147,7 +230,7 @@ export class SetupPanel {
     }
   }
 
-  private async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+  async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
     try {
       return await this.automagicalSetup();
     } catch (error) {
@@ -184,7 +267,7 @@ export class SetupPanel {
   }
 
   private async post(payload: SetupResponse): Promise<void> {
-    await this.panel.webview.postMessage(payload);
+    await this.webview.postMessage(payload);
   }
 
   private html(): string {

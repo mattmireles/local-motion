@@ -1,7 +1,7 @@
 {
   "name": "local-motion",
   "displayName": "Local Motion",
-  "description": "Install and run GGUF coding models locally inside VS Code and Cursor.",
+  "description": "Turn a private local coding agent on and off inside VS Code and Cursor.",
   "version": "0.0.1",
   "publisher": "local-motion",
   "license": "MIT",
@@ -36,11 +36,13 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:localMotion.open",
+    "onCommand:localMotion.turnOn",
     "onCommand:localMotion.automagicalSetup",
     "onCommand:localMotion.retryAutomagicalSetup",
     "onCommand:localMotion.prepareCursor",
     "onCommand:localMotion.diagnoseSetup",
-    "onCommand:localMotion.stop",
+    "onCommand:localMotion.freeMemory",
+    "onView:localMotion.agentView",
     "onLanguageModelChatProvider:local-motion"
   ],
   "main": "./out/extension.js",
@@ -48,29 +50,51 @@
     "commands": [
       {
         "command": "localMotion.open",
-        "title": "Local Motion: Open Setup"
+        "title": "Local Motion: Open Local Agent"
+      },
+      {
+        "command": "localMotion.turnOn",
+        "title": "Local Motion: Turn On Local Agent"
       },
       {
         "command": "localMotion.automagicalSetup",
-        "title": "Local Motion: Automagical Setup"
+        "title": "Local Motion: Repair Local Agent"
       },
       {
         "command": "localMotion.retryAutomagicalSetup",
-        "title": "Local Motion: Retry Automagical Setup"
+        "title": "Local Motion: Repair Local Agent Setup"
       },
       {
         "command": "localMotion.prepareCursor",
-        "title": "Local Motion: Prepare Cursor"
+        "title": "Local Motion: Connect Cursor to Local Agent"
       },
       {
         "command": "localMotion.diagnoseSetup",
         "title": "Local Motion: Diagnose Setup"
       },
       {
-        "command": "localMotion.stop",
-        "title": "Local Motion: Stop Local Model"
+        "command": "localMotion.freeMemory",
+        "title": "Local Motion: Free Memory"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "localMotion",
+          "title": "Local Motion",
+          "icon": "media/local-motion.svg"
+        }
+      ]
+    },
+    "views": {
+      "localMotion": [
+        {
+          "id": "localMotion.agentView",
+          "name": "Local Agent",
+          "type": "webview"
+        }
+      ]
+    },
     "configuration": {
       "title": "Local Motion",
       "properties": {
@@ -102,8 +126,8 @@
         },
         "localMotion.defaultModelRepo": {
           "type": "string",
-          "default": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
-          "description": "Default Hugging Face GGUF repository shown in setup and tried first by Automagical Setup before built-in fallback repositories."
+          "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
+          "description": "Default Hugging Face GGUF repository shown in Advanced Model Settings and tried first by Local Motion before built-in fallback repositories."
         },
         "localMotion.openSetupOnStartup": {
           "type": "boolean",
@@ -112,13 +136,13 @@
         },
         "localMotion.runAutomagicalSetupOnFirstStartup": {
           "type": "boolean",
-          "default": true,
-          "description": "Run Automagical Setup automatically once on first startup when no model has been installed. This may install llama.cpp and download the first compatible GGUF model from the default or fallback repositories."
+          "default": false,
+          "description": "Run setup automatically once on first startup when no model has been installed. Off by default so Local Motion shows the local-agent switch before installing llama.cpp or downloading the first compatible GGUF model from the default or fallback repositories."
         },
         "localMotion.resumeAutomagicalSetupOnStartup": {
           "type": "boolean",
           "default": true,
-          "description": "After Automagical Setup succeeds, restart the installed local model automatically on future startups without downloading a new model, opening setup, opening Cursor settings, or replacing the clipboard."
+          "description": "After the local agent is connected once, restart the installed local model automatically on future startups without downloading a new model, opening setup, opening Cursor settings, or replacing the clipboard."
         }
       }
     },
@@ -126,7 +150,7 @@
       {
         "vendor": "local-motion",
         "displayName": "Local Motion",
-        "managementCommand": "localMotion.automagicalSetup"
+        "managementCommand": "localMotion.open"
       }
     ]
   },

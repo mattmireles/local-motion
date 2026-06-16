@@ -390,7 +390,7 @@ can select the Local Motion model through the native model picker.
   `/Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`.
 - `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`:
   passed.
-- `npm run smoke:local-runtime`: passed. It selected
+- `npm run smoke:local-runtime`: passed for the then-current default. It selected
   `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF`
   `qwen2.5-coder-1.5b-instruct-q3_k_m.gguf`, downloaded it to
   `tmp/local-runtime-smoke`, started `llama-server`, verified
@@ -406,13 +406,12 @@ can select the Local Motion model through the native model picker.
   `Publish VS Code Extension` GitHub Actions workflow is checked in and excluded
   from the VSIX. A `CI` workflow is checked in to run install, typecheck, lint,
   tests, and packaging on pull requests and pushes.
-- Automagical setup: setup UI now exposes one primary `Automagical Setup` action
+- Automagical setup: setup UI now exposes one primary local-agent action
   that reuses a size-valid installed model file when available; otherwise it
   tries the configured default model repository first, then built-in GGUF
-  fallback repositories, selects the lowest-memory compatible quantization,
+  fallback repositories, selects the highest-quality compatible quantization,
   installs/runs it, then prepares Cursor. The default repository is now
-  `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` so first-run setup starts from a
-  materially smaller coding model than the previous multi-GB default. The
+  `yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF`. The
   selector, fallback repository ordering, manifest default, and installed-model
   reuse predicate are covered by regression tests.
 - Dependency setup: when `allowInstall` is true and `llama-server` is missing,
@@ -588,9 +587,10 @@ exposes a stable custom-model API, create a separate plan before adding writes.
   endpoint state remains visible when Local Motion must fall back to a different
   port.
 - [x] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
-- [x] `Automagical Setup` owns the default Local Motion path: reuse an installed
-  model when possible; otherwise select compatible quantization, install/run
-  model, verify endpoint, copy Cursor setup, and open Cursor Models settings.
+- [x] The local-agent action owns the default Local Motion path: reuse an
+  installed model when possible; otherwise select the highest-quality compatible
+  quantization, install/run model, verify endpoint, copy Cursor setup, and open
+  Cursor Models settings.
 - [x] Manual `Install and Run` also verifies the endpoint, copies Cursor setup,
   and opens Cursor Models settings after the selected model starts.
 - [x] Command palette exposes `Local Motion: Automagical Setup` as the shortest

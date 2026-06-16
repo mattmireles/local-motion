@@ -4,6 +4,6 @@ export function allowLlamaInstallForAutomagicalStart(mode: AutomagicalSetupStart
   return mode === "explicit";
 }
 
-export function shouldPostInitialQuantizations(input: { setupOperationActive: boolean }): boolean {
-  return !input.setupOperationActive;
+export function shouldPostInitialQuantizations(_input: { setupOperationActive: boolean }): boolean {
+  return false;
 }

@@ -11,40 +11,64 @@ import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
 import { LocalMotionState } from "./state";
-import { SetupPanel } from "./ui/setupPanel";
+import { SetupViewProvider } from "./ui/setupPanel";
 
 let runtime: LlamaServerManager | undefined;
+let statusBar: vscode.StatusBarItem | undefined;
+let setupView: SetupViewProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   await fs.promises.mkdir(context.globalStorageUri.fsPath, { recursive: true });
 
   const output = vscode.window.createOutputChannel("Local Motion");
   const state = new LocalMotionState(context);
-  runtime = new LlamaServerManager(output);
+  let provider!: LocalMotionProvider;
+  runtime = new LlamaServerManager(output, () => {
+    provider.refresh();
+    refreshStatusBar();
+    void setupView?.refresh();
+  });
   const resolver = new LlamaServerResolver(output);
-  const provider = new LocalMotionProvider(context, runtime, resolver, () => state.installedModel());
+  provider = new LocalMotionProvider(context, runtime, resolver, () => state.installedModel());
   const controller = new LocalMotionController(context, state, runtime, resolver, provider);
+  setupView = new SetupViewProvider(controller, output);
+  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  refreshStatusBar();
 
   context.subscriptions.push(output);
+  context.subscriptions.push(statusBar);
   context.subscriptions.push(vscode.lm.registerLanguageModelChatProvider("local-motion", provider));
   context.subscriptions.push(
-    vscode.commands.registerCommand("localMotion.open", () => {
-      SetupPanel.show(controller, output);
+    vscode.window.registerWebviewViewProvider(SetupViewProvider.viewType, setupView, {
+      webviewOptions: {
+        retainContextWhenHidden: true
+      }
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.open", async () => {
+      await setupView?.show();
+      refreshStatusBar();
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.turnOn", async () => {
+      await runAutomagicalSetupCommand(setupView);
     })
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.automagicalSetup", async () => {
-      await runAutomagicalSetupCommand(controller, output);
+      await runAutomagicalSetupCommand(setupView);
     })
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.retryAutomagicalSetup", async () => {
-      await runAutomagicalSetupCommand(controller, output);
+      await runAutomagicalSetupCommand(setupView);
     })
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.prepareCursor", async () => {
-      await prepareCursorCommand(controller, output);
+      await prepareCursorCommand(controller, output, setupView);
     })
   );
   context.subscriptions.push(
@@ -53,15 +77,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.freeMemory", async () => {
+      await stopLocalAgent(provider, setupView);
+    })
+  );
+  context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.stop", async () => {
-      await runtime?.stop();
-      provider.refresh();
-      await vscode.window.showInformationMessage("Local Motion model stopped.");
+      await stopLocalAgent(provider, setupView);
     })
   );
 
-  if (!await maybeResumeAutomagicalSetup(state, controller, output) && !await maybeRunFirstStartupAutomagicalSetup(state, controller, output)) {
-    await maybeOpenSetupOnboarding(state, controller, output);
+  if (!await maybeResumeAutomagicalSetup(state, controller, output, setupView) && !await maybeRunFirstStartupAutomagicalSetup(state, setupView)) {
+    await maybeOpenSetupOnboarding(state, setupView);
   }
 }
 
@@ -69,22 +96,32 @@ export async function deactivate(): Promise<void> {
   await runtime?.stop();
 }
 
-async function runAutomagicalSetupCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
+async function runAutomagicalSetupCommand(setupViewProvider: SetupViewProvider | undefined): Promise<void> {
+  setStatusBarBusy("Starting local agent...");
   try {
-    const result = await SetupPanel.runAutomagicalSetup(controller, output);
+    const result = await setupViewProvider?.runAutomagicalSetup();
     if (result) {
-      await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
+      await vscode.window.showInformationMessage("Local Motion is connected. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
     }
   } catch {
-    // SetupPanel reports command-started automagical errors into the webview.
+    // The setup side panel reports command-started automagical errors into the webview.
+  } finally {
+    refreshStatusBar();
   }
 }
 
-async function prepareCursorCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
+async function prepareCursorCommand(
+  controller: LocalMotionController,
+  output: vscode.OutputChannel,
+  setupViewProvider: SetupViewProvider | undefined
+): Promise<void> {
+  await setupViewProvider?.show();
   const result = await controller.prepareCursorAfterStartingInstalledModel();
+  await setupViewProvider?.refresh();
+  refreshStatusBar();
   output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
   if (result.verification.ok && result.copy.ok && result.settings.ok) {
-    await vscode.window.showInformationMessage("Local Motion Cursor setup block copied and Cursor Models settings opened.");
+    await vscode.window.showInformationMessage("Local Motion is connected. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
     return;
   }
 
@@ -107,8 +144,7 @@ async function diagnoseSetupCommand(controller: LocalMotionController, output: v
 
 async function maybeOpenSetupOnboarding(
   state: LocalMotionState,
-  controller: LocalMotionController,
-  output: vscode.OutputChannel
+  setupViewProvider: SetupViewProvider | undefined
 ): Promise<void> {
   const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("openSetupOnStartup", true);
   if (!shouldOpenSetupOnboarding({
@@ -120,13 +156,14 @@ async function maybeOpenSetupOnboarding(
   }
 
   await state.markSetupOnboardingOpened();
-  SetupPanel.show(controller, output);
+  await setupViewProvider?.show();
 }
 
 async function maybeResumeAutomagicalSetup(
   state: LocalMotionState,
   controller: LocalMotionController,
-  output: vscode.OutputChannel
+  output: vscode.OutputChannel,
+  setupViewProvider: SetupViewProvider | undefined
 ): Promise<boolean> {
   const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("resumeAutomagicalSetupOnStartup", true);
   const installedModel = state.installedModel();
@@ -141,44 +178,47 @@ async function maybeResumeAutomagicalSetup(
     return false;
   }
 
-  void resumeAutomagicalSetupInBackground(controller, output);
+  setStatusBarBusy("Starting local agent...");
+  void resumeAutomagicalSetupInBackground(controller, output, setupViewProvider);
   return true;
 }
 
 async function resumeAutomagicalSetupInBackground(
   controller: LocalMotionController,
-  output: vscode.OutputChannel
+  output: vscode.OutputChannel,
+  setupViewProvider: SetupViewProvider | undefined
 ): Promise<void> {
   try {
     const result = await controller.resumeAutomagicalRuntime();
+    refreshStatusBar();
     if (result?.cursorSetupFreshness.status === "stale") {
       const answer = await vscode.window.showWarningMessage(
         result.cursorSetupFreshness.message,
-        "Open Setup"
+        "Open Local Agent"
       );
-      if (answer === "Open Setup") {
-        SetupPanel.show(controller, output);
+      if (answer === "Open Local Agent") {
+        await setupViewProvider?.show();
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Automagical startup resume failed: ${message}`);
+    refreshStatusBar();
     const answer = await vscode.window.showWarningMessage(
       `Local Motion could not restart automatically: ${message}`,
-      "Open Setup"
+      "Open Local Agent"
     );
-    if (answer === "Open Setup") {
-      SetupPanel.show(controller, output);
+    if (answer === "Open Local Agent") {
+      await setupViewProvider?.show();
     }
   }
 }
 
 async function maybeRunFirstStartupAutomagicalSetup(
   state: LocalMotionState,
-  controller: LocalMotionController,
-  output: vscode.OutputChannel
+  setupViewProvider: SetupViewProvider | undefined
 ): Promise<boolean> {
-  const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("runAutomagicalSetupOnFirstStartup", true);
+  const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("runAutomagicalSetupOnFirstStartup", false);
   if (!shouldRunFirstStartupAutomagicalSetup({
     enabled,
     alreadyOpened: state.setupOnboardingOpened(),
@@ -189,6 +229,47 @@ async function maybeRunFirstStartupAutomagicalSetup(
   }
 
   await state.markSetupOnboardingOpened();
-  void SetupPanel.runAutomagicalSetup(controller, output).catch(() => undefined);
+  setStatusBarBusy("Starting local agent...");
+  void setupViewProvider?.runAutomagicalSetup()
+    .catch(() => undefined)
+    .finally(() => {
+      refreshStatusBar();
+    });
   return true;
+}
+
+async function stopLocalAgent(provider: LocalMotionProvider, setupViewProvider: SetupViewProvider | undefined): Promise<void> {
+  await runtime?.stop();
+  provider.refresh();
+  refreshStatusBar();
+  await setupViewProvider?.refresh();
+  await vscode.window.showInformationMessage("Local Motion freed the model memory.");
+}
+
+function refreshStatusBar(): void {
+  if (!statusBar) {
+    return;
+  }
+
+  const status = runtime?.status();
+  if (status?.running) {
+    statusBar.text = "$(circle-filled) Local Agent: On";
+    statusBar.tooltip = `${status.modelId ?? "Local Motion"} is loaded. Click to free memory.`;
+    statusBar.command = "localMotion.freeMemory";
+  } else {
+    statusBar.text = "$(circle-large-outline) Local Agent: Off";
+    statusBar.tooltip = "Click to turn on the local coding agent for Cursor.";
+    statusBar.command = "localMotion.turnOn";
+  }
+  statusBar.show();
+}
+
+function setStatusBarBusy(tooltip: string): void {
+  if (!statusBar) {
+    return;
+  }
+  statusBar.text = "$(sync~spin) Local Agent: Starting";
+  statusBar.tooltip = tooltip;
+  statusBar.command = "localMotion.open";
+  statusBar.show();
 }

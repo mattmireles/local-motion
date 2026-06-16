@@ -215,6 +215,6 @@ function copyMessage(key: CursorSetupValueKey): string {
     case "modelId":
       return "Copied model ID.";
     case "setupBlock":
-      return "Copied full Cursor setup block.";
+      return "Copied Cursor connection details.";
   }
 }

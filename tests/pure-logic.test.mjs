@@ -21,9 +21,10 @@ import {
 import {
   AUTOMAGICAL_MODEL_REPOS,
   DEFAULT_MODEL_REPO,
-  automagicalModelRepos
+  automagicalModelRepos,
+  normalizeHuggingFaceRepoId
 } from "../out/models/defaultRepos.js";
-import { canReuseInstalledModel } from "../out/models/installedModel.js";
+import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../out/models/installedModel.js";
 import { NO_INSTALLED_MODEL_MESSAGE } from "../out/provider/providerMessages.js";
 import {
   hasCompletedAutomagicalSetupForInstalledModel,
@@ -81,7 +82,7 @@ test("uses available memory for compatibility budget", () => {
   );
 });
 
-test("selects the lowest-memory compatible quantization for automagical setup", () => {
+test("selects the highest-quality compatible quantization for automagical setup", () => {
   const base = {
     repoId: "example/model-GGUF",
     revision: "main",
@@ -112,7 +113,7 @@ test("selects the lowest-memory compatible quantization for automagical setup", 
     }
   ]);
 
-  assert.equal(selected?.fileName, "model-Q4_K_M.gguf");
+  assert.equal(selected?.fileName, "model-Q8_0.gguf");
 });
 
 test("does not select an incompatible quantization for automagical setup", () => {
@@ -137,14 +138,26 @@ test("automagical setup tries configured repo before built-in fallback repos", (
     automagicalModelRepos("custom/model-GGUF").slice(0, 2),
     ["custom/model-GGUF", DEFAULT_MODEL_REPO]
   );
+  assert.deepEqual(
+    automagicalModelRepos("https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF").slice(0, 2),
+    [DEFAULT_MODEL_REPO, "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"]
+  );
   assert.equal(
     automagicalModelRepos(` ${DEFAULT_MODEL_REPO} `).filter((repoId) => repoId === DEFAULT_MODEL_REPO).length,
     1
   );
-  assert.equal(DEFAULT_MODEL_REPO, "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF");
+  assert.equal(DEFAULT_MODEL_REPO, "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF");
+  assert.equal(AUTOMAGICAL_MODEL_REPOS[0], DEFAULT_MODEL_REPO);
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), true);
-  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"), true);
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), true);
+});
+
+test("normalizes Hugging Face model URLs to repo ids", () => {
+  assert.equal(
+    normalizeHuggingFaceRepoId("https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"),
+    "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"
+  );
+  assert.equal(normalizeHuggingFaceRepoId(" yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF/ "), DEFAULT_MODEL_REPO);
 });
 
 test("setup diagnostics distinguish ready setup from required action", () => {
@@ -170,7 +183,7 @@ test("setup diagnostics distinguish ready setup from required action", () => {
     completedForInstalledModel: false
   });
   assert.equal(missingModel.status, "action-needed");
-  assert.match(missingModel.message, /Automagical Setup/);
+  assert.match(missingModel.message, /Turn On Local Agent/);
 
   const stale = setupDiagnosticSummary({
     installedModelId: "local-motion-test",
@@ -183,7 +196,7 @@ test("setup diagnostics distinguish ready setup from required action", () => {
     completedForInstalledModel: true
   });
   assert.equal(stale.status, "action-needed");
-  assert.match(stale.message, /Prepare Cursor/);
+  assert.match(stale.message, /Connect Cursor to Local Agent/);
 });
 
 test("reuses an installed model only when its file is present and size-valid", () => {
@@ -202,6 +215,8 @@ test("reuses an installed model only when its file is present and size-valid", (
   assert.equal(canReuseInstalledModel(installed, 5), false);
   assert.equal(canReuseInstalledModel(installed, undefined), false);
   assert.equal(canReuseInstalledModel(undefined, 4), false);
+  assert.equal(canReuseInstalledModelForDefault(installed, 4, "example/model-GGUF"), true);
+  assert.equal(canReuseInstalledModelForDefault(installed, 4, DEFAULT_MODEL_REPO), false);
 });
 
 test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {
@@ -322,6 +337,9 @@ test("Cursor setup view model uses the active runtime endpoint", () => {
   assert.ok(viewModel.setupBlock.includes("http://127.0.0.1:50000/v1"));
   assert.ok(viewModel.setupBlock.includes("local-motion-test"));
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_API_KEY));
+  assert.ok(viewModel.setupBlock.includes("Add Custom Model"));
+  assert.ok(viewModel.statusMessage.includes("Cursor Settings > Models"));
+  assert.ok(viewModel.steps.includes("Click Add Custom Model."));
   assert.ok(viewModel.steps.some((line) => line.includes("http://127.0.0.1:50000/v1")));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "http://127.0.0.1:50000/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), LOCAL_MOTION_API_KEY);
@@ -614,10 +632,10 @@ test("runs first startup automagical setup only once before any model is install
   );
 });
 
-test("provider no-model error points to automagical setup", () => {
+test("provider no-model error points to the local agent switch", () => {
   assert.equal(
     NO_INSTALLED_MODEL_MESSAGE,
-    "No Local Motion model is installed. Run Local Motion: Automagical Setup."
+    "No Local Motion model is installed. Run Local Motion: Turn On Local Agent."
   );
   assert.equal(NO_INSTALLED_MODEL_MESSAGE.includes("Open Setup first"), false);
 });
@@ -627,8 +645,8 @@ test("startup resume does not install missing llama dependency", () => {
   assert.equal(allowLlamaInstallForAutomagicalStart("startupResume"), false);
 });
 
-test("host-started automagical setup skips default quantization loading while active", () => {
-  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: false }), true);
+test("setup panel does not load default quantizations before advanced controls ask", () => {
+  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: false }), false);
   assert.equal(shouldPostInitialQuantizations({ setupOperationActive: true }), false);
 });
 

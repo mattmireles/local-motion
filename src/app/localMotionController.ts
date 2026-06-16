@@ -5,9 +5,9 @@ import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { selectBestCompatibleQuantization } from "../models/compatibility";
-import { automagicalModelRepos, DEFAULT_MODEL_REPO } from "../models/defaultRepos";
+import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
 import { listQuantizations, searchModels } from "../models/huggingFace";
-import { canReuseInstalledModel } from "../models/installedModel";
+import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
 import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
@@ -127,7 +127,7 @@ export class LocalMotionController {
     onProgress: (progress: DownloadProgress) => void
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
     if (!this.runtime.status().running) {
-      const installedModel = await this.reusableInstalledModel();
+      const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
       if (installedModel) {
         await this.startInstalledModel(installedModel, {
           allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
@@ -142,7 +142,7 @@ export class LocalMotionController {
 
   async resumeAutomagicalRuntime(): Promise<RuntimeResponse | undefined> {
     if (!this.runtime.status().running) {
-      const installedModel = await this.reusableInstalledModel();
+      const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
       if (!installedModel) {
         return undefined;
       }
@@ -230,10 +230,10 @@ export class LocalMotionController {
   }
 
   defaultRepo(): string {
-    return vscode.workspace
+    return normalizeHuggingFaceRepoId(vscode.workspace
       .getConfiguration("localMotion")
       .get<string>("defaultModelRepo", DEFAULT_MODEL_REPO)
-      .trim();
+      .trim()) || DEFAULT_MODEL_REPO;
   }
 
   automagicalRepos(): string[] {
@@ -340,12 +340,13 @@ export class LocalMotionController {
     }
   }
 
-  private async reusableInstalledModel(): Promise<InstalledModel | undefined> {
+  private async reusableInstalledModel(options: { requireCurrentDefault?: boolean } = {}): Promise<InstalledModel | undefined> {
     const installedModel = this.state.installedModel();
-    return canReuseInstalledModel(
-      installedModel,
-      installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined
-    )
+    const actualSizeBytes = installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined;
+    const reusable = options.requireCurrentDefault
+      ? canReuseInstalledModelForDefault(installedModel, actualSizeBytes, this.defaultRepo())
+      : canReuseInstalledModel(installedModel, actualSizeBytes);
+    return reusable
       ? installedModel
       : undefined;
   }

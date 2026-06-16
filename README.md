@@ -1,32 +1,35 @@
 # Local Motion
 
-Local Motion installs and runs GGUF coding models locally on macOS, then exposes
-them to VS Code and Cursor through local OpenAI-compatible endpoints.
+Local Motion turns a private local coding agent on and off for Cursor and VS
+Code. It chooses a compatible local model for your Mac, loads it when you need
+it, and frees the memory when you do not.
 
 ## What It Does
 
+- Gives you one local-agent switch: turn on, connect Cursor, free memory.
+- Chooses a compatible local coding model for this Mac.
+- Reuses the installed model when possible, so turning it on again is quick.
+- Connects Cursor through a local endpoint without writing Cursor private state.
+- Frees the loaded model from memory immediately when you are done.
+- Keeps the runtime bound to `127.0.0.1`.
+
+## Under The Hood
+
 - Profiles your Mac for architecture, memory, and model storage space.
-- Searches Hugging Face GGUF repositories and ranks compatible quantizations.
+- Searches Hugging Face GGUF repositories and ranks compatible quantizations
+  only when setup or advanced model controls need them.
 - Downloads model files with resumable streaming.
 - Finds or installs `llama-server` through Homebrew.
-- Starts `llama-server` on `127.0.0.1` with a dynamic port.
+- Starts `llama-server` and a stable local OpenAI-compatible proxy for Cursor.
 - Registers the running model with the VS Code Language Model API, with the
-  provider's manage action wired to `Automagical Setup`.
-- Starts a local OpenAI-compatible proxy for Cursor on a stable preferred
-  localhost port.
-- Offers `Automagical Setup`: reuses an installed model when available, otherwise
-  selects a compatible quantization from the configured default repository or
-  built-in smaller fallback repositories, installs it, starts it, verifies the
-  local endpoint, copies the Cursor setup block, and opens Settings filtered
-  toward Models. If `llama-server` is missing and Homebrew is available,
-  Automagical Setup installs `llama.cpp` as part of the same run.
+  provider's manage action opening the local-agent switch.
 
 ## Requirements
 
 - macOS.
 - VS Code or Cursor compatible with VS Code `^1.105.0`.
 - Homebrew, when `llama-server` is not already available on `PATH`,
-  `/opt/homebrew/bin`, or `/usr/local/bin`; Automagical Setup uses it to install
+  `/opt/homebrew/bin`, or `/usr/local/bin`; Local Motion uses it to install
   `llama.cpp`.
 - Enough free disk and unified memory for the selected GGUF file.
 - Localhost port `41434` available for the Cursor-facing proxy, or set
@@ -36,30 +39,33 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 ## Setup
 
 1. Install Local Motion.
-2. Local Motion opens setup and runs `Automagical Setup` once on first startup.
+2. Local Motion opens the local-agent switch once on first startup.
+3. Click `Turn On Local Agent`.
 
-The setup panel also exposes the same `Automagical Setup` action through
-`Local Motion: Open Setup`.
+The setup panel also exposes advanced model controls, but the default path does
+not require choosing a repository, model size, or quantization.
 
-When a local model is already running, `Local Motion: Prepare Cursor` runs the
+When a local model is already running, `Local Motion: Connect Cursor to Local Agent` runs the
 Cursor handoff directly from the command palette. If a size-valid installed model
 is stopped, the command starts it first; then it verifies the endpoint, copies
 the setup block, and opens Cursor Models settings.
 
-First-start Automagical Setup may install `llama.cpp` through Homebrew and
-download the first compatible GGUF model from the configured default repository
-or built-in fallback repositories. Disable
-`localMotion.runAutomagicalSetupOnFirstStartup` to make first startup open the
-setup panel without starting the install.
+`Turn On Local Agent` may install `llama.cpp` through Homebrew and download the
+best compatible GGUF quantization from the configured default repository,
+`yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF`, before trying built-in
+fallback repositories. Set `localMotion.runAutomagicalSetupOnFirstStartup` to
+`true` only if you want that install/download to start automatically on first
+startup.
 
-If first-start setup fails or is cancelled, run
-`Local Motion: Retry Automagical Setup`.
+If setup fails or is cancelled, run `Local Motion: Repair Local Agent`.
+
+Run `Local Motion: Free Memory` to unload the local model immediately.
 
 Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
 model file, local runtime, proxy verification, copied Cursor values, and the
 remaining Cursor picker verification step.
 
-After Automagical Setup succeeds, Local Motion can restart the installed model
+After the local agent is connected once, Local Motion can restart the installed model
 automatically on future editor startups without downloading a new model,
 opening the setup panel, opening Cursor settings, or replacing the clipboard.
 Cursor keeps using the stable local proxy URL from the completed setup. If
@@ -67,20 +73,20 @@ background resume fails or the proxy falls back to a different port, Local
 Motion offers to open setup for recovery. Disable
 `localMotion.resumeAutomagicalSetupOnStartup` to turn that off.
 
-For manual control:
+For advanced manual control:
 
 1. Load a Hugging Face GGUF repository.
 2. Pick a quantization marked `Compatible`.
-3. Click `Install and Run`; Local Motion starts the model, verifies the Cursor
+3. Click `Install and Turn On`; Local Motion starts the model, verifies the Cursor
    endpoint, copies the setup block, and opens Cursor Models settings.
 
-`Prepare Cursor` verifies `GET /v1/models` on the local proxy with
+`Connect Cursor to Local Agent` verifies `GET /v1/models` on the local proxy with
 `Authorization: Bearer local-motion`, copies the full setup block, opens Cursor
 settings filtered toward Models, and leaves one-click copy controls visible for:
 
 - OpenAI API Key: `local-motion`
 - Override OpenAI Base URL: the active Local Motion Base URL
-- Custom Model / Model Name: the active Local Motion model ID
+- Add Custom Model: the active Local Motion model ID
 - Full setup block
 
 ## Cursor Coverage
@@ -131,7 +137,7 @@ This downloads the default compatible GGUF when it is not already cached, starts
 completion.
 
 Open this folder in VS Code or Cursor, run the Extension Development Host, and
-execute `Local Motion: Open Setup`.
+execute `Local Motion: Open Local Agent`.
 
 ## Publishing
 

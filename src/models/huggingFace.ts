@@ -1,6 +1,6 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
 import { parseContentLengthHeader } from "../runtime/runtimeGuards";
-import { classifyCompatibility, parameterCountFromText, quantizationFromFileName } from "./compatibility";
+import { classifyCompatibility, compareQuantizationPreference, parameterCountFromText, quantizationFromFileName } from "./compatibility";
 
 const HF_TIMEOUT_MS = 30_000;
 
@@ -72,12 +72,7 @@ export async function listQuantizations(
       ...file,
       compatibility: classifyCompatibility(file, machine, contextTokens)
     }))
-    .sort((a, b) => {
-      if (a.compatibility.status !== b.compatibility.status) {
-        return a.compatibility.status === "compatible" ? -1 : 1;
-      }
-      return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
-    });
+    .sort(compareQuantizationPreference);
 }
 
 async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {

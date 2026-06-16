@@ -52,13 +52,28 @@ export function effectiveMemoryBudget(machine: MachineProfile): number {
 export function selectBestCompatibleQuantization(candidates: CandidateQuantization[]): CandidateQuantization | undefined {
   return candidates
     .filter((candidate) => candidate.compatibility.status === "compatible")
-    .sort((a, b) => {
-      const memoryDelta = a.compatibility.requiredMemoryBytes - b.compatibility.requiredMemoryBytes;
-      if (memoryDelta !== 0) {
-        return memoryDelta;
-      }
-      return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
-    })[0];
+    .sort(compareQuantizationPreference)[0];
+}
+
+export function compareQuantizationPreference(a: CandidateQuantization, b: CandidateQuantization): number {
+  if (a.compatibility.status !== b.compatibility.status) {
+    return a.compatibility.status === "compatible" ? -1 : 1;
+  }
+
+  if (a.compatibility.status !== "compatible") {
+    return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
+  }
+
+  const qualityDelta = quantizationQualityScore(b.quantization) - quantizationQualityScore(a.quantization);
+  if (qualityDelta !== 0) {
+    return qualityDelta;
+  }
+
+  const memoryDelta = a.compatibility.requiredMemoryBytes - b.compatibility.requiredMemoryBytes;
+  if (memoryDelta !== 0) {
+    return memoryDelta;
+  }
+  return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
 }
 
 export function quantizationFromFileName(fileName: string): string {
@@ -92,6 +107,28 @@ function bitsPerWeight(quantization: string): number {
   if (q.startsWith("Q3") || q.startsWith("IQ3")) return 3;
   if (q.startsWith("Q2") || q.startsWith("IQ2")) return 2;
   return 5;
+}
+
+function quantizationQualityScore(quantization: string): number {
+  const q = quantization.toUpperCase();
+  if (q === "F32") return 320;
+  if (q === "F16" || q === "BF16") return 160;
+  if (q.startsWith("Q8")) return 80;
+  if (q.startsWith("Q6")) return 60;
+  if (q.startsWith("Q5")) return 50 + quantizationVariantBonus(q);
+  if (q.startsWith("Q4") || q.startsWith("IQ4")) return 40 + quantizationVariantBonus(q);
+  if (q.startsWith("Q3") || q.startsWith("IQ3")) return 30 + quantizationVariantBonus(q);
+  if (q.startsWith("Q2") || q.startsWith("IQ2")) return 20 + quantizationVariantBonus(q);
+  return 0;
+}
+
+function quantizationVariantBonus(quantization: string): number {
+  if (quantization.includes("_K_L")) return 0.7;
+  if (quantization.includes("_K_M")) return 0.6;
+  if (quantization.includes("_K_S")) return 0.4;
+  if (quantization.includes("_1")) return 0.2;
+  if (quantization.includes("_0")) return 0.1;
+  return 0;
 }
 
 function estimateContextOverheadBytes(contextTokens: number, parameterCount?: number): number {

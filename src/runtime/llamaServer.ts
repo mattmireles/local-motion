@@ -15,7 +15,10 @@ export class LlamaServerManager {
   private startAbort: AbortController | undefined;
   private sessionGeneration = 0;
 
-  constructor(private readonly output: vscode.OutputChannel) {}
+  constructor(
+    private readonly output: vscode.OutputChannel,
+    private readonly onStatusChanged: () => void = () => undefined
+  ) {}
 
   status(): RuntimeStatus {
     if (!this.child || !this.session?.baseUrl) {
@@ -111,6 +114,7 @@ export class LlamaServerManager {
           this.session = undefined;
           void this.proxy?.stop();
           this.proxy = undefined;
+          this.onStatusChanged();
         }
       });
       child.once("error", (error) => {
@@ -135,6 +139,7 @@ export class LlamaServerManager {
           upstreamBaseUrl
         };
         this.session = session;
+        this.onStatusChanged();
         return session;
       } catch (error) {
         await this.stopLocked();
@@ -155,6 +160,7 @@ export class LlamaServerManager {
   }
 
   private async stopLocked(): Promise<void> {
+    const wasRunning = this.child !== undefined || this.session !== undefined || this.proxy !== undefined;
     const proxyStop = this.proxy?.stop();
     this.proxy = undefined;
     const child = this.child;
@@ -162,6 +168,9 @@ export class LlamaServerManager {
     this.session = undefined;
     if (!child) {
       await proxyStop;
+      if (wasRunning) {
+        this.onStatusChanged();
+      }
       return;
     }
 
@@ -183,6 +192,9 @@ export class LlamaServerManager {
       });
     });
     await proxyStop;
+    if (wasRunning) {
+      this.onStatusChanged();
+    }
   }
 }
 

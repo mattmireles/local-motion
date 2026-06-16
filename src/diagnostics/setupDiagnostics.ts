@@ -32,42 +32,42 @@ export function setupDiagnosticSummary(input: SetupDiagnosticInput): SetupDiagno
   if (!input.installedModelId) {
     return {
       status: "action-needed",
-      message: "No Local Motion model is installed. Run Local Motion: Automagical Setup.",
+      message: "No Local Motion model is installed. Run Local Motion: Turn On Local Agent.",
       lines
     };
   }
   if (!input.installedFileValid) {
     return {
       status: "action-needed",
-      message: "The installed model file is missing or incomplete. Run Local Motion: Retry Automagical Setup.",
+      message: "The installed model file is missing or incomplete. Run Local Motion: Repair Local Agent.",
       lines
     };
   }
   if (!input.runtimeRunning) {
     return {
       status: "action-needed",
-      message: "The local model is installed but not running. Run Local Motion: Prepare Cursor.",
+      message: "The local model is installed but not running. Run Local Motion: Connect Cursor to Local Agent.",
       lines
     };
   }
   if (!input.endpointVerified) {
     return {
       status: "action-needed",
-      message: "The local proxy did not verify. Run Local Motion: Prepare Cursor after the model starts.",
+      message: "The local proxy did not verify. Run Local Motion: Connect Cursor to Local Agent after the model starts.",
       lines
     };
   }
   if (input.cursorSetupFreshness !== "current" || !input.completedForInstalledModel) {
     return {
       status: "action-needed",
-      message: "Local runtime is healthy, but Cursor setup values need to be copied again. Run Local Motion: Prepare Cursor.",
+      message: "Local runtime is healthy, but Cursor setup values need to be copied again. Run Local Motion: Connect Cursor to Local Agent.",
       lines
     };
   }
 
   return {
     status: "ready",
-    message: "Local Motion setup is ready. Verify the model is selected in Cursor's model picker.",
+    message: "Local Motion setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.",
     lines
   };
 }

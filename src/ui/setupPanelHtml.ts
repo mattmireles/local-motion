@@ -55,6 +55,73 @@ export function setupPanelHtml(nonce: string): string {
       padding: 22px 0;
       border-bottom: 1px solid var(--line);
     }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+      gap: 16px;
+      align-items: stretch;
+      padding: 22px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .agent-panel, .side-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 96%, var(--vscode-foreground));
+    }
+    .agent-state {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .state-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: transparent;
+      flex: 0 0 auto;
+    }
+    .state-dot.ready {
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+    .state-dot.busy {
+      background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+      border-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+    }
+    .state-title {
+      font-size: 20px;
+      line-height: 1.25;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: 0;
+    }
+    .primary-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+    .memory-line, .cursor-line {
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    details.advanced {
+      border-bottom: 1px solid var(--line);
+      padding: 0;
+    }
+    details.advanced > summary {
+      cursor: pointer;
+      padding: 18px 0;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    details.advanced > .advanced-body {
+      padding-bottom: 22px;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -159,10 +226,6 @@ export function setupPanelHtml(nonce: string): string {
       margin-top: 14px;
       flex-wrap: wrap;
     }
-    .header-actions {
-      margin-top: 0;
-      justify-content: flex-end;
-    }
     .setup-grid {
       display: grid;
       gap: 8px;
@@ -206,6 +269,7 @@ export function setupPanelHtml(nonce: string): string {
     @media (max-width: 760px) {
       main { padding: 18px; }
       header, .row { flex-direction: column; align-items: stretch; }
+      .hero { grid-template-columns: 1fr; }
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .setup-field { grid-template-columns: 1fr; }
     }
@@ -216,49 +280,88 @@ export function setupPanelHtml(nonce: string): string {
     <header>
       <div>
         <h1>Local Motion</h1>
-        <p>Install a compatible GGUF coding model and run it through a local OpenAI-compatible endpoint.</p>
-      </div>
-      <div class="actions header-actions">
-        <button id="autoSetup">Automagical Setup</button>
-        <button id="stop" class="secondary">Stop Model</button>
+        <p>A local coding agent for Cursor. Turn it on when you need it, free the memory when you do not.</p>
       </div>
     </header>
 
-    <section>
-      <h2>This Mac</h2>
-      <div id="machine" class="grid"></div>
-    </section>
+    <div class="hero">
+      <section class="agent-panel">
+        <div class="agent-state">
+          <span id="agentDot" class="state-dot"></span>
+          <p id="agentTitle" class="state-title">Checking Local Motion...</p>
+        </div>
+        <p id="agentSummary">Local Motion will choose a model that fits this Mac and connect it to Cursor.</p>
+        <div class="primary-actions">
+          <button id="primaryAction">Turn On Local Agent</button>
+          <button id="memoryAction" class="secondary">Free Memory</button>
+        </div>
+      </section>
 
-    <section>
-      <h2>Model</h2>
-      <label for="repo">Hugging Face GGUF repository</label>
-      <div class="row">
-        <input id="repo" spellcheck="false">
-        <button id="load">Load Quantizations</button>
-        <button id="search" class="secondary">Search</button>
-      </div>
-      <div id="searchResults" class="list"></div>
-      <div id="quantizations" class="list"></div>
-      <div class="actions">
-        <button id="install" disabled>Install and Run</button>
-      </div>
-    </section>
+      <section class="side-panel">
+        <h2>Cursor</h2>
+        <p id="cursorSummary" class="cursor-line">Waiting for the local endpoint. When it is ready, Cursor Settings > Models needs Add Custom Model.</p>
+        <div class="actions">
+          <button id="cursorPrimary" class="secondary">Connect Cursor</button>
+        </div>
+        <p id="memorySummary" class="memory-line">Memory is managed automatically.</p>
+      </section>
+    </div>
 
-    <section>
-      <h2>Cursor</h2>
-      <p id="runtime">Start a model to get the Cursor base URL and model ID.</p>
-      <div class="actions">
-        <button id="prepareCursor">Prepare Cursor</button>
-        <button id="verifyCursor" class="secondary">Verify Endpoint</button>
-        <button id="cursorSettings" class="secondary">Open Settings</button>
+    <details class="advanced">
+      <summary>Advanced model controls</summary>
+      <div class="advanced-body">
+        <section>
+          <h2>Model</h2>
+          <label for="repo">Hugging Face GGUF repository</label>
+          <div class="row">
+            <input id="repo" spellcheck="false">
+            <button id="load">Load Quantizations</button>
+            <button id="search" class="secondary">Search</button>
+          </div>
+          <div id="searchResults" class="list"></div>
+          <div id="quantizations" class="list"></div>
+          <div class="actions">
+            <button id="install" disabled>Install and Turn On</button>
+          </div>
+        </section>
       </div>
-      <div id="cursorSetupFields" class="setup-grid"></div>
-    </section>
+    </details>
 
-    <section>
-      <h2>Status</h2>
-      <pre id="status">Waiting for machine profile.</pre>
-    </section>
+    <details class="advanced" id="cursorDetails">
+      <summary>Cursor connection details</summary>
+      <div class="advanced-body">
+        <section>
+          <h2>Cursor</h2>
+          <p id="runtime">Start a model to get the Cursor base URL and model ID.</p>
+          <div class="actions">
+            <button id="prepareCursor">Connect Cursor</button>
+            <button id="verifyCursor" class="secondary">Verify Endpoint</button>
+            <button id="cursorSettings" class="secondary">Open Settings</button>
+          </div>
+          <div id="cursorSetupFields" class="setup-grid"></div>
+        </section>
+      </div>
+    </details>
+
+    <details class="advanced">
+      <summary>Mac and memory details</summary>
+      <div class="advanced-body">
+        <section>
+          <h2>This Mac</h2>
+          <div id="machine" class="grid"></div>
+        </section>
+      </div>
+    </details>
+
+    <details class="advanced">
+      <summary>Activity log</summary>
+      <div class="advanced-body">
+        <section>
+          <h2>Status</h2>
+          <pre id="status">Waiting for machine profile.</pre>
+        </section>
+      </div>
+    </details>
   </main>
 
   <script nonce="${nonce}">
@@ -268,7 +371,8 @@ export function setupPanelHtml(nonce: string): string {
       installed: undefined,
       runtime: undefined,
       copyResults: {},
-      automagicalSetupRunning: false
+      automagicalSetupRunning: false,
+      progressMessage: ''
     };
     const els = {
       repo: document.getElementById('repo'),
@@ -278,7 +382,15 @@ export function setupPanelHtml(nonce: string): string {
       install: document.getElementById('install'),
       status: document.getElementById('status'),
       runtime: document.getElementById('runtime'),
-      cursorSetupFields: document.getElementById('cursorSetupFields')
+      cursorSetupFields: document.getElementById('cursorSetupFields'),
+      agentDot: document.getElementById('agentDot'),
+      agentTitle: document.getElementById('agentTitle'),
+      agentSummary: document.getElementById('agentSummary'),
+      primaryAction: document.getElementById('primaryAction'),
+      memoryAction: document.getElementById('memoryAction'),
+      cursorPrimary: document.getElementById('cursorPrimary'),
+      cursorSummary: document.getElementById('cursorSummary'),
+      memorySummary: document.getElementById('memorySummary')
     };
 
     document.getElementById('load').addEventListener('click', () => {
@@ -290,11 +402,26 @@ export function setupPanelHtml(nonce: string): string {
     document.getElementById('install').addEventListener('click', () => {
       vscode.postMessage({ command: 'installRun', candidate: state.selected });
     });
-    document.getElementById('autoSetup').addEventListener('click', () => {
+    document.getElementById('primaryAction').addEventListener('click', () => {
+      if (state.runtime && state.runtime.running) {
+        if (state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current') {
+          vscode.postMessage({ command: 'stop' });
+          return;
+        }
+        vscode.postMessage({ command: 'prepareCursor' });
+        return;
+      }
       vscode.postMessage({ command: 'automagicalSetup' });
     });
-    document.getElementById('stop').addEventListener('click', () => {
+    document.getElementById('memoryAction').addEventListener('click', () => {
       vscode.postMessage({ command: 'stop' });
+    });
+    document.getElementById('cursorPrimary').addEventListener('click', () => {
+      if (state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current') {
+        vscode.postMessage({ command: 'openCursorSettings' });
+        return;
+      }
+      vscode.postMessage({ command: 'prepareCursor' });
     });
     document.getElementById('prepareCursor').addEventListener('click', () => {
       vscode.postMessage({ command: 'prepareCursor' });
@@ -312,6 +439,7 @@ export function setupPanelHtml(nonce: string): string {
         els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
+        state.machine = message.machine;
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
@@ -321,11 +449,16 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'searchResults') renderSearchResults(message.results);
       if (message.type === 'quantizations') renderQuantizations(message.quantizations);
-      if (message.type === 'installProgress') setStatus('Downloading ' + Math.round(message.progress.percent || 0) + '%');
+      if (message.type === 'installProgress') {
+        state.progressMessage = 'Downloading ' + Math.round(message.progress.percent || 0) + '%';
+        renderAgentSurface();
+        setStatus(state.progressMessage);
+      }
       if (message.type === 'automagicalSetupStarted') {
         state.automagicalSetupRunning = true;
-        document.getElementById('autoSetup').disabled = true;
+        state.progressMessage = 'Choosing a model that fits this Mac.';
         document.getElementById('install').disabled = true;
+        renderAgentSurface();
         setStatus('Selecting a compatible model, starting it, and preparing Cursor.');
       }
       if (message.type === 'installed') {
@@ -337,6 +470,8 @@ export function setupPanelHtml(nonce: string): string {
         state.verification = message.cursor && message.cursor.verification;
         state.settings = message.cursor && message.cursor.settings;
         if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
+        state.automagicalSetupRunning = false;
+        state.progressMessage = '';
         renderRuntime();
         setStatus(message.cursor
           ? [state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' ')
@@ -344,6 +479,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;
+        state.progressMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
@@ -352,6 +488,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'automagicalSetupComplete') {
         state.automagicalSetupRunning = false;
+        state.progressMessage = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
@@ -360,7 +497,6 @@ export function setupPanelHtml(nonce: string): string {
         state.verification = message.cursor && message.cursor.verification;
         state.settings = message.cursor && message.cursor.settings;
         if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
-        document.getElementById('autoSetup').disabled = false;
         document.getElementById('install').disabled = !state.selected;
         renderRuntime();
         setStatus([state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' '));
@@ -397,13 +533,15 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'error') {
         state.automagicalSetupRunning = false;
+        state.progressMessage = '';
         setStatus(message.message);
-        document.getElementById('autoSetup').disabled = false;
         document.getElementById('install').disabled = !state.selected;
+        renderAgentSurface();
       }
     });
 
     function renderMachine(machine) {
+      state.machine = machine;
       els.machine.innerHTML = [
         ['CPU', machine.cpu],
         ['Architecture', machine.arch + (machine.appleSilicon ? ' Apple Silicon' : '')],
@@ -413,6 +551,7 @@ export function setupPanelHtml(nonce: string): string {
         ['Free disk', machine.disk],
         ['Storage', machine.storageRoot]
       ].map(([label, value]) => '<div class="metric"><span>' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>').join('');
+      renderAgentSurface();
     }
 
     function renderSearchResults(results) {
@@ -455,7 +594,7 @@ export function setupPanelHtml(nonce: string): string {
         els.install.disabled = true;
         return;
       }
-      setStatus(items.length ? 'Compatible quantization selected. Use Automagical Setup or install manually.' : 'No GGUF files found in this repository.');
+      setStatus(items.length ? 'Compatible quantization selected. Turn on the local agent or install manually.' : 'No GGUF files found in this repository.');
     }
 
     function renderRuntime() {
@@ -463,10 +602,12 @@ export function setupPanelHtml(nonce: string): string {
       if (!runtime.running) {
         els.runtime.textContent = runtime.message || 'No model is running.';
         renderCursorSetup();
+        renderAgentSurface();
         return;
       }
       els.runtime.textContent = runtime.message + ' Base URL: ' + runtime.baseUrl + ' Model ID: ' + runtime.modelId;
       renderCursorSetup();
+      renderAgentSurface();
     }
 
     function renderCursorSetup() {
@@ -476,6 +617,7 @@ export function setupPanelHtml(nonce: string): string {
         document.getElementById('prepareCursor').disabled = true;
         document.getElementById('verifyCursor').disabled = true;
         document.getElementById('cursorSettings').disabled = true;
+        renderAgentSurface();
         return;
       }
       document.getElementById('prepareCursor').disabled = !viewModel.isRunning;
@@ -484,7 +626,7 @@ export function setupPanelHtml(nonce: string): string {
       const fields = [
         ['apiKey', 'OpenAI API Key', viewModel.apiKey],
         ['baseUrl', 'Override OpenAI Base URL', viewModel.baseUrl],
-        ['modelId', 'Custom Model / Model Name', viewModel.modelId],
+        ['modelId', 'Add Custom Model', viewModel.modelId],
         ['setupBlock', 'Full setup block', viewModel.setupBlock]
       ];
       const statusLines = [
@@ -512,6 +654,55 @@ export function setupPanelHtml(nonce: string): string {
         button.addEventListener('click', () => {
           vscode.postMessage({ command: 'copyCursorValue', key: button.dataset.key });
         });
+      }
+      renderAgentSurface();
+    }
+
+    function renderAgentSurface() {
+      const runtime = state.runtime || {};
+      const running = Boolean(runtime.running);
+      const busy = state.automagicalSetupRunning;
+      const current = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current';
+      const stale = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale';
+
+      els.agentDot.className = 'state-dot' + (running ? ' ready' : busy ? ' busy' : '');
+      if (busy) {
+        els.agentTitle.textContent = 'Starting local agent';
+        els.agentSummary.textContent = state.progressMessage || 'Local Motion is choosing the best fit, loading it, and preparing Cursor.';
+      } else if (running && current) {
+        els.agentTitle.textContent = 'Local agent is ready for Cursor';
+        els.agentSummary.textContent = 'The model is loaded locally. If Cursor does not list it yet, open Cursor Settings > Models and click Add Custom Model.';
+      } else if (running) {
+        els.agentTitle.textContent = 'Local agent is loaded';
+        els.agentSummary.textContent = stale
+          ? 'Cursor setup values need a refresh before Cursor uses this local model.'
+          : 'Connect Cursor once. Local Motion will copy the values; Cursor still needs Add Custom Model.';
+      } else {
+        els.agentTitle.textContent = 'Local agent is off';
+        els.agentSummary.textContent = 'Turn it on and Local Motion will choose a model, load it, and prepare Cursor.';
+      }
+
+      els.primaryAction.textContent = running ? (current ? 'Free Memory' : 'Connect Cursor') : 'Turn On Local Agent';
+      els.primaryAction.disabled = busy;
+      els.memoryAction.textContent = 'Free Memory';
+      els.memoryAction.disabled = busy || !running;
+      els.cursorPrimary.disabled = busy || !running;
+      els.cursorPrimary.textContent = current ? 'Open Cursor Models' : 'Connect Cursor';
+
+      if (!running) {
+        els.cursorSummary.textContent = 'Cursor will get Add Custom Model values after the local agent starts.';
+      } else if (current) {
+        els.cursorSummary.textContent = 'Cursor has the current Local Motion endpoint. Select the Local Motion model when it appears in Cursor.';
+      } else if (stale) {
+        els.cursorSummary.textContent = 'Cursor may still point at an old local endpoint. Refresh the connection.';
+      } else {
+        els.cursorSummary.textContent = 'One handoff remains: copy the setup values, open Cursor Models, and click Add Custom Model.';
+      }
+
+      if (state.machine) {
+        els.memorySummary.textContent = running
+          ? 'Free Memory unloads the local model immediately. Available now: ' + state.machine.availableMemory + '.'
+          : 'Local Motion will stay within this Mac\\'s conservative memory budget: ' + state.machine.budget + '.';
       }
     }
 
