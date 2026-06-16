@@ -356,12 +356,12 @@ confirms a stop/start cycle produces a stale warning.
 
 **Tasks:**
 
-- [ ] Run `npm run check`.
-- [ ] Run `npm run lint`.
-- [ ] Run `npm test`.
-- [ ] Run `npm audit --audit-level=moderate`.
-- [ ] Run `npm run package`.
-- [ ] Install the VSIX with `cursor --install-extension`.
+- [x] Run `npm run check`.
+- [x] Run `npm run lint`.
+- [x] Run `npm test`.
+- [x] Run `npm audit --audit-level=moderate`.
+- [x] Run `npm run package`.
+- [x] Install the VSIX with `cursor --install-extension`.
 - [ ] Manual QA in Cursor:
   - start default model or a small test GGUF
   - verify endpoint
@@ -373,6 +373,21 @@ confirms a stop/start cycle produces a stale warning.
 
 **Verification:** All commands pass, VSIX installs, and manual QA proves Cursor
 can select the Local Motion model through the native model picker.
+
+**Phase 4 evidence:**
+
+- `npm run check`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 17 tests.
+- `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
+- `npm run package`: passed, producing
+  `/Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`.
+- `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`:
+  passed.
+- Manual Cursor model-picker QA: Not testable in this non-interactive run. The
+  machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
+  existing Local Motion GGUF storage was found and Cursor CLI does not expose a
+  non-interactive model-picker QA path.
 
 ## Follow-Up: Read-Only Automatic Setup Research
 
