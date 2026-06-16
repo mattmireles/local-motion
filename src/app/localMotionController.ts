@@ -17,6 +17,19 @@ import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
 import { LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
+import type {
+  AutomagicalSetupCompleteResponse,
+  CursorActionResult,
+  CursorCopyResult,
+  CursorEndpointVerification,
+  CursorSettingsOpened,
+  CursorSetupPreparedResponse,
+  InstalledResponse,
+  QuantizationsResponse,
+  RuntimeResponse,
+  SearchResultsResponse,
+  SetupStateResponse
+} from "../setupProtocol";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
 import type { CandidateQuantization, InstalledModel, RuntimeSession } from "../types";
@@ -24,15 +37,6 @@ import { formatBytes, modelDisplayName, safeId } from "../util/format";
 
 export const DEFAULT_MODEL_REPO = "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF";
 const CURSOR_ENDPOINT_VERIFY_TIMEOUT_MS = 5_000;
-
-interface CursorActionResult {
-  ok: boolean;
-  message: string;
-}
-
-interface CursorEndpointVerification extends CursorActionResult {
-  type: "cursorEndpointVerification";
-}
 
 export class LocalMotionController {
   constructor(
@@ -43,7 +47,7 @@ export class LocalMotionController {
     private readonly provider: LocalMotionProvider
   ) {}
 
-  async initialState(): Promise<Record<string, unknown>> {
+  async initialState(): Promise<SetupStateResponse> {
     await fs.promises.mkdir(this.context.globalStorageUri.fsPath, { recursive: true });
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const runtime = this.runtime.status();
@@ -69,12 +73,12 @@ export class LocalMotionController {
     };
   }
 
-  async search(query: string): Promise<Record<string, unknown>> {
+  async search(query: string): Promise<SearchResultsResponse> {
     const results = await searchModels(query.trim() || this.defaultRepo());
     return { type: "searchResults", results };
   }
 
-  async quantizations(repoId: string): Promise<Record<string, unknown>> {
+  async quantizations(repoId: string): Promise<QuantizationsResponse> {
     const quantizations = await this.defaultQuantizations(repoId.trim());
     return { type: "quantizations", repoId, quantizations };
   }
@@ -82,7 +86,7 @@ export class LocalMotionController {
   async installRun(
     candidate: CandidateQuantization,
     onProgress: (progress: DownloadProgress) => void
-  ): Promise<Record<string, unknown> | undefined> {
+  ): Promise<InstalledResponse | undefined> {
     if (candidate.compatibility.status !== "compatible") {
       const answer = await vscode.window.showWarningMessage(
         "This quantization is marked not compatible for this Mac. Continue anyway?",
@@ -94,21 +98,7 @@ export class LocalMotionController {
       }
     }
 
-    const modelPath = await this.download(candidate, onProgress);
-    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
-    const installed: InstalledModel = {
-      repoId: candidate.repoId,
-      fileName: candidate.fileName,
-      revision: candidate.revision,
-      sizeBytes: candidate.sizeBytes,
-      modelPath,
-      modelId: `local-motion-${safeId(`${candidate.repoId}-${candidate.quantization}`)}`,
-      displayName: modelDisplayName(candidate.repoId, candidate.fileName),
-      contextTokens
-    };
-
-    await this.startInstalledModel(installed);
-    await this.state.setInstalledModel(installed);
+    const installed = await this.installAndStart(candidate, onProgress);
 
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
@@ -121,7 +111,9 @@ export class LocalMotionController {
     };
   }
 
-  async automagicalSetup(onProgress: (progress: DownloadProgress) => void): Promise<Record<string, unknown> | undefined> {
+  async automagicalSetup(
+    onProgress: (progress: DownloadProgress) => void
+  ): Promise<AutomagicalSetupCompleteResponse | undefined> {
     if (!this.runtime.status().running) {
       const installedModel = this.state.installedModel();
       if (canReuseInstalledModel(installedModel, installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined)) {
@@ -132,10 +124,7 @@ export class LocalMotionController {
         if (!candidate) {
           throw new Error(`No compatible GGUF quantization found in ${repoId} for this Mac.`);
         }
-        const installed = await this.installRun(candidate, onProgress);
-        if (!installed) {
-          return undefined;
-        }
+        await this.installAndStart(candidate, onProgress);
       }
     }
 
@@ -152,7 +141,7 @@ export class LocalMotionController {
     };
   }
 
-  async stop(): Promise<Record<string, unknown>> {
+  async stop(): Promise<RuntimeResponse> {
     await this.runtime.stop();
     this.provider.refresh();
     const runtime = this.runtime.status();
@@ -160,7 +149,7 @@ export class LocalMotionController {
     return { type: "runtime", runtime, cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
   }
 
-  async prepareCursor(): Promise<Record<string, unknown>> {
+  async prepareCursor(): Promise<CursorSetupPreparedResponse> {
     const viewModel = this.currentCursorSetupViewModel();
     const verification = await this.verifyCurrentCursorEndpoint(viewModel);
     if (!verification.ok) {
@@ -170,7 +159,11 @@ export class LocalMotionController {
         cursorSetupFreshness: this.currentCursorSetupFreshness(viewModel),
         verification,
         copy: { ok: false, message: "Setup block was not copied because endpoint verification failed." },
-        settings: { ok: false, message: "Cursor settings were not opened because endpoint verification failed." }
+        settings: {
+          type: "cursorSettingsOpened",
+          ok: false,
+          message: "Cursor settings were not opened because endpoint verification failed."
+        }
       };
     }
     const copy = await this.writeCursorValue("setupBlock", viewModel);
@@ -184,7 +177,7 @@ export class LocalMotionController {
     return { type: "cursorSetupPrepared", viewModel, cursorSetupFreshness: freshness, verification, copy, settings };
   }
 
-  async copyCursorValue(key: CursorSetupValueKey): Promise<Record<string, unknown>> {
+  async copyCursorValue(key: CursorSetupValueKey): Promise<CursorCopyResult> {
     const viewModel = this.currentCursorSetupViewModel();
     const result = await this.writeCursorValue(key, viewModel);
     let freshness = this.currentCursorSetupFreshness(viewModel);
@@ -199,7 +192,7 @@ export class LocalMotionController {
     return this.verifyCurrentCursorEndpoint(this.currentCursorSetupViewModel());
   }
 
-  async openCursorSettings(): Promise<Record<string, unknown>> {
+  async openCursorSettings(): Promise<CursorSettingsOpened> {
     if (!this.currentCursorSetupViewModel().isRunning) {
       return { type: "cursorSettingsOpened", ok: false, message: "Start a local model before opening Cursor Models settings." };
     }
@@ -259,6 +252,28 @@ export class LocalMotionController {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
     return listQuantizations(repoId, machine, contextTokens);
+  }
+
+  private async installAndStart(
+    candidate: CandidateQuantization,
+    onProgress: (progress: DownloadProgress) => void
+  ): Promise<InstalledModel> {
+    const modelPath = await this.download(candidate, onProgress);
+    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
+    const installed: InstalledModel = {
+      repoId: candidate.repoId,
+      fileName: candidate.fileName,
+      revision: candidate.revision,
+      sizeBytes: candidate.sizeBytes,
+      modelPath,
+      modelId: `local-motion-${safeId(`${candidate.repoId}-${candidate.quantization}`)}`,
+      displayName: modelDisplayName(candidate.repoId, candidate.fileName),
+      contextTokens
+    };
+
+    await this.startInstalledModel(installed);
+    await this.state.setInstalledModel(installed);
+    return installed;
   }
 
   private async startInstalledModel(installed: InstalledModel): Promise<RuntimeSession> {

@@ -2,15 +2,8 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
+import type { SetupRequest, SetupResponse } from "../setupProtocol";
 import type { CandidateQuantization } from "../types";
-
-interface SetupMessage {
-  command: string;
-  query?: string;
-  repoId?: string;
-  candidate?: CandidateQuantization;
-  key?: "apiKey" | "baseUrl" | "modelId" | "setupBlock";
-}
 
 export class SetupPanel {
   private static current: SetupPanel | undefined;
@@ -42,10 +35,10 @@ export class SetupPanel {
     this.panel.onDidDispose(() => {
       SetupPanel.current = undefined;
     });
-    this.panel.webview.onDidReceiveMessage((message: SetupMessage) => void this.handleMessage(message));
+    this.panel.webview.onDidReceiveMessage((message: SetupRequest) => void this.handleMessage(message));
   }
 
-  private async handleMessage(message: SetupMessage): Promise<void> {
+  private async handleMessage(message: SetupRequest): Promise<void> {
     try {
       switch (message.command) {
         case "ready":
@@ -84,6 +77,8 @@ export class SetupPanel {
         case "openCursorSettings":
           await this.post(await this.controller.openCursorSettings());
           break;
+        default:
+          throw new Error("Unknown setup command.");
       }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
@@ -117,7 +112,7 @@ export class SetupPanel {
     }
   }
 
-  private async post(payload: unknown): Promise<void> {
+  private async post(payload: SetupResponse): Promise<void> {
     await this.panel.webview.postMessage(payload);
   }
 

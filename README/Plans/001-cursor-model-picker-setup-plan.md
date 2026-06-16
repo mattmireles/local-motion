@@ -402,6 +402,11 @@ can select the Local Motion model through the native model picker.
   covered by regression tests.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Architecture hardening: controller/webview setup payloads now use
+  `src/setupProtocol.ts` discriminated TypeScript types instead of loose
+  `Record<string, unknown>` responses, and automagical setup shares the
+  controller's internal `installAndStart` primitive instead of calling the
+  manual `installRun` command handler. Guard: `npm run check`.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub
