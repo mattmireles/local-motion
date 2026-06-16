@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cursorSetupViewModel } from "../out/cursor/cursorIntegration.js";
+import { cursorSetupValue, cursorSetupViewModel } from "../out/cursor/cursorIntegration.js";
 import {
   effectiveMemoryBudget,
   parameterCountFromText,
@@ -131,6 +131,10 @@ test("Cursor setup view model uses the active runtime endpoint", () => {
   assert.ok(viewModel.setupBlock.includes("local-motion-test"));
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_API_KEY));
   assert.ok(viewModel.steps.some((line) => line.includes("http://127.0.0.1:50000/v1")));
+  assert.equal(cursorSetupValue(viewModel, "baseUrl"), "http://127.0.0.1:50000/v1");
+  assert.equal(cursorSetupValue(viewModel, "apiKey"), LOCAL_MOTION_API_KEY);
+  assert.equal(cursorSetupValue(viewModel, "modelId"), "local-motion-test");
+  assert.equal(cursorSetupValue(viewModel, "setupBlock"), viewModel.setupBlock);
 });
 
 test("Cursor setup view model does not invent endpoint values when stopped", () => {

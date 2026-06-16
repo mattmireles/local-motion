@@ -11,6 +11,8 @@ export interface CursorSetupViewModel {
   statusMessage: string;
 }
 
+export type CursorSetupValueKey = "apiKey" | "baseUrl" | "modelId" | "setupBlock";
+
 export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewModel {
   const baseUrl = status.baseUrl ?? "";
   const modelId = status.modelId ?? "";
@@ -52,4 +54,17 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     ],
     statusMessage: "Cursor does not expose a stable extension API for changing its native model picker. Use these settings."
   };
+}
+
+export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSetupValueKey): string {
+  switch (key) {
+    case "apiKey":
+      return viewModel.apiKey;
+    case "baseUrl":
+      return viewModel.baseUrl;
+    case "modelId":
+      return viewModel.modelId;
+    case "setupBlock":
+      return viewModel.setupBlock;
+  }
 }

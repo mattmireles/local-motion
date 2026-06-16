@@ -245,19 +245,16 @@ tests wait until Phase 3, where stale state exists.
 
 **Tasks:**
 
-- [ ] Add controller actions in `src/app/localMotionController.ts`:
+- [x] Add controller actions in `src/app/localMotionController.ts`:
   - `prepareCursor`
-  - `copyCursorBaseUrl`
-  - `copyCursorApiKey`
-  - `copyCursorModelId`
-  - `copyCursorSetupBlock`
+  - `copyCursorValue(key)` for Base URL, API key, model ID, and full setup block
   - `verifyCursorEndpoint`
-- [ ] Use `vscode.env.clipboard.writeText` for copy actions.
-- [ ] Use `vscode.commands.executeCommand("workbench.action.openSettings",
+- [x] Use `vscode.env.clipboard.writeText` for copy actions.
+- [x] Use `vscode.commands.executeCommand("workbench.action.openSettings",
   "Cursor Models")` to open Settings filtered toward Cursor Models when the
   host supports it. Do not claim this is an exact deep link unless Phase 0
   proves one.
-- [ ] Define webview message commands and response payloads in
+- [x] Define webview message commands and response payloads in
   `src/ui/setupPanel.ts`:
   - request `{ command: "prepareCursor" }` -> response
     `{ type: "cursorSetupPrepared", viewModel, verification }`
@@ -267,12 +264,12 @@ tests wait until Phase 3, where stale state exists.
     `{ type: "cursorEndpointVerification", ok, message }`
   - request `{ command: "openCursorSettings" }` -> response
     `{ type: "cursorSettingsOpened", ok, message }`
-- [ ] Define the primary click behavior for `Prepare Cursor`:
+- [x] Define the primary click behavior for `Prepare Cursor`:
   1. verify the local endpoint;
   2. copy the full setup block to the clipboard;
   3. open Settings filtered to Cursor Models when supported;
   4. render the checklist with field-by-field copy controls.
-- [ ] In `src/ui/setupPanel.ts`, replace the current passive instruction block
+- [x] In `src/ui/setupPanel.ts`, replace the current passive instruction block
   with a compact checklist:
   - Verify local endpoint
   - Copy API key
@@ -281,8 +278,8 @@ tests wait until Phase 3, where stale state exists.
   - Open Cursor Models settings
   - Add custom model in Cursor
   - Select model in Cursor picker
-- [ ] Keep visible one-click copy buttons after the primary action runs.
-- [ ] Use this exact Cursor field mapping in UI copy:
+- [x] Keep visible one-click copy buttons after the primary action runs.
+- [x] Use this exact Cursor field mapping in UI copy:
   - OpenAI API Key: `local-motion`
   - Override OpenAI Base URL: active Local Motion `baseUrl`
   - Custom Model / Model Name: active Local Motion `modelId`
@@ -291,6 +288,17 @@ tests wait until Phase 3, where stale state exists.
 endpoint, copies the full setup block, opens settings or reports why it could
 not, and leaves copy controls visible. Cursor setup is not called complete until
 manual QA confirms the model appears in Cursor's native picker.
+
+**Phase 2 evidence:**
+
+- `npm run check`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 12 tests.
+- Phase audit: local fallback used. No Cursor private-state writes, no UI
+  scripting, no new dependency, and `prepareCursor` does not copy/open when
+  endpoint verification fails.
+- Manual Extension Development Host proof is deferred to Phase 4 because it
+  requires a running GGUF model and real Cursor picker interaction.
 
 ---
 
@@ -514,6 +522,6 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 - [x] Phase 0 complete
 - [x] Phase 1 complete
-- [ ] Phase 2 complete
+- [x] Phase 2 complete
 - [ ] Phase 3 complete
 - [ ] Phase 4 complete

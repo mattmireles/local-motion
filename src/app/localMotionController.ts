@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { cursorSetupViewModel } from "../cursor/cursorIntegration";
+import {
+  cursorSetupValue,
+  cursorSetupViewModel,
+  type CursorSetupValueKey,
+  type CursorSetupViewModel
+} from "../cursor/cursorIntegration";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
@@ -13,6 +18,15 @@ import type { CandidateQuantization, InstalledModel } from "../types";
 import { formatBytes, modelDisplayName, safeId } from "../util/format";
 
 export const DEFAULT_MODEL_REPO = "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF";
+
+interface CursorActionResult {
+  ok: boolean;
+  message: string;
+}
+
+interface CursorEndpointVerification extends CursorActionResult {
+  type: "cursorEndpointVerification";
+}
 
 export class LocalMotionController {
   constructor(
@@ -109,12 +123,43 @@ export class LocalMotionController {
     return { type: "runtime", runtime, cursorSetupViewModel: cursorSetupViewModel(runtime) };
   }
 
-  cursorSetup(): Record<string, unknown> {
-    const status = this.runtime.status();
-    if (!status.running) {
-      throw new Error("Start a local model before configuring Cursor.");
+  async prepareCursor(): Promise<Record<string, unknown>> {
+    const viewModel = this.currentCursorSetupViewModel();
+    const verification = await this.verifyCurrentCursorEndpoint(viewModel);
+    if (!verification.ok) {
+      return {
+        type: "cursorSetupPrepared",
+        viewModel,
+        verification,
+        copy: { ok: false, message: "Setup block was not copied because endpoint verification failed." },
+        settings: { ok: false, message: "Cursor settings were not opened because endpoint verification failed." }
+      };
     }
-    return { type: "cursorSetupViewModel", cursorSetupViewModel: cursorSetupViewModel(status) };
+    const copy = await this.writeCursorValue("setupBlock", viewModel);
+    const settings = await this.openCursorSettings();
+    return { type: "cursorSetupPrepared", viewModel, verification, copy, settings };
+  }
+
+  async copyCursorValue(key: CursorSetupValueKey): Promise<Record<string, unknown>> {
+    const result = await this.writeCursorValue(key, this.currentCursorSetupViewModel());
+    return { type: "cursorCopyResult", key, ...result };
+  }
+
+  async verifyCursorEndpoint(): Promise<CursorEndpointVerification> {
+    return this.verifyCurrentCursorEndpoint(this.currentCursorSetupViewModel());
+  }
+
+  async openCursorSettings(): Promise<Record<string, unknown>> {
+    try {
+      await vscode.commands.executeCommand("workbench.action.openSettings", "Cursor Models");
+      return { type: "cursorSettingsOpened", ok: true, message: "Opened Settings filtered to Cursor Models." };
+    } catch (error) {
+      return {
+        type: "cursorSettingsOpened",
+        ok: false,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   defaultRepo(): string {
@@ -155,5 +200,80 @@ export class LocalMotionController {
         );
       }
     );
+  }
+
+  private currentCursorSetupViewModel(): CursorSetupViewModel {
+    return cursorSetupViewModel(this.runtime.status());
+  }
+
+  private async writeCursorValue(key: CursorSetupValueKey, viewModel: CursorSetupViewModel): Promise<CursorActionResult> {
+    if (!viewModel.isRunning && key !== "apiKey") {
+      return { ok: false, message: "Start a local model before copying Cursor setup values." };
+    }
+    try {
+      await vscode.env.clipboard.writeText(cursorSetupValue(viewModel, key));
+      return { ok: true, message: copyMessage(key) };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private async verifyCurrentCursorEndpoint(viewModel: CursorSetupViewModel): Promise<CursorEndpointVerification> {
+    if (!viewModel.isRunning) {
+      return { type: "cursorEndpointVerification", ok: false, message: "Start a local model before verifying Cursor setup." };
+    }
+
+    try {
+      const response = await fetch(`${viewModel.baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${viewModel.apiKey}` }
+      });
+      if (!response.ok) {
+        return {
+          type: "cursorEndpointVerification",
+          ok: false,
+          message: `Local Motion endpoint returned HTTP ${response.status}. Copy API key "${viewModel.apiKey}" and verify the model is still running.`
+        };
+      }
+
+      const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+      const modelIds = Array.isArray(payload.data)
+        ? payload.data.map((model) => model.id).filter((id): id is string => typeof id === "string")
+        : [];
+      if (!modelIds.includes(viewModel.modelId)) {
+        return {
+          type: "cursorEndpointVerification",
+          ok: false,
+          message: `Local Motion endpoint is running, but model "${viewModel.modelId}" was not listed.`
+        };
+      }
+
+      return {
+        type: "cursorEndpointVerification",
+        ok: true,
+        message: `Verified ${viewModel.modelId} at ${viewModel.baseUrl}.`
+      };
+    } catch (error) {
+      return {
+        type: "cursorEndpointVerification",
+        ok: false,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+}
+
+function copyMessage(key: CursorSetupValueKey): string {
+  switch (key) {
+    case "apiKey":
+      return "Copied API key.";
+    case "baseUrl":
+      return "Copied Base URL.";
+    case "modelId":
+      return "Copied model ID.";
+    case "setupBlock":
+      return "Copied full Cursor setup block.";
   }
 }

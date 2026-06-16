@@ -8,6 +8,7 @@ interface SetupMessage {
   query?: string;
   repoId?: string;
   candidate?: CandidateQuantization;
+  key?: "apiKey" | "baseUrl" | "modelId" | "setupBlock";
 }
 
 export class SetupPanel {
@@ -64,11 +65,20 @@ export class SetupPanel {
         case "stop":
           await this.post(await this.controller.stop());
           break;
-        case "cursorSetup":
-          await this.post(this.controller.cursorSetup());
+        case "prepareCursor":
+          await this.post(await this.controller.prepareCursor());
+          break;
+        case "copyCursorValue":
+          if (!message.key) {
+            throw new Error("No Cursor setup value was selected.");
+          }
+          await this.post(await this.controller.copyCursorValue(message.key));
+          break;
+        case "verifyCursorEndpoint":
+          await this.post(await this.controller.verifyCursorEndpoint());
           break;
         case "openCursorSettings":
-          await vscode.commands.executeCommand("workbench.action.openSettings", "Cursor Models");
+          await this.post(await this.controller.openCursorSettings());
           break;
       }
     } catch (error) {
@@ -259,6 +269,38 @@ export class SetupPanel {
       margin-top: 14px;
       flex-wrap: wrap;
     }
+    .setup-grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .setup-field {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .setup-field code {
+      overflow-wrap: anywhere;
+      color: var(--vscode-editor-foreground);
+    }
+    .setup-field .meta {
+      grid-column: 2 / 4;
+      margin: 0;
+    }
+    .checklist {
+      margin: 14px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .notice {
+      margin-top: 10px;
+      color: var(--muted);
+    }
     pre {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -271,6 +313,7 @@ export class SetupPanel {
       main { padding: 18px; }
       header, .row { flex-direction: column; align-items: stretch; }
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .setup-field { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -308,10 +351,11 @@ export class SetupPanel {
       <h2>Cursor</h2>
       <p id="runtime">Start a model to get the Cursor base URL and model ID.</p>
       <div class="actions">
-        <button id="cursorSetup" class="secondary">Prepare Cursor</button>
+        <button id="prepareCursor">Prepare Cursor</button>
+        <button id="verifyCursor" class="secondary">Verify Endpoint</button>
         <button id="cursorSettings" class="secondary">Open Settings</button>
       </div>
-      <pre id="cursorInstructions"></pre>
+      <div id="cursorSetupFields" class="setup-grid"></div>
     </section>
 
     <section>
@@ -322,7 +366,7 @@ export class SetupPanel {
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const state = { selected: undefined, installed: undefined, runtime: undefined };
+    const state = { selected: undefined, installed: undefined, runtime: undefined, copyResults: {} };
     const els = {
       repo: document.getElementById('repo'),
       machine: document.getElementById('machine'),
@@ -331,7 +375,7 @@ export class SetupPanel {
       install: document.getElementById('install'),
       status: document.getElementById('status'),
       runtime: document.getElementById('runtime'),
-      cursorInstructions: document.getElementById('cursorInstructions')
+      cursorSetupFields: document.getElementById('cursorSetupFields')
     };
 
     document.getElementById('load').addEventListener('click', () => {
@@ -346,8 +390,11 @@ export class SetupPanel {
     document.getElementById('stop').addEventListener('click', () => {
       vscode.postMessage({ command: 'stop' });
     });
-    document.getElementById('cursorSetup').addEventListener('click', () => {
-      vscode.postMessage({ command: 'cursorSetup' });
+    document.getElementById('prepareCursor').addEventListener('click', () => {
+      vscode.postMessage({ command: 'prepareCursor' });
+    });
+    document.getElementById('verifyCursor').addEventListener('click', () => {
+      vscode.postMessage({ command: 'verifyCursorEndpoint' });
     });
     document.getElementById('cursorSettings').addEventListener('click', () => {
       vscode.postMessage({ command: 'openCursorSettings' });
@@ -384,6 +431,29 @@ export class SetupPanel {
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         renderCursorSetup();
         setStatus(message.cursorSetupViewModel.statusMessage);
+      }
+      if (message.type === 'cursorSetupPrepared') {
+        state.cursorSetupViewModel = message.viewModel;
+        state.verification = message.verification;
+        state.settings = message.settings;
+        if (message.copy) state.copyResults.setupBlock = message.copy;
+        renderCursorSetup();
+        setStatus([message.verification && message.verification.message, message.copy && message.copy.message, message.settings && message.settings.message].filter(Boolean).join(' '));
+      }
+      if (message.type === 'cursorCopyResult') {
+        state.copyResults[message.key] = { ok: message.ok, message: message.message };
+        renderCursorSetup();
+        setStatus(message.message);
+      }
+      if (message.type === 'cursorEndpointVerification') {
+        state.verification = message;
+        renderCursorSetup();
+        setStatus(message.message);
+      }
+      if (message.type === 'cursorSettingsOpened') {
+        state.settings = message;
+        renderCursorSetup();
+        setStatus(message.message);
       }
       if (message.type === 'error') setStatus(message.message);
     });
@@ -453,11 +523,41 @@ export class SetupPanel {
     function renderCursorSetup() {
       const viewModel = state.cursorSetupViewModel;
       if (!viewModel) {
-        els.cursorInstructions.textContent = '';
+        els.cursorSetupFields.textContent = '';
+        document.getElementById('prepareCursor').disabled = true;
+        document.getElementById('verifyCursor').disabled = true;
         return;
       }
-      const steps = (viewModel.steps || []).map((line, index) => (index + 1) + '. ' + line).join('\\n');
-      els.cursorInstructions.textContent = viewModel.setupBlock + (steps ? '\\n\\n' + steps : '');
+      document.getElementById('prepareCursor').disabled = !viewModel.isRunning;
+      document.getElementById('verifyCursor').disabled = !viewModel.isRunning;
+      const fields = [
+        ['apiKey', 'OpenAI API Key', viewModel.apiKey],
+        ['baseUrl', 'Override OpenAI Base URL', viewModel.baseUrl],
+        ['modelId', 'Custom Model / Model Name', viewModel.modelId],
+        ['setupBlock', 'Full setup block', viewModel.setupBlock]
+      ];
+      const statusLines = [
+        state.verification && state.verification.message,
+        state.settings && state.settings.message
+      ].filter(Boolean);
+      els.cursorSetupFields.innerHTML =
+        fields.map(([key, label, value]) => {
+          const result = state.copyResults[key];
+          const disabled = key !== 'apiKey' && !viewModel.isRunning;
+          return '<div class="setup-field">' +
+            '<span>' + esc(label) + '</span>' +
+            '<code>' + esc(value || 'Start a model first') + '</code>' +
+            '<button class="copy" data-key="' + esc(key) + '"' + (disabled ? ' disabled' : '') + '>Copy</button>' +
+            (result ? '<span class="meta">' + esc(result.message) + '</span>' : '') +
+            '</div>';
+        }).join('') +
+        '<ol class="checklist">' + (viewModel.steps || []).map(step => '<li>' + esc(step) + '</li>').join('') + '</ol>' +
+        (statusLines.length ? '<p class="notice">' + esc(statusLines.join(' ')) + '</p>' : '');
+      for (const button of els.cursorSetupFields.querySelectorAll('button.copy')) {
+        button.addEventListener('click', () => {
+          vscode.postMessage({ command: 'copyCursorValue', key: button.dataset.key });
+        });
+      }
     }
 
     function setStatus(text) {
