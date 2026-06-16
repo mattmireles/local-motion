@@ -12,6 +12,7 @@ export class LlamaServerManager {
   // Serialize starts so concurrent callers cannot double-spawn llama-server.
   private startQueue: Promise<void> = Promise.resolve();
   private startAbort: AbortController | undefined;
+  private sessionGeneration = 0;
 
   constructor(private readonly output: vscode.OutputChannel) {}
 
@@ -43,8 +44,9 @@ export class LlamaServerManager {
       release = resolve;
     });
     await previous;
+    const requestedGeneration = this.sessionGeneration;
     try {
-      return await this.startLocked(model, llamaServerPath, token);
+      return await this.startLocked(model, llamaServerPath, token, requestedGeneration);
     } finally {
       release();
     }
@@ -53,12 +55,13 @@ export class LlamaServerManager {
   private async startLocked(
     model: InstalledModel,
     llamaServerPath: string,
-    token?: vscode.CancellationToken
+    token: vscode.CancellationToken | undefined,
+    requestedGeneration: number
   ): Promise<RuntimeSession> {
     const startAbort = new AbortController();
     this.startAbort = startAbort;
     const abortIfNeeded = (): void => {
-      if (startAbort.signal.aborted || token?.isCancellationRequested) {
+      if (requestedGeneration !== this.sessionGeneration || startAbort.signal.aborted || token?.isCancellationRequested) {
         throw new Error("Local model startup was cancelled.");
       }
     };
@@ -144,6 +147,7 @@ export class LlamaServerManager {
   }
 
   async stop(): Promise<void> {
+    this.sessionGeneration += 1;
     this.startAbort?.abort();
     await this.startQueue;
     await this.stopLocked();

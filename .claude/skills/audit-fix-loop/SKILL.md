@@ -148,7 +148,8 @@ Run only after Part A passes in the same cycle. Reuse the shared CLI helpers in
 `scripts/lib/cross-agent-review.sh` (or `scripts/run-cross-agent-audit.sh`
 when the scope prompt file already exists). Do not add a plan-specific script.
 
-1. **Write a scope prompt file** under `tmp/cross-agent-audits/` with:
+1. **Write a scope prompt file** under `tmp/cross-agent-audits/` (create the
+   directory with `mkdir -p` on clean checkouts) with:
    - audit scope (paths, git slice, feature name)
    - internal grades from the passing Part A pass
    - mechanical check summary

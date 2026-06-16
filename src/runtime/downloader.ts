@@ -5,6 +5,8 @@ import { pipeline } from "node:stream/promises";
 import type { GgufFile } from "../types";
 import { safeId } from "../util/format";
 
+const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+
 export interface DownloadProgress {
   downloadedBytes: number;
   totalBytes?: number;
@@ -34,7 +36,10 @@ export async function downloadGguf(
     headers.range = `bytes=${existingBytes}-`;
   }
 
-  const response = await fetch(file.downloadUrl, { headers, signal });
+  const response = await fetch(file.downloadUrl, {
+    headers,
+    signal: mergeAbortSignals(signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS))
+  });
   if (!response.ok && response.status !== 206) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }
@@ -134,4 +139,15 @@ async function assertSha256(targetPath: string, expectedSha256: string): Promise
     await fs.promises.rm(targetPath, { force: true });
     throw new Error(`Downloaded SHA-256 mismatch for ${targetPath}. Removed file; retry the download.`);
   }
+}
+
+function mergeAbortSignals(userSignal: AbortSignal, timeoutSignal: AbortSignal): AbortSignal {
+  if (userSignal.aborted || timeoutSignal.aborted) {
+    return AbortSignal.abort(userSignal.reason ?? timeoutSignal.reason);
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort(userSignal.reason ?? timeoutSignal.reason);
+  userSignal.addEventListener("abort", abort, { once: true });
+  timeoutSignal.addEventListener("abort", abort, { once: true });
+  return controller.signal;
 }

@@ -21,7 +21,7 @@ export async function waitForHealth(
     }
   };
 
-  const childExit = options?.child ? waitForChildExit(options.child) : undefined;
+  const childFailure = options?.child ? waitForChildFailure(options.child) : undefined;
 
   while (Date.now() < deadline) {
     throwIfCancelled();
@@ -29,13 +29,13 @@ export async function waitForHealth(
       const healthCheck = fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(5000)
       });
-      const response = childExit ? await Promise.race([healthCheck, childExit]) : await healthCheck;
+      const response = childFailure ? await Promise.race([healthCheck, childFailure]) : await healthCheck;
       if (response.ok) {
         return;
       }
       lastError = `${response.status} ${response.statusText}`;
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("llama-server exited before")) {
+      if (error instanceof Error && error.message.startsWith("llama-server")) {
         throw error;
       }
       lastError = error instanceof Error ? error.message : String(error);
@@ -46,21 +46,32 @@ export async function waitForHealth(
   throw new Error(`llama-server did not become healthy: ${lastError}`);
 }
 
-function waitForChildExit(child: childProcess.ChildProcess): Promise<never> {
+export function childFailureMessage(code: number | null, signal: NodeJS.Signals | null): string {
+  return `llama-server failed before becoming healthy: code=${code ?? "none"} signal=${signal ?? "none"}`;
+}
+
+export function waitForChildFailure(child: childProcess.ChildProcess): Promise<never> {
   if (child.exitCode !== null || child.signalCode) {
-    return Promise.reject(
-      new Error(
-        `llama-server exited before becoming healthy: code=${child.exitCode ?? "none"} signal=${child.signalCode ?? "none"}`
-      )
-    );
+    return Promise.reject(new Error(childFailureMessage(child.exitCode, child.signalCode)));
   }
+
   return new Promise((_, reject) => {
-    child.once("exit", (code, signal) => {
-      reject(
-        new Error(
-          `llama-server exited before becoming healthy: code=${code ?? "none"} signal=${signal ?? "none"}`
-        )
-      );
+    let settled = false;
+    const fail = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error(childFailureMessage(code, signal)));
+    };
+    child.once("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error(`llama-server failed to spawn: ${error.message}`));
     });
+    child.once("exit", fail);
+    child.once("close", fail);
   });
 }

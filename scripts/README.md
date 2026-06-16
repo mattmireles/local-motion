@@ -38,7 +38,7 @@ EOF
 
 ## Artifacts
 
-Each run creates a timestamped directory with:
+Each run creates a unique directory (via `mktemp -d`) with:
 
 - `prompt.txt` — prompt sent to both agents
 - `codex-*.md` / `claude-*.md` — final reviewer text

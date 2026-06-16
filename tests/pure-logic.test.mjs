@@ -12,6 +12,7 @@ import {
   sanitizeExternalChatRequest,
   sanitizeStop
 } from "../out/runtime/openAiChat.js";
+import { childFailureMessage } from "../out/runtime/llamaHealth.js";
 import { filterForwardHeaders } from "../out/runtime/openAiProxy.js";
 
 test("extracts GGUF quantization names from common filenames", () => {
@@ -79,6 +80,11 @@ test("sanitizes stop sequences from external chat payloads", () => {
   assert.deepEqual(sanitizeStop(["END", "STOP"]), ["END", "STOP"]);
   assert.equal(sanitizeStop({ bad: true }), undefined);
   assert.equal(sanitizeStop(null), undefined);
+});
+
+test("formats llama-server child failure messages", () => {
+  assert.equal(childFailureMessage(1, null), "llama-server failed before becoming healthy: code=1 signal=none");
+  assert.equal(childFailureMessage(null, "SIGTERM"), "llama-server failed before becoming healthy: code=none signal=SIGTERM");
 });
 
 test("filters hop-by-hop headers from proxy health forwarding", () => {
