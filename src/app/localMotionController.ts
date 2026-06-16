@@ -5,7 +5,7 @@ import {
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
-  lastPreparedCursorSetup,
+  lastCopiedCursorSetup,
   shouldPersistCursorSetupCopy,
   type CursorSetupValueKey,
   type CursorSetupViewModel
@@ -21,6 +21,7 @@ import type { CandidateQuantization, InstalledModel } from "../types";
 import { formatBytes, modelDisplayName, safeId } from "../util/format";
 
 export const DEFAULT_MODEL_REPO = "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF";
+const CURSOR_ENDPOINT_VERIFY_TIMEOUT_MS = 5_000;
 
 interface CursorActionResult {
   ok: boolean;
@@ -147,8 +148,8 @@ export class LocalMotionController {
     const copy = await this.writeCursorValue("setupBlock", viewModel);
     let freshness = this.currentCursorSetupFreshness(viewModel);
     if (copy.ok) {
-      const preparedAt = new Date().toISOString();
-      await this.state.setLastPreparedCursorSetup(lastPreparedCursorSetup(viewModel, "prepareCursor", preparedAt, preparedAt));
+      const copiedAt = new Date().toISOString();
+      await this.state.setLastCopiedCursorSetup(lastCopiedCursorSetup(viewModel, "prepareCursor", copiedAt, copiedAt));
       freshness = this.currentCursorSetupFreshness(viewModel);
     }
     const settings = await this.openCursorSettings();
@@ -160,7 +161,7 @@ export class LocalMotionController {
     const result = await this.writeCursorValue(key, viewModel);
     let freshness = this.currentCursorSetupFreshness(viewModel);
     if (shouldPersistCursorSetupCopy(key, result.ok)) {
-      await this.state.setLastPreparedCursorSetup(lastPreparedCursorSetup(viewModel, "copySetupBlock", new Date().toISOString()));
+      await this.state.setLastCopiedCursorSetup(lastCopiedCursorSetup(viewModel, "copySetupBlock", new Date().toISOString()));
       freshness = this.currentCursorSetupFreshness(viewModel);
     }
     return { type: "cursorCopyResult", key, cursorSetupFreshness: freshness, ...result };
@@ -171,6 +172,9 @@ export class LocalMotionController {
   }
 
   async openCursorSettings(): Promise<Record<string, unknown>> {
+    if (!this.currentCursorSetupViewModel().isRunning) {
+      return { type: "cursorSettingsOpened", ok: false, message: "Start a local model before opening Cursor Models settings." };
+    }
     try {
       await vscode.commands.executeCommand("workbench.action.openSettings", "Cursor Models");
       return { type: "cursorSettingsOpened", ok: true, message: "Opened Settings filtered to Cursor Models." };
@@ -239,7 +243,7 @@ export class LocalMotionController {
   }
 
   private currentCursorSetupFreshness(viewModel: CursorSetupViewModel): ReturnType<typeof cursorSetupFreshness> {
-    return cursorSetupFreshness(viewModel, this.state.lastPreparedCursorSetup());
+    return cursorSetupFreshness(viewModel, this.state.lastCopiedCursorSetup());
   }
 
   private async writeCursorValue(key: CursorSetupValueKey, viewModel: CursorSetupViewModel): Promise<CursorActionResult> {
@@ -262,9 +266,12 @@ export class LocalMotionController {
       return { type: "cursorEndpointVerification", ok: false, message: "Start a local model before verifying Cursor setup." };
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CURSOR_ENDPOINT_VERIFY_TIMEOUT_MS);
     try {
       const response = await fetch(`${viewModel.baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${viewModel.apiKey}` }
+        headers: { Authorization: `Bearer ${viewModel.apiKey}` },
+        signal: controller.signal
       });
       if (!response.ok) {
         return {
@@ -292,11 +299,20 @@ export class LocalMotionController {
         message: `Verified ${viewModel.modelId} at ${viewModel.baseUrl}.`
       };
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return {
+          type: "cursorEndpointVerification",
+          ok: false,
+          message: "Local Motion endpoint did not respond within 5 seconds."
+        };
+      }
       return {
         type: "cursorEndpointVerification",
         ok: false,
         message: error instanceof Error ? error.message : String(error)
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

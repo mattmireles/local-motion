@@ -75,11 +75,11 @@ export interface RuntimeStatus {
   message: string;
 }
 
-export interface LastPreparedCursorSetup {
+export interface LastCopiedCursorSetup {
   baseUrl: string;
   modelId: string;
   apiKeyLabel: "local-motion";
-  preparedAt: string;
+  copiedAt: string;
   trigger: "prepareCursor" | "copySetupBlock";
   endpointVerifiedAt?: string;
 }

@@ -308,16 +308,16 @@ manual QA confirms the model appears in Cursor's native picker.
 
 **Tasks:**
 
-- [x] Persist the last prepared Cursor setup in Local Motion global state:
-  `localMotion.lastPreparedCursorSetup`.
+- [x] Persist the last copied Cursor setup values in Local Motion global state:
+  `localMotion.lastCopiedCursorSetup`.
 - [x] Use this storage shape:
 
   ```typescript
-  interface LastPreparedCursorSetup {
+  interface LastCopiedCursorSetup {
     baseUrl: string;
     modelId: string;
     apiKeyLabel: "local-motion";
-    preparedAt: string;
+    copiedAt: string;
     trigger: "prepareCursor" | "copySetupBlock";
     endpointVerifiedAt?: string;
   }
@@ -326,7 +326,7 @@ manual QA confirms the model appears in Cursor's native picker.
 - [x] Update this state only when `prepareCursor` succeeds or when the user
   explicitly copies the full setup block. Do not update it for copying a single
   field.
-- [x] Compare last prepared Base URL/model ID with current `RuntimeStatus`.
+- [x] Compare last copied Base URL/model ID with current `RuntimeStatus`.
 - [x] Show a clear stale warning when the model is stopped or the Base URL
   changes.
 - [x] Add a `Copy Updated Setup` action that copies the full replacement block.
@@ -341,10 +341,11 @@ confirms a stop/start cycle produces a stale warning.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 17 tests.
+- `npm test`: passed, 19 tests.
 - Phase audit: local fallback used. The stale-state path persists only
-  `localMotion.lastPreparedCursorSetup`, compares it with active runtime status,
-  and marks stopped or changed dynamic-port setup stale.
+  `localMotion.lastCopiedCursorSetup`, compares it with active runtime status,
+  distinguishes copied values from verified endpoint setup, and marks stopped or
+  changed dynamic-port setup values stale.
 - Manual stop/start UI proof is deferred to Phase 4 with the rest of real Cursor
   picker QA.
 
@@ -378,12 +379,16 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 17 tests.
+- `npm test`: passed, 19 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
-- `npm run package`: passed, producing
+- `npm run package`: passed, compiling from `src/**` through
+  `vscode:prepublish` before `vsce package` and producing
   `/Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`.
 - `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`:
   passed.
+- Hardcore audit fix loop: fixed endpoint verification timeout, transient
+  webview action state resets, runtime copy-key validation, copied-vs-verified
+  setup wording, and package compile-before-VSIX reproducibility.
 - Manual Cursor model-picker QA: Not testable in this non-interactive run. The
   machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
   existing Local Motion GGUF storage was found and Cursor CLI does not expose a
@@ -415,22 +420,22 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 ### Hard Requirements (Must Pass)
 
-- [ ] No Cursor private-state writes exist in source.
-- [ ] `Prepare Cursor` provides one-click copy controls for API key, Base URL,
+- [x] No Cursor private-state writes exist in source.
+- [x] `Prepare Cursor` provides one-click copy controls for API key, Base URL,
   model ID, and full setup block.
-- [ ] `Prepare Cursor` opens Cursor Models settings.
-- [ ] Local endpoint verification succeeds before opening/copying assisted
+- [x] `Prepare Cursor` opens Cursor Models settings.
+- [x] Local endpoint verification succeeds before opening/copying assisted
   setup values; Cursor picker readiness is verified only by manual Cursor QA.
-- [ ] Stale dynamic-port state is visible after stop/restart.
-- [ ] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
+- [x] Stale dynamic-port state is visible after stop/restart.
+- [x] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
 
 ### Definition of Done
 
-- [ ] All tests passing.
-- [ ] VSIX packaged and installed locally.
-- [ ] README updated with truthful Cursor feature coverage.
+- [x] All tests passing.
+- [x] VSIX packaged and installed locally.
+- [x] README updated with truthful Cursor feature coverage.
 - [ ] Manual Cursor model-picker QA completed.
-- [ ] No new dependency added unless a later phase explicitly justifies it.
+- [x] No new dependency added unless a later phase explicitly justifies it.
 
 ## Open Questions
 
@@ -528,7 +533,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 | `src/cursor/cursorIntegration.ts` | Modify | Replace raw instructions with typed setup view model. |
 | `src/app/localMotionController.ts` | Modify | Add copy, verify, and stale-state actions. |
 | `src/ui/setupPanel.ts` | Modify | Add checklist UI and copy controls. |
-| `src/state.ts` | Modify | Persist last prepared Cursor setup. |
+| `src/state.ts` | Modify | Persist last copied Cursor setup values. |
 | `src/runtime/openAiProxy.ts` | Modify | No expected change unless verification needs a small helper endpoint; `/v1/models` already exists. |
 | `tests/pure-logic.test.mjs` | Modify | Add setup view model and stale-state tests. |
 | `README.md` | Modify | Document assisted setup and Cursor surface limits. |

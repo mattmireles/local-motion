@@ -4,7 +4,8 @@ import {
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
-  lastPreparedCursorSetup,
+  isCursorSetupValueKey,
+  lastCopiedCursorSetup,
   shouldPersistCursorSetupCopy
 } from "../out/cursor/cursorIntegration.js";
 import {
@@ -156,17 +157,32 @@ test("Cursor setup view model does not invent endpoint values when stopped", () 
   assert.ok(viewModel.steps.some((line) => line.includes("Start a local model")));
 });
 
-test("Cursor setup freshness recognizes unchanged prepared endpoint", () => {
+test("Cursor setup freshness recognizes unchanged copied endpoint", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
     modelId: "local-motion-test",
     message: "running"
   });
-  const lastPrepared = lastPreparedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:00.000Z");
-  const freshness = cursorSetupFreshness(viewModel, lastPrepared);
+  const lastCopied = lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:00.000Z");
+  const freshness = cursorSetupFreshness(viewModel, lastCopied);
   assert.equal(freshness.status, "current");
-  assert.equal(freshness.lastPrepared, lastPrepared);
+  assert.equal(freshness.lastCopied, lastCopied);
+});
+
+test("Cursor setup freshness distinguishes copied values from verified setup", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    modelId: "local-motion-test",
+    message: "running"
+  });
+  const freshness = cursorSetupFreshness(
+    viewModel,
+    lastCopiedCursorSetup(viewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
+  );
+  assert.equal(freshness.status, "copied");
+  assert.ok(freshness.message.includes("not verified"));
 });
 
 test("Cursor setup freshness marks changed endpoint stale", () => {
@@ -184,14 +200,14 @@ test("Cursor setup freshness marks changed endpoint stale", () => {
   });
   const freshness = cursorSetupFreshness(
     currentViewModel,
-    lastPreparedCursorSetup(oldViewModel, "prepareCursor", "2026-06-16T00:00:00.000Z")
+    lastCopiedCursorSetup(oldViewModel, "prepareCursor", "2026-06-16T00:00:00.000Z")
   );
   assert.equal(freshness.status, "stale");
   assert.ok(freshness.message.includes("50000"));
   assert.ok(freshness.message.includes("50001"));
 });
 
-test("Cursor setup freshness marks stopped model stale after preparation", () => {
+test("Cursor setup freshness marks stopped model stale after copied setup values", () => {
   const runningViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
@@ -204,13 +220,13 @@ test("Cursor setup freshness marks stopped model stale after preparation", () =>
   });
   const freshness = cursorSetupFreshness(
     stoppedViewModel,
-    lastPreparedCursorSetup(runningViewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
+    lastCopiedCursorSetup(runningViewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
   );
   assert.equal(freshness.status, "stale");
   assert.ok(freshness.message.includes("no Local Motion model is running"));
 });
 
-test("last prepared Cursor setup records trigger and verification timestamp", () => {
+test("last copied Cursor setup records trigger and verification timestamp", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
@@ -218,22 +234,31 @@ test("last prepared Cursor setup records trigger and verification timestamp", ()
     message: "running"
   });
   assert.deepEqual(
-    lastPreparedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z"),
+    lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z"),
     {
       baseUrl: "http://127.0.0.1:50000/v1",
       modelId: "local-motion-test",
       apiKeyLabel: "local-motion",
-      preparedAt: "2026-06-16T00:00:00.000Z",
+      copiedAt: "2026-06-16T00:00:00.000Z",
       trigger: "prepareCursor",
       endpointVerifiedAt: "2026-06-16T00:00:01.000Z"
     }
   );
 });
 
-test("only successful full setup-block copies update last prepared Cursor setup", () => {
+test("only successful full setup-block copies update last copied Cursor setup", () => {
   assert.equal(shouldPersistCursorSetupCopy("setupBlock", true), true);
   assert.equal(shouldPersistCursorSetupCopy("setupBlock", false), false);
   assert.equal(shouldPersistCursorSetupCopy("baseUrl", true), false);
   assert.equal(shouldPersistCursorSetupCopy("apiKey", true), false);
   assert.equal(shouldPersistCursorSetupCopy("modelId", true), false);
+});
+
+test("validates Cursor setup copy keys at runtime", () => {
+  assert.equal(isCursorSetupValueKey("apiKey"), true);
+  assert.equal(isCursorSetupValueKey("baseUrl"), true);
+  assert.equal(isCursorSetupValueKey("modelId"), true);
+  assert.equal(isCursorSetupValueKey("setupBlock"), true);
+  assert.equal(isCursorSetupValueKey("bad"), false);
+  assert.equal(isCursorSetupValueKey(undefined), false);
 });

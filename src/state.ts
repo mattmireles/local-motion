@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import type { InstalledModel, LastPreparedCursorSetup } from "./types";
+import type { InstalledModel, LastCopiedCursorSetup } from "./types";
 
 const INSTALLED_MODEL_KEY = "localMotion.installedModel";
-const LAST_PREPARED_CURSOR_SETUP_KEY = "localMotion.lastPreparedCursorSetup";
+const LAST_COPIED_CURSOR_SETUP_KEY = "localMotion.lastCopiedCursorSetup";
 
 export class LocalMotionState {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -15,11 +15,11 @@ export class LocalMotionState {
     await this.context.globalState.update(INSTALLED_MODEL_KEY, model);
   }
 
-  lastPreparedCursorSetup(): LastPreparedCursorSetup | undefined {
-    return this.context.globalState.get<LastPreparedCursorSetup>(LAST_PREPARED_CURSOR_SETUP_KEY);
+  lastCopiedCursorSetup(): LastCopiedCursorSetup | undefined {
+    return this.context.globalState.get<LastCopiedCursorSetup>(LAST_COPIED_CURSOR_SETUP_KEY);
   }
 
-  async setLastPreparedCursorSetup(setup: LastPreparedCursorSetup): Promise<void> {
-    await this.context.globalState.update(LAST_PREPARED_CURSOR_SETUP_KEY, setup);
+  async setLastCopiedCursorSetup(setup: LastCopiedCursorSetup): Promise<void> {
+    await this.context.globalState.update(LAST_COPIED_CURSOR_SETUP_KEY, setup);
   }
 }

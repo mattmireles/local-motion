@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
+import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
 import type { CandidateQuantization } from "../types";
 
 interface SetupMessage {
@@ -69,7 +70,7 @@ export class SetupPanel {
           await this.post(await this.controller.prepareCursor());
           break;
         case "copyCursorValue":
-          if (!message.key) {
+          if (!isCursorSetupValueKey(message.key)) {
             throw new Error("No Cursor setup value was selected.");
           }
           await this.post(await this.controller.copyCursorValue(message.key));
@@ -406,6 +407,7 @@ export class SetupPanel {
         els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
+        resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderMachine(message.machine);
@@ -418,6 +420,7 @@ export class SetupPanel {
       if (message.type === 'installed') {
         state.installed = message.installed;
         state.runtime = message.runtime;
+        resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderRuntime();
@@ -425,6 +428,7 @@ export class SetupPanel {
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;
+        resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderRuntime();
@@ -531,10 +535,12 @@ export class SetupPanel {
         els.cursorSetupFields.textContent = '';
         document.getElementById('prepareCursor').disabled = true;
         document.getElementById('verifyCursor').disabled = true;
+        document.getElementById('cursorSettings').disabled = true;
         return;
       }
       document.getElementById('prepareCursor').disabled = !viewModel.isRunning;
       document.getElementById('verifyCursor').disabled = !viewModel.isRunning;
+      document.getElementById('cursorSettings').disabled = !viewModel.isRunning;
       const fields = [
         ['apiKey', 'OpenAI API Key', viewModel.apiKey],
         ['baseUrl', 'Override OpenAI Base URL', viewModel.baseUrl],
@@ -542,7 +548,7 @@ export class SetupPanel {
         ['setupBlock', 'Full setup block', viewModel.setupBlock]
       ];
       const statusLines = [
-        state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale' && state.cursorSetupFreshness.message,
+        state.cursorSetupFreshness && state.cursorSetupFreshness.status !== 'not-copied' && state.cursorSetupFreshness.message,
         state.verification && state.verification.message,
         state.settings && state.settings.message
       ].filter(Boolean);
@@ -566,6 +572,20 @@ export class SetupPanel {
         button.addEventListener('click', () => {
           vscode.postMessage({ command: 'copyCursorValue', key: button.dataset.key });
         });
+      }
+    }
+
+    function resetCursorActionStateIfEndpointChanged(nextViewModel) {
+      const currentViewModel = state.cursorSetupViewModel;
+      if (!currentViewModel || !nextViewModel) return;
+      if (
+        currentViewModel.baseUrl !== nextViewModel.baseUrl ||
+        currentViewModel.modelId !== nextViewModel.modelId ||
+        currentViewModel.isRunning !== nextViewModel.isRunning
+      ) {
+        state.verification = undefined;
+        state.settings = undefined;
+        state.copyResults = {};
       }
     }
 

@@ -1,4 +1,4 @@
-import type { LastPreparedCursorSetup, RuntimeStatus } from "../types";
+import type { LastCopiedCursorSetup, RuntimeStatus } from "../types";
 import { LOCAL_MOTION_API_KEY } from "../runtime/openAiChat";
 
 export interface CursorSetupViewModel {
@@ -14,9 +14,13 @@ export interface CursorSetupViewModel {
 export type CursorSetupValueKey = "apiKey" | "baseUrl" | "modelId" | "setupBlock";
 
 export interface CursorSetupFreshness {
-  status: "not-prepared" | "current" | "stale";
+  status: "not-copied" | "copied" | "current" | "stale";
   message: string;
-  lastPrepared?: LastPreparedCursorSetup;
+  lastCopied?: LastCopiedCursorSetup;
+}
+
+export function isCursorSetupValueKey(value: unknown): value is CursorSetupValueKey {
+  return value === "apiKey" || value === "baseUrl" || value === "modelId" || value === "setupBlock";
 }
 
 export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewModel {
@@ -73,23 +77,24 @@ export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSet
     case "setupBlock":
       return viewModel.setupBlock;
   }
+  throw new Error("Unknown Cursor setup value.");
 }
 
 export function shouldPersistCursorSetupCopy(key: CursorSetupValueKey, ok: boolean): boolean {
   return ok && key === "setupBlock";
 }
 
-export function lastPreparedCursorSetup(
+export function lastCopiedCursorSetup(
   viewModel: CursorSetupViewModel,
-  trigger: LastPreparedCursorSetup["trigger"],
-  preparedAt: string,
+  trigger: LastCopiedCursorSetup["trigger"],
+  copiedAt: string,
   endpointVerifiedAt?: string
-): LastPreparedCursorSetup {
+): LastCopiedCursorSetup {
   return {
     baseUrl: viewModel.baseUrl,
     modelId: viewModel.modelId,
     apiKeyLabel: "local-motion",
-    preparedAt,
+    copiedAt,
     trigger,
     endpointVerifiedAt
   };
@@ -97,34 +102,42 @@ export function lastPreparedCursorSetup(
 
 export function cursorSetupFreshness(
   viewModel: CursorSetupViewModel,
-  lastPrepared: LastPreparedCursorSetup | undefined
+  lastCopied: LastCopiedCursorSetup | undefined
 ): CursorSetupFreshness {
-  if (!lastPrepared) {
+  if (!lastCopied) {
     return {
-      status: "not-prepared",
-      message: "Cursor has not been prepared for this Local Motion session."
+      status: "not-copied",
+      message: "Cursor setup values have not been copied for this Local Motion session."
     };
   }
 
   if (!viewModel.isRunning) {
     return {
       status: "stale",
-      message: `Cursor was last prepared for ${lastPrepared.modelId} at ${lastPrepared.baseUrl}, but no Local Motion model is running.`,
-      lastPrepared
+      message: `Cursor setup values were last copied for ${lastCopied.modelId} at ${lastCopied.baseUrl}, but no Local Motion model is running.`,
+      lastCopied
     };
   }
 
-  if (lastPrepared.baseUrl !== viewModel.baseUrl || lastPrepared.modelId !== viewModel.modelId) {
+  if (lastCopied.baseUrl !== viewModel.baseUrl || lastCopied.modelId !== viewModel.modelId) {
     return {
       status: "stale",
-      message: `Cursor setup may be stale. Last prepared ${lastPrepared.modelId} at ${lastPrepared.baseUrl}; current setup is ${viewModel.modelId} at ${viewModel.baseUrl}.`,
-      lastPrepared
+      message: `Cursor setup values may be stale. Last copied ${lastCopied.modelId} at ${lastCopied.baseUrl}; current setup is ${viewModel.modelId} at ${viewModel.baseUrl}.`,
+      lastCopied
+    };
+  }
+
+  if (!lastCopied.endpointVerifiedAt) {
+    return {
+      status: "copied",
+      message: `Cursor setup values were copied for ${viewModel.modelId} at ${viewModel.baseUrl}, but the endpoint was not verified during that copy.`,
+      lastCopied
     };
   }
 
   return {
     status: "current",
-    message: `Cursor setup matches ${viewModel.modelId} at ${viewModel.baseUrl}.`,
-    lastPrepared
+    message: `Cursor setup values were verified for ${viewModel.modelId} at ${viewModel.baseUrl}.`,
+    lastCopied
   };
 }
