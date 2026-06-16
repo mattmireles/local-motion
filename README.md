@@ -14,7 +14,8 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 - Starts a local OpenAI-compatible proxy for Cursor on a stable preferred
   localhost port.
 - Offers `Automagical Setup`: reuses an installed model when available, otherwise
-  selects a compatible default quantization, installs it, starts it, verifies the
+  selects a compatible quantization from the configured default repository or
+  built-in smaller fallback repositories, installs it, starts it, verifies the
   local endpoint, copies the Cursor setup block, and opens Settings filtered
   toward Models. If `llama-server` is missing and Homebrew is available,
   Automagical Setup installs `llama.cpp` as part of the same run.
@@ -45,7 +46,8 @@ is stopped, the command starts it first; then it verifies the endpoint, copies
 the setup block, and opens Cursor Models settings.
 
 First-start Automagical Setup may install `llama.cpp` through Homebrew and
-download the default compatible GGUF model. Disable
+download the first compatible GGUF model from the configured default repository
+or built-in fallback repositories. Disable
 `localMotion.runAutomagicalSetupOnFirstStartup` to make first startup open the
 setup panel without starting the install.
 

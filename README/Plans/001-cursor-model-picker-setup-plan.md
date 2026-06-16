@@ -62,9 +62,10 @@ turns the manual fallback into a polished assisted setup flow with verification.
 ## Scope and Constraints
 
 - **Scope:** `src/ui/setupPanel.ts`, `src/app/localMotionController.ts`,
-  `src/cursor/cursorIntegration.ts`, `src/runtime/openAiProxy.ts`,
-  `src/state.ts`, `tests/pure-logic.test.mjs`, `README.md`, and package
-  metadata if commands or tests change.
+  `src/cursor/cursorIntegration.ts`, `src/cursor/cursorSetupWorkflow.ts`,
+  `src/models/defaultRepos.ts`, `src/runtime/openAiProxy.ts`, `src/state.ts`,
+  `tests/pure-logic.test.mjs`, `README.md`, and package metadata if commands or
+  tests change.
 - **Architecture reference:** [Local Native LLM Extensions for VS Code and Cursor on macOS](../Guides/vs-code-local-ai-hugging-face-guide.md) — sidecar patterns, VS Code LM API, GGUF download, and Cursor integration research (with Local Motion guardrails called out).
 - **Constraints:** Cursor 3.7.36 reports VS Code `1.105.1` on this machine, so
   the extension must remain installable with `engines.vscode: ^1.105.0`.
@@ -381,7 +382,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 40 tests.
+- `npm test`: passed, 44 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -399,9 +400,10 @@ can select the Local Motion model through the native model picker.
   from the VSIX.
 - Automagical setup: setup UI now exposes one primary `Automagical Setup` action
   that reuses a size-valid installed model file when available; otherwise it
-  selects the lowest-memory compatible default quantization, installs/runs it,
-  then prepares Cursor. The selector and installed-model reuse predicate are
-  covered by regression tests.
+  tries the configured default model repository first, then built-in smaller GGUF
+  fallback repositories, selects the lowest-memory compatible quantization,
+  installs/runs it, then prepares Cursor. The selector, fallback repository
+  ordering, and installed-model reuse predicate are covered by regression tests.
 - Dependency setup: when `allowInstall` is true and `llama-server` is missing,
   Local Motion now installs `llama.cpp` through Homebrew under progress without
   a second confirmation prompt. The user's explicit `Automagical Setup` or
@@ -498,6 +500,12 @@ can select the Local Motion model through the native model picker.
   `SetupPanel` now owns webview lifecycle and message routing only; the HTML
   document lives in `src/ui/setupPanelHtml.ts` so setup UI rendering changes no
   longer expand the controller/router module.
+  Cursor setup side effects now live in `src/cursor/cursorSetupWorkflow.ts`,
+  which owns endpoint verification, clipboard copy, settings opening, and
+  completion-state writes behind injectable host primitives. Guarded by
+  regression tests `Cursor setup workflow verifies, copies, opens settings, and
+  records completion` and `Cursor setup workflow does not copy or open settings
+  when endpoint verification fails`.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub

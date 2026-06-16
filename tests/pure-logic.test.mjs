@@ -11,12 +11,18 @@ import {
   shouldMarkAutomagicalSetupCompleted,
   shouldPersistCursorSetupCopy
 } from "../out/cursor/cursorIntegration.js";
+import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
 import {
   effectiveMemoryBudget,
   parameterCountFromText,
   quantizationFromFileName,
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
+import {
+  AUTOMAGICAL_MODEL_REPOS,
+  DEFAULT_MODEL_REPO,
+  automagicalModelRepos
+} from "../out/models/defaultRepos.js";
 import { canReuseInstalledModel } from "../out/models/installedModel.js";
 import { NO_INSTALLED_MODEL_MESSAGE } from "../out/provider/providerMessages.js";
 import {
@@ -120,6 +126,27 @@ test("does not select an incompatible quantization for automagical setup", () =>
   ]);
 
   assert.equal(selected, undefined);
+});
+
+test("automagical setup tries configured repo before built-in fallback repos", () => {
+  assert.deepEqual(
+    automagicalModelRepos("custom/model-GGUF").slice(0, 2),
+    ["custom/model-GGUF", DEFAULT_MODEL_REPO]
+  );
+  assert.equal(
+    automagicalModelRepos(` ${DEFAULT_MODEL_REPO} `).filter((repoId) => repoId === DEFAULT_MODEL_REPO).length,
+    1
+  );
+  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), true);
+  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), true);
+});
+
+test("automagical setup settings describe fallback repositories", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const properties = packageJson.contributes.configuration.properties;
+  assert.match(properties["localMotion.defaultModelRepo"].description, /tried first/);
+  assert.match(properties["localMotion.defaultModelRepo"].description, /fallback repositories/);
+  assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);
 });
 
 test("reuses an installed model only when its file is present and size-valid", () => {
@@ -430,6 +457,36 @@ test("automagical setup completion requires endpoint, clipboard, and settings su
   );
 });
 
+test("Cursor setup workflow verifies, copies, opens settings, and records completion", async () => {
+  const harness = cursorSetupWorkflowHarness();
+  const result = await harness.workflow.prepareCursorAndMarkCompleted();
+
+  assert.equal(result.verification.ok, true);
+  assert.equal(result.copy.ok, true);
+  assert.equal(result.settings.ok, true);
+  assert.equal(harness.requests[0].input, "http://127.0.0.1:50000/v1/models");
+  assert.equal(harness.requests[0].authorization, `Bearer ${LOCAL_MOTION_API_KEY}`);
+  assert.equal(harness.clipboardWrites.length, 1);
+  assert.ok(harness.clipboardWrites[0].includes("local-motion-test"));
+  assert.deepEqual(harness.openedSettings, ["Cursor Models"]);
+  assert.equal(harness.lastCopied?.endpointVerifiedAt, "2026-06-16T00:00:00.000Z");
+  assert.equal(harness.completion?.modelId, "local-motion-test");
+  assert.equal(harness.completion?.completedAt, "2026-06-16T00:00:01.000Z");
+});
+
+test("Cursor setup workflow does not copy or open settings when endpoint verification fails", async () => {
+  const harness = cursorSetupWorkflowHarness({ modelIds: ["other-model"] });
+  const result = await harness.workflow.prepareCursorAndMarkCompleted();
+
+  assert.equal(result.verification.ok, false);
+  assert.equal(result.copy.ok, false);
+  assert.equal(result.settings.ok, false);
+  assert.deepEqual(harness.clipboardWrites, []);
+  assert.deepEqual(harness.openedSettings, []);
+  assert.equal(harness.lastCopied, undefined);
+  assert.equal(harness.completion, undefined);
+});
+
 test("validates Cursor setup copy keys at runtime", () => {
   assert.equal(isCursorSetupValueKey("apiKey"), true);
   assert.equal(isCursorSetupValueKey("baseUrl"), true);
@@ -564,7 +621,7 @@ test("manual install and run prepares Cursor automatically", async () => {
   const panelHtmlSource = await readFile(new URL("../out/ui/setupPanelHtml.js", import.meta.url), "utf8");
 
   assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
-  assert.match(controllerSource, /const cursor = await this\.prepareCursorAndMarkCompleted\(\)/);
+  assert.match(controllerSource, /const cursor = await this\.cursorSetup\.prepareCursorAndMarkCompleted\(\)/);
   assert.match(controllerSource, /cursor\s*[,}]/);
   assert.match(panelHtmlSource, /message\.type === 'installed'/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
@@ -621,3 +678,61 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.match(description, /replacing the clipboard/);
   assert.equal(description.includes("prepare Cursor automatically"), false);
 });
+
+function cursorSetupWorkflowHarness(options = {}) {
+  const runtime = {
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    modelId: "local-motion-test",
+    message: "running"
+  };
+  const modelIds = options.modelIds ?? ["local-motion-test"];
+  const clipboardWrites = [];
+  const openedSettings = [];
+  const requests = [];
+  const timestamps = [
+    "2026-06-16T00:00:00.000Z",
+    "2026-06-16T00:00:01.000Z",
+    "2026-06-16T00:00:02.000Z"
+  ];
+  let lastCopied;
+  let completion;
+  const state = {
+    lastCopiedCursorSetup: () => lastCopied,
+    setLastCopiedCursorSetup: async (setup) => {
+      lastCopied = setup;
+    },
+    markAutomagicalSetupCompleted: async (value) => {
+      completion = value;
+    }
+  };
+  const host = {
+    writeClipboardText: async (value) => {
+      clipboardWrites.push(value);
+    },
+    openSettings: async (query) => {
+      openedSettings.push(query);
+    },
+    fetch: async (input, init) => {
+      requests.push({ input, authorization: init?.headers?.Authorization });
+      return new Response(JSON.stringify({ data: modelIds.map((id) => ({ id })) }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    },
+    now: () => timestamps.shift() ?? "2026-06-16T00:00:09.000Z"
+  };
+
+  return {
+    workflow: new CursorSetupWorkflow(state, () => runtime, host),
+    clipboardWrites,
+    openedSettings,
+    requests,
+    get lastCopied() {
+      return lastCopied;
+    },
+    get completion() {
+      return completion;
+    }
+  };
+}

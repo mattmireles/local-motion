@@ -98,7 +98,7 @@
         "localMotion.defaultModelRepo": {
           "type": "string",
           "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
-          "description": "Default Hugging Face GGUF repository shown in Local Motion setup."
+          "description": "Default Hugging Face GGUF repository shown in setup and tried first by Automagical Setup before built-in fallback repositories."
         },
         "localMotion.openSetupOnStartup": {
           "type": "boolean",
@@ -108,7 +108,7 @@
         "localMotion.runAutomagicalSetupOnFirstStartup": {
           "type": "boolean",
           "default": true,
-          "description": "Run Automagical Setup automatically once on first startup when no model has been installed. This may install llama.cpp and download the default compatible GGUF model."
+          "description": "Run Automagical Setup automatically once on first startup when no model has been installed. This may install llama.cpp and download the first compatible GGUF model from the default or fallback repositories."
         },
         "localMotion.resumeAutomagicalSetupOnStartup": {
           "type": "boolean",
