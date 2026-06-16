@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cursorInstructions } from "../out/cursor/cursorIntegration.js";
+import { cursorSetupViewModel } from "../out/cursor/cursorIntegration.js";
 import {
   effectiveMemoryBudget,
   parameterCountFromText,
@@ -116,14 +116,32 @@ test("requires the documented local bearer token", () => {
   assert.equal(isAuthorizedBearer(undefined), false);
 });
 
-test("Cursor instructions use the active runtime endpoint", () => {
-  const instructions = cursorInstructions({
+test("Cursor setup view model uses the active runtime endpoint", () => {
+  const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
     modelId: "local-motion-test",
     message: "running"
   });
-  assert.ok(instructions.some((line) => line.includes("http://127.0.0.1:50000/v1")));
-  assert.ok(instructions.some((line) => line.includes("local-motion-test")));
-  assert.ok(instructions.some((line) => line.includes(LOCAL_MOTION_API_KEY)));
+  assert.equal(viewModel.isRunning, true);
+  assert.equal(viewModel.baseUrl, "http://127.0.0.1:50000/v1");
+  assert.equal(viewModel.apiKey, LOCAL_MOTION_API_KEY);
+  assert.equal(viewModel.modelId, "local-motion-test");
+  assert.ok(viewModel.setupBlock.includes("http://127.0.0.1:50000/v1"));
+  assert.ok(viewModel.setupBlock.includes("local-motion-test"));
+  assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_API_KEY));
+  assert.ok(viewModel.steps.some((line) => line.includes("http://127.0.0.1:50000/v1")));
+});
+
+test("Cursor setup view model does not invent endpoint values when stopped", () => {
+  const viewModel = cursorSetupViewModel({
+    running: false,
+    message: "No model is running."
+  });
+  assert.equal(viewModel.isRunning, false);
+  assert.equal(viewModel.baseUrl, "");
+  assert.equal(viewModel.modelId, "");
+  assert.equal(viewModel.apiKey, LOCAL_MOTION_API_KEY);
+  assert.equal(viewModel.statusMessage, "No model is running.");
+  assert.ok(viewModel.steps.some((line) => line.includes("Start a local model")));
 });

@@ -359,7 +359,7 @@ export class SetupPanel {
         els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
-        state.cursorInstructions = message.cursorInstructions;
+        state.cursorSetupViewModel = message.cursorSetupViewModel;
         renderMachine(message.machine);
         renderRuntime();
         setStatus('Ready.');
@@ -370,18 +370,20 @@ export class SetupPanel {
       if (message.type === 'installed') {
         state.installed = message.installed;
         state.runtime = message.runtime;
-        state.cursorInstructions = message.cursorInstructions;
+        state.cursorSetupViewModel = message.cursorSetupViewModel;
         renderRuntime();
         setStatus('Running ' + message.installed.displayName);
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;
+        state.cursorSetupViewModel = message.cursorSetupViewModel;
         renderRuntime();
         setStatus(message.runtime.message);
       }
-      if (message.type === 'cursorSetupResult') {
-        renderCursorInstructions(message.result.instructions);
-        setStatus(message.result.message);
+      if (message.type === 'cursorSetupViewModel') {
+        state.cursorSetupViewModel = message.cursorSetupViewModel;
+        renderCursorSetup();
+        setStatus(message.cursorSetupViewModel.statusMessage);
       }
       if (message.type === 'error') setStatus(message.message);
     });
@@ -441,15 +443,21 @@ export class SetupPanel {
       const runtime = state.runtime || {};
       if (!runtime.running) {
         els.runtime.textContent = runtime.message || 'No model is running.';
-        renderCursorInstructions(state.cursorInstructions || []);
+        renderCursorSetup();
         return;
       }
       els.runtime.textContent = runtime.message + ' Base URL: ' + runtime.baseUrl + ' Model ID: ' + runtime.modelId;
-      renderCursorInstructions(state.cursorInstructions || []);
+      renderCursorSetup();
     }
 
-    function renderCursorInstructions(lines) {
-      els.cursorInstructions.textContent = (lines || []).map((line, index) => (index + 1) + '. ' + line).join('\\n');
+    function renderCursorSetup() {
+      const viewModel = state.cursorSetupViewModel;
+      if (!viewModel) {
+        els.cursorInstructions.textContent = '';
+        return;
+      }
+      const steps = (viewModel.steps || []).map((line, index) => (index + 1) + '. ' + line).join('\\n');
+      els.cursorInstructions.textContent = viewModel.setupBlock + (steps ? '\\n\\n' + steps : '');
     }
 
     function setStatus(text) {

@@ -210,7 +210,7 @@ truthfully distinguishes Local Motion setup from Cursor feature coverage.
 
 **Tasks:**
 
-- [ ] Replace raw instruction arrays in `src/cursor/cursorIntegration.ts` with a
+- [x] Replace raw instruction arrays in `src/cursor/cursorIntegration.ts` with a
   typed `CursorSetupViewModel`:
   - `baseUrl`
   - `apiKey`
@@ -219,14 +219,23 @@ truthfully distinguishes Local Motion setup from Cursor feature coverage.
   - `setupBlock`
   - `steps`
   - `statusMessage`
-- [ ] Generate the view model only from `RuntimeStatus`.
-- [ ] Update `src/app/localMotionController.ts` to send
+- [x] Generate the view model only from `RuntimeStatus`.
+- [x] Update `src/app/localMotionController.ts` to send
   `cursorSetupViewModel` instead of unstructured instructions.
-- [ ] Extend `tests/pure-logic.test.mjs` for running and stopped states.
+- [x] Extend `tests/pure-logic.test.mjs` for running and stopped states.
 
 **Verification:** `npm test` proves model ID, Base URL, API key, setup block,
 and stopped-state guidance are generated from runtime state only. Stale endpoint
 tests wait until Phase 3, where stale state exists.
+
+**Phase 1 evidence:**
+
+- `npm run check`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 12 tests.
+- Phase audit: local `phase-audit` fallback used because the cross-agent helper
+  hung during Phase 0; no P0/P1 findings. Cosmetic `cursorInstructions` DOM
+  naming remains until the Phase 2 checklist replaces that block.
 
 ---
 
@@ -504,7 +513,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 ## Progress Tracker
 
 - [x] Phase 0 complete
-- [ ] Phase 1 complete
+- [x] Phase 1 complete
 - [ ] Phase 2 complete
 - [ ] Phase 3 complete
 - [ ] Phase 4 complete

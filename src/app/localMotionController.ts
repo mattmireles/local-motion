@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { cursorInstructions, cursorSetupResult } from "../cursor/cursorIntegration";
+import { cursorSetupViewModel } from "../cursor/cursorIntegration";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
@@ -43,7 +43,7 @@ export class LocalMotionController {
       },
       installed: this.state.installedModel(),
       runtime,
-      cursorInstructions: cursorInstructions(runtime)
+      cursorSetupViewModel: cursorSetupViewModel(runtime)
     };
   }
 
@@ -98,7 +98,7 @@ export class LocalMotionController {
       type: "installed",
       installed,
       runtime,
-      cursorInstructions: cursorInstructions(runtime)
+      cursorSetupViewModel: cursorSetupViewModel(runtime)
     };
   }
 
@@ -106,7 +106,7 @@ export class LocalMotionController {
     await this.runtime.stop();
     this.provider.refresh();
     const runtime = this.runtime.status();
-    return { type: "runtime", runtime, cursorInstructions: cursorInstructions(runtime) };
+    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetupViewModel(runtime) };
   }
 
   cursorSetup(): Record<string, unknown> {
@@ -114,7 +114,7 @@ export class LocalMotionController {
     if (!status.running) {
       throw new Error("Start a local model before configuring Cursor.");
     }
-    return { type: "cursorSetupResult", result: cursorSetupResult(status) };
+    return { type: "cursorSetupViewModel", cursorSetupViewModel: cursorSetupViewModel(status) };
   }
 
   defaultRepo(): string {
