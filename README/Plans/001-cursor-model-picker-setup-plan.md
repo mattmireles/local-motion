@@ -429,6 +429,11 @@ can select the Local Motion model through the native model picker.
   model when the stored GGUF is missing or invalid. Guarded by regression test
   `resumes automagical setup only after a completed setup with an installed
   model`.
+- Completion state: `localMotion.automagicalSetupCompleted` is written only
+  when endpoint verification, setup-block copy, and Cursor settings opening all
+  succeed. Guarded by regression test
+  `automagical setup completion requires endpoint, clipboard, and settings
+  success`.
 - Command-palette setup progress: the command now runs through
   `SetupPanel.runAutomagicalSetup`, so the command-palette path and setup-panel
   button share one progress/completion pipeline instead of running the controller

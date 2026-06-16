@@ -19,6 +19,12 @@ export interface CursorSetupFreshness {
   lastCopied?: LastCopiedCursorSetup;
 }
 
+export interface AutomagicalCompletionSignals {
+  endpointVerified: boolean;
+  setupCopied: boolean;
+  settingsOpened: boolean;
+}
+
 export function isCursorSetupValueKey(value: unknown): value is CursorSetupValueKey {
   return value === "apiKey" || value === "baseUrl" || value === "modelId" || value === "setupBlock";
 }
@@ -82,6 +88,10 @@ export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSet
 
 export function shouldPersistCursorSetupCopy(key: CursorSetupValueKey, ok: boolean): boolean {
   return ok && key === "setupBlock";
+}
+
+export function shouldMarkAutomagicalSetupCompleted(signals: AutomagicalCompletionSignals): boolean {
+  return signals.endpointVerified && signals.setupCopied && signals.settingsOpened;
 }
 
 export function lastCopiedCursorSetup(

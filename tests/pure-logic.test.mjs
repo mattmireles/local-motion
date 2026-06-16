@@ -7,6 +7,7 @@ import {
   cursorSetupViewModel,
   isCursorSetupValueKey,
   lastCopiedCursorSetup,
+  shouldMarkAutomagicalSetupCompleted,
   shouldPersistCursorSetupCopy
 } from "../out/cursor/cursorIntegration.js";
 import {
@@ -329,6 +330,25 @@ test("only successful full setup-block copies update last copied Cursor setup", 
   assert.equal(shouldPersistCursorSetupCopy("baseUrl", true), false);
   assert.equal(shouldPersistCursorSetupCopy("apiKey", true), false);
   assert.equal(shouldPersistCursorSetupCopy("modelId", true), false);
+});
+
+test("automagical setup completion requires endpoint, clipboard, and settings success", () => {
+  assert.equal(
+    shouldMarkAutomagicalSetupCompleted({ endpointVerified: true, setupCopied: true, settingsOpened: true }),
+    true
+  );
+  assert.equal(
+    shouldMarkAutomagicalSetupCompleted({ endpointVerified: false, setupCopied: true, settingsOpened: true }),
+    false
+  );
+  assert.equal(
+    shouldMarkAutomagicalSetupCompleted({ endpointVerified: true, setupCopied: false, settingsOpened: true }),
+    false
+  );
+  assert.equal(
+    shouldMarkAutomagicalSetupCompleted({ endpointVerified: true, setupCopied: true, settingsOpened: false }),
+    false
+  );
 });
 
 test("validates Cursor setup copy keys at runtime", () => {

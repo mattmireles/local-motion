@@ -6,6 +6,7 @@ import {
   cursorSetupValue,
   cursorSetupViewModel,
   lastCopiedCursorSetup,
+  shouldMarkAutomagicalSetupCompleted,
   shouldPersistCursorSetupCopy,
   type CursorSetupValueKey,
   type CursorSetupViewModel
@@ -145,7 +146,11 @@ export class LocalMotionController {
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
     const cursor = await this.prepareCursor();
-    if (cursor.verification.ok && cursor.copy.ok) {
+    if (shouldMarkAutomagicalSetupCompleted({
+      endpointVerified: cursor.verification.ok,
+      setupCopied: cursor.copy.ok,
+      settingsOpened: cursor.settings.ok
+    })) {
       await this.state.markAutomagicalSetupCompleted();
     }
     const runtime = this.runtime.status();
