@@ -1,43 +1,86 @@
 # Local Motion
 
-Local Motion is a VS Code and Cursor extension for installing and running GGUF coding models as local OpenAI-compatible models on macOS.
+Local Motion installs and runs GGUF coding models locally on macOS, then exposes
+them to VS Code and Cursor through local OpenAI-compatible endpoints.
 
-The intended path is:
+## What It Does
 
-1. Profile the Mac: architecture, unified memory, available memory, and model storage disk space.
-2. Search Hugging Face GGUF repositories or paste a repo such as `yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF`.
-3. Pick a quantization marked `Compatible` or `Not compatible` for this machine.
-4. Download the model with resumable streaming.
-5. Ensure `llama-server` is available, start it on a dynamic localhost port, and register the running model with the native VS Code Language Model API.
-6. Start a tiny local OpenAI-compatible proxy that sanitizes Cursor request payloads before forwarding them to `llama-server`.
-7. For Cursor, show the exact proxy base URL and model name. Cursor does not expose a stable extension API for changing its native model picker, so Local Motion gives precise settings instead of mutating Cursor's private state.
+- Profiles your Mac for architecture, memory, and model storage space.
+- Searches Hugging Face GGUF repositories and ranks compatible quantizations.
+- Downloads model files with resumable streaming.
+- Finds or installs `llama-server` through Homebrew.
+- Starts `llama-server` on `127.0.0.1` with a dynamic port.
+- Registers the running model with the VS Code Language Model API.
+- Starts a local OpenAI-compatible proxy for Cursor.
+- Offers `Automagical Setup`: selects a compatible default quantization, installs
+  it, starts it, verifies the local endpoint, copies the Cursor setup block, and
+  opens Settings filtered toward Models.
 
-See [Local Native LLM Extensions for VS Code and Cursor on macOS](README/Guides/vs-code-local-ai-hugging-face-guide.md) for the full sidecar architecture field guide (VS Code LM API, GGUF downloads, `llama-server`, Cursor integration patterns, and debugging).
+## Requirements
+
+- macOS.
+- VS Code or Cursor compatible with VS Code `^1.105.0`.
+- Homebrew, when `llama-server` is not already available on `PATH`,
+  `/opt/homebrew/bin`, or `/usr/local/bin`.
+- Enough free disk and unified memory for the selected GGUF file.
+
+## Setup
+
+1. Install Local Motion.
+2. Run `Local Motion: Open Setup`.
+3. Click `Automagical Setup`.
+
+For manual control:
+
+1. Load a Hugging Face GGUF repository.
+2. Pick a quantization marked `Compatible`.
+3. Click `Install and Run`.
+4. For Cursor, click `Prepare Cursor`.
+
+`Prepare Cursor` verifies `GET /v1/models` on the local proxy with
+`Authorization: Bearer local-motion`, copies the full setup block, opens Cursor
+settings filtered toward Models, and leaves one-click copy controls visible for:
+
+- OpenAI API Key: `local-motion`
+- Override OpenAI Base URL: the active Local Motion Base URL
+- Custom Model / Model Name: the active Local Motion model ID
+- Full setup block
 
 ## Cursor Coverage
 
-Local Motion prepares Cursor's custom OpenAI-compatible model settings by showing
-the active local Base URL, the required `local-motion` API key, and the model ID.
+Cursor does not expose a stable extension API for mutating its native model
+picker or private settings. Local Motion deliberately does not write Cursor
+SQLite databases, secure storage, `settings.json`, or other private application
+state.
+
 Cursor's OpenAI Base URL override is global in Cursor settings and may not apply
-to every Cursor surface. Treat the setup as proven for the specific Cursor
-surface you manually test, such as `Cmd+L` chat, and do not assume Agent,
-Composer, Inline Edit, or Tab autocomplete use the local endpoint until verified.
+to every Cursor surface. Treat setup as proven only for the Cursor surface you
+manually test, such as `Cmd+L` chat. Do not assume Agent, Composer, Inline Edit,
+or Tab autocomplete use the local endpoint until verified in your Cursor build.
+
+If the Local Motion model stops or restarts on a new dynamic port, the setup
+panel marks previously copied Cursor values stale and offers `Copy Updated
+Setup`.
+
+## Privacy
+
+Local Motion binds its runtime services to `127.0.0.1`. Model files are stored in
+the extension global storage directory, outside the workspace. Cursor requests
+sent to the Local Motion proxy are sanitized before forwarding to
+`llama-server`.
 
 ## Development
 
 ```bash
 npm install
-npm run compile
+npm run check
+npm run lint
+npm test
+npm run package
 ```
 
-Open this folder in VS Code or Cursor, run the extension host, and execute `Local Motion: Open Setup`.
+Open this folder in VS Code or Cursor, run the Extension Development Host, and
+execute `Local Motion: Open Setup`.
 
-## Runtime
-
-Local Motion prefers an existing `llama-server` binary from PATH, `/opt/homebrew/bin`, or `/usr/local/bin`. If it is not present and Homebrew is installed, the setup flow can install `llama.cpp` with:
-
-```bash
-brew install llama.cpp
-```
-
-Downloaded models are stored under the extension global storage directory, outside the workspace.
+See [Local Native LLM Extensions for VS Code and Cursor on macOS](README/Guides/vs-code-local-ai-hugging-face-guide.md)
+for the sidecar architecture field guide.

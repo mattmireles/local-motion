@@ -341,7 +341,7 @@ confirms a stop/start cycle produces a stale warning.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 19 tests.
+- `npm test`: passed, 21 tests.
 - Phase audit: local fallback used. The stale-state path persists only
   `localMotion.lastCopiedCursorSetup`, compares it with active runtime status,
   distinguishes copied values from verified endpoint setup, and marks stopped or
@@ -389,6 +389,16 @@ can select the Local Motion model through the native model picker.
 - Hardcore audit fix loop: fixed endpoint verification timeout, transient
   webview action state resets, runtime copy-key validation, copied-vs-verified
   setup wording, and package compile-before-VSIX reproducibility.
+- Public extension readiness: packaged README now explains setup, requirements,
+  Cursor limitations, and privacy; manifest metadata points to the public origin
+  repository and issue tracker.
+- Automagical setup: setup UI now exposes one primary `Automagical Setup` action
+  that selects the lowest-memory compatible default quantization, installs/runs
+  it when needed, then prepares Cursor. The selector is covered by regression
+  tests for lowest-memory compatible choice and no-compatible-candidate failure.
+- Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
+  in this environment, and the Marketplace publisher ID `local-motion` still
+  needs authenticated ownership confirmation before `vsce publish`.
 - Manual Cursor model-picker QA: Not testable in this non-interactive run. The
   machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
   existing Local Motion GGUF storage was found and Cursor CLI does not expose a
@@ -428,6 +438,9 @@ exposes a stable custom-model API, create a separate plan before adding writes.
   setup values; Cursor picker readiness is verified only by manual Cursor QA.
 - [x] Stale dynamic-port state is visible after stop/restart.
 - [x] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
+- [x] `Automagical Setup` owns the default Local Motion path: select compatible
+  quantization, install/run model, verify endpoint, copy Cursor setup, and open
+  Cursor Models settings.
 
 ### Definition of Done
 

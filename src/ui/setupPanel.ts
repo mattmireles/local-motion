@@ -63,6 +63,9 @@ export class SetupPanel {
           }
           await this.installRun(message.candidate);
           break;
+        case "automagicalSetup":
+          await this.automagicalSetup();
+          break;
         case "stop":
           await this.post(await this.controller.stop());
           break;
@@ -97,6 +100,16 @@ export class SetupPanel {
 
   private async installRun(candidate: CandidateQuantization): Promise<void> {
     const payload = await this.controller.installRun(candidate, (progress) => {
+      void this.post({ type: "installProgress", progress });
+    });
+    if (payload) {
+      await this.post(payload);
+    }
+  }
+
+  private async automagicalSetup(): Promise<void> {
+    await this.post({ type: "automagicalSetupStarted" });
+    const payload = await this.controller.automagicalSetup((progress) => {
       void this.post({ type: "installProgress", progress });
     });
     if (payload) {
@@ -270,6 +283,10 @@ export class SetupPanel {
       margin-top: 14px;
       flex-wrap: wrap;
     }
+    .header-actions {
+      margin-top: 0;
+      justify-content: flex-end;
+    }
     .setup-grid {
       display: grid;
       gap: 8px;
@@ -325,7 +342,10 @@ export class SetupPanel {
         <h1>Local Motion</h1>
         <p>Install a compatible GGUF coding model and run it through a local OpenAI-compatible endpoint.</p>
       </div>
-      <button id="stop" class="secondary">Stop Model</button>
+      <div class="actions header-actions">
+        <button id="autoSetup">Automagical Setup</button>
+        <button id="stop" class="secondary">Stop Model</button>
+      </div>
     </header>
 
     <section>
@@ -388,6 +408,9 @@ export class SetupPanel {
     document.getElementById('install').addEventListener('click', () => {
       vscode.postMessage({ command: 'installRun', candidate: state.selected });
     });
+    document.getElementById('autoSetup').addEventListener('click', () => {
+      vscode.postMessage({ command: 'automagicalSetup' });
+    });
     document.getElementById('stop').addEventListener('click', () => {
       vscode.postMessage({ command: 'stop' });
     });
@@ -417,6 +440,11 @@ export class SetupPanel {
       if (message.type === 'searchResults') renderSearchResults(message.results);
       if (message.type === 'quantizations') renderQuantizations(message.quantizations);
       if (message.type === 'installProgress') setStatus('Downloading ' + Math.round(message.progress.percent || 0) + '%');
+      if (message.type === 'automagicalSetupStarted') {
+        document.getElementById('autoSetup').disabled = true;
+        document.getElementById('install').disabled = true;
+        setStatus('Selecting a compatible model, starting it, and preparing Cursor.');
+      }
       if (message.type === 'installed') {
         state.installed = message.installed;
         state.runtime = message.runtime;
@@ -433,6 +461,20 @@ export class SetupPanel {
         state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderRuntime();
         setStatus(message.runtime.message);
+      }
+      if (message.type === 'automagicalSetupComplete') {
+        state.installed = message.installed;
+        state.runtime = message.runtime;
+        resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
+        state.cursorSetupViewModel = message.cursorSetupViewModel;
+        state.cursorSetupFreshness = message.cursorSetupFreshness;
+        state.verification = message.cursor && message.cursor.verification;
+        state.settings = message.cursor && message.cursor.settings;
+        if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
+        document.getElementById('autoSetup').disabled = false;
+        document.getElementById('install').disabled = !state.selected;
+        renderRuntime();
+        setStatus([state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' '));
       }
       if (message.type === 'cursorSetupViewModel') {
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -465,6 +507,10 @@ export class SetupPanel {
         setStatus(message.message);
       }
       if (message.type === 'error') setStatus(message.message);
+      if (message.type === 'error') {
+        document.getElementById('autoSetup').disabled = false;
+        document.getElementById('install').disabled = !state.selected;
+      }
     });
 
     function renderMachine(machine) {
@@ -515,7 +561,7 @@ export class SetupPanel {
       });
       const firstCompatible = items.findIndex(item => item.compatibility.status === 'compatible');
       if (firstCompatible >= 0 && buttons[firstCompatible]) buttons[firstCompatible].click();
-      setStatus(items.length ? 'Pick a quantization, then install and run.' : 'No GGUF files found in this repository.');
+      setStatus(items.length ? 'Compatible quantization selected. Use Automagical Setup or install manually.' : 'No GGUF files found in this repository.');
     }
 
     function renderRuntime() {

@@ -10,6 +10,7 @@ import {
   type CursorSetupValueKey,
   type CursorSetupViewModel
 } from "../cursor/cursorIntegration";
+import { selectBestCompatibleQuantization } from "../models/compatibility";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
@@ -73,9 +74,7 @@ export class LocalMotionController {
   }
 
   async quantizations(repoId: string): Promise<Record<string, unknown>> {
-    const machine = await profileMachine(this.context.globalStorageUri.fsPath);
-    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
-    const quantizations = await listQuantizations(repoId.trim(), machine, contextTokens);
+    const quantizations = await this.defaultQuantizations(repoId.trim());
     return { type: "quantizations", repoId, quantizations };
   }
 
@@ -121,6 +120,32 @@ export class LocalMotionController {
       runtime,
       cursorSetupViewModel: cursorSetup.viewModel,
       cursorSetupFreshness: cursorSetup.freshness
+    };
+  }
+
+  async automagicalSetup(onProgress: (progress: DownloadProgress) => void): Promise<Record<string, unknown> | undefined> {
+    if (!this.runtime.status().running) {
+      const repoId = this.defaultRepo();
+      const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
+      if (!candidate) {
+        throw new Error(`No compatible GGUF quantization found in ${repoId} for this Mac.`);
+      }
+      const installed = await this.installRun(candidate, onProgress);
+      if (!installed) {
+        return undefined;
+      }
+    }
+
+    const cursor = await this.prepareCursor();
+    const runtime = this.runtime.status();
+    const cursorSetup = this.cursorSetupPayload(runtime);
+    return {
+      type: "automagicalSetupComplete",
+      installed: this.state.installedModel(),
+      runtime,
+      cursorSetupViewModel: cursorSetup.viewModel,
+      cursorSetupFreshness: cursorSetup.freshness,
+      cursor
     };
   }
 
@@ -225,6 +250,12 @@ export class LocalMotionController {
         );
       }
     );
+  }
+
+  private async defaultQuantizations(repoId: string): Promise<CandidateQuantization[]> {
+    const machine = await profileMachine(this.context.globalStorageUri.fsPath);
+    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
+    return listQuantizations(repoId, machine, contextTokens);
   }
 
   private currentCursorSetupViewModel(): CursorSetupViewModel {

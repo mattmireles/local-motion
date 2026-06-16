@@ -7,8 +7,20 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mm/local-motion.git"
+    "url": "https://github.com/mattmireles/local-motion.git"
   },
+  "homepage": "https://github.com/mattmireles/local-motion#readme",
+  "bugs": {
+    "url": "https://github.com/mattmireles/local-motion/issues"
+  },
+  "keywords": [
+    "local llm",
+    "gguf",
+    "llama.cpp",
+    "cursor",
+    "openai-compatible",
+    "macos"
+  ],
   "engines": {
     "vscode": "^1.105.0"
   },

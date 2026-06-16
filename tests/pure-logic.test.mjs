@@ -11,7 +11,8 @@ import {
 import {
   effectiveMemoryBudget,
   parameterCountFromText,
-  quantizationFromFileName
+  quantizationFromFileName,
+  selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
 import {
   isAuthorizedBearer,
@@ -51,6 +52,57 @@ test("uses available memory for compatibility budget", () => {
     }),
     8 * 1024 ** 3
   );
+});
+
+test("selects the lowest-memory compatible quantization for automagical setup", () => {
+  const base = {
+    repoId: "example/model-GGUF",
+    revision: "main",
+    downloadUrl: "https://example.invalid/model.gguf",
+    parameterCount: 7
+  };
+  const selected = selectBestCompatibleQuantization([
+    {
+      ...base,
+      fileName: "model-Q8_0.gguf",
+      quantization: "Q8_0",
+      sizeBytes: 8,
+      compatibility: { status: "compatible", requiredMemoryBytes: 8, requiredDiskBytes: 8, reasons: [] }
+    },
+    {
+      ...base,
+      fileName: "model-Q4_K_M.gguf",
+      quantization: "Q4_K_M",
+      sizeBytes: 4,
+      compatibility: { status: "compatible", requiredMemoryBytes: 4, requiredDiskBytes: 4, reasons: [] }
+    },
+    {
+      ...base,
+      fileName: "model-Q2_K.gguf",
+      quantization: "Q2_K",
+      sizeBytes: 2,
+      compatibility: { status: "not-compatible", requiredMemoryBytes: 2, requiredDiskBytes: 2, reasons: ["blocked"] }
+    }
+  ]);
+
+  assert.equal(selected?.fileName, "model-Q4_K_M.gguf");
+});
+
+test("does not select an incompatible quantization for automagical setup", () => {
+  const selected = selectBestCompatibleQuantization([
+    {
+      repoId: "example/model-GGUF",
+      fileName: "model-Q2_K.gguf",
+      revision: "main",
+      quantization: "Q2_K",
+      sizeBytes: 2,
+      parameterCount: 7,
+      downloadUrl: "https://example.invalid/model.gguf",
+      compatibility: { status: "not-compatible", requiredMemoryBytes: 2, requiredDiskBytes: 2, reasons: ["blocked"] }
+    }
+  ]);
+
+  assert.equal(selected, undefined);
 });
 
 test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {

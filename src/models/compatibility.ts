@@ -1,4 +1,4 @@
-import type { CompatibilityResult, GgufFile, MachineProfile } from "../types";
+import type { CandidateQuantization, CompatibilityResult, GgufFile, MachineProfile } from "../types";
 
 const GIB = 1024 ** 3;
 
@@ -47,6 +47,18 @@ export function classifyCompatibility(
 
 export function effectiveMemoryBudget(machine: MachineProfile): number {
   return Math.min(machine.recommendedModelMemoryBytes, machine.availableMemoryBytes);
+}
+
+export function selectBestCompatibleQuantization(candidates: CandidateQuantization[]): CandidateQuantization | undefined {
+  return candidates
+    .filter((candidate) => candidate.compatibility.status === "compatible")
+    .sort((a, b) => {
+      const memoryDelta = a.compatibility.requiredMemoryBytes - b.compatibility.requiredMemoryBytes;
+      if (memoryDelta !== 0) {
+        return memoryDelta;
+      }
+      return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
+    })[0];
 }
 
 export function quantizationFromFileName(fileName: string): string {
