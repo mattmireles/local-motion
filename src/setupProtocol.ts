@@ -81,6 +81,7 @@ export interface InstalledResponse extends CursorSetupPayload {
   type: "installed";
   installed: InstalledModel;
   runtime: RuntimeStatus;
+  cursor?: CursorSetupPreparedResponse;
 }
 
 export interface RuntimeResponse extends CursorSetupPayload {

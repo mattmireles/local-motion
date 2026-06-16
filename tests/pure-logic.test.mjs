@@ -557,6 +557,19 @@ test("prepare Cursor command is registered and starts a reusable installed model
   assert.match(controllerSource, /return this\.prepareCursor\(\)/);
 });
 
+test("manual install and run prepares Cursor automatically", async () => {
+  const protocolSource = await readFile(new URL("../src/setupProtocol.ts", import.meta.url), "utf8");
+  const controllerSource = await readFile(new URL("../src/app/localMotionController.ts", import.meta.url), "utf8");
+  const panelHtmlSource = await readFile(new URL("../out/ui/setupPanelHtml.js", import.meta.url), "utf8");
+
+  assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
+  assert.match(controllerSource, /const cursor = await this\.prepareCursorAndMarkCompleted\(\)/);
+  assert.match(controllerSource, /cursor\s*[,}]/);
+  assert.match(panelHtmlSource, /message\.type === 'installed'/);
+  assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
+  assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
+});
+
 test("startup resume does not install missing llama dependency", async () => {
   assert.equal(allowLlamaInstallForAutomagicalStart("explicit"), true);
   assert.equal(allowLlamaInstallForAutomagicalStart("startupResume"), false);

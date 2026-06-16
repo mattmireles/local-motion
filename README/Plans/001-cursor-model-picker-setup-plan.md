@@ -381,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 38 tests.
+- `npm test`: passed, 39 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -407,6 +407,10 @@ can select the Local Motion model through the native model picker.
   a second confirmation prompt. The user's explicit `Automagical Setup` or
   `Install and Run` action is the confirmation. Guarded by regression test
   `automagical dependency install has no second confirmation prompt`.
+- Manual install handoff: `Install and Run` now completes the same Cursor
+  endpoint verification, setup-block copy, and Cursor Models settings handoff as
+  Automagical Setup. Guarded by regression test
+  `manual install and run prepares Cursor automatically`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
 - Command-palette Cursor handoff: `Local Motion: Prepare Cursor` starts a
@@ -541,6 +545,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] `Automagical Setup` owns the default Local Motion path: reuse an installed
   model when possible; otherwise select compatible quantization, install/run
   model, verify endpoint, copy Cursor setup, and open Cursor Models settings.
+- [x] Manual `Install and Run` also verifies the endpoint, copies Cursor setup,
+  and opens Cursor Models settings after the selected model starts.
 - [x] Command palette exposes `Local Motion: Automagical Setup` as the shortest
   default setup path.
 - [x] Command palette exposes `Local Motion: Prepare Cursor` for one-command

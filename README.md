@@ -64,8 +64,8 @@ For manual control:
 
 1. Load a Hugging Face GGUF repository.
 2. Pick a quantization marked `Compatible`.
-3. Click `Install and Run`.
-4. For Cursor, click `Prepare Cursor`.
+3. Click `Install and Run`; Local Motion starts the model, verifies the Cursor
+   endpoint, copies the setup block, and opens Cursor Models settings.
 
 `Prepare Cursor` verifies `GET /v1/models` on the local proxy with
 `Authorization: Bearer local-motion`, copies the full setup block, opens Cursor

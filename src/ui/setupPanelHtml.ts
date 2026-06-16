@@ -334,8 +334,13 @@ export function setupPanelHtml(nonce: string): string {
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
+        state.verification = message.cursor && message.cursor.verification;
+        state.settings = message.cursor && message.cursor.settings;
+        if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
         renderRuntime();
-        setStatus('Running ' + message.installed.displayName);
+        setStatus(message.cursor
+          ? [state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' ')
+          : 'Running ' + message.installed.displayName);
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;

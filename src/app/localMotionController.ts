@@ -102,6 +102,7 @@ export class LocalMotionController {
     }
 
     const installed = await this.installAndStart(candidate, onProgress);
+    const cursor = await this.prepareCursorAndMarkCompleted();
 
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
@@ -110,7 +111,8 @@ export class LocalMotionController {
       installed,
       runtime,
       cursorSetupViewModel: cursorSetup.viewModel,
-      cursorSetupFreshness: cursorSetup.freshness
+      cursorSetupFreshness: cursorSetup.freshness,
+      cursor
     };
   }
 
@@ -162,16 +164,7 @@ export class LocalMotionController {
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
-    const cursor = await this.prepareCursor();
-    if (shouldMarkAutomagicalSetupCompleted({
-      endpointVerified: cursor.verification.ok,
-      setupCopied: cursor.copy.ok,
-      settingsOpened: cursor.settings.ok
-    }) && cursor.cursorSetupFreshness.lastCopied) {
-      await this.state.markAutomagicalSetupCompleted(
-        automagicalSetupCompletion(cursor.cursorSetupFreshness.lastCopied, new Date().toISOString())
-      );
-    }
+    const cursor = await this.prepareCursorAndMarkCompleted();
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
     return {
@@ -231,6 +224,21 @@ export class LocalMotionController {
     }
 
     return this.prepareCursor();
+  }
+
+  private async prepareCursorAndMarkCompleted(): Promise<CursorSetupPreparedResponse> {
+    const cursor = await this.prepareCursor();
+    if (shouldMarkAutomagicalSetupCompleted({
+      endpointVerified: cursor.verification.ok,
+      setupCopied: cursor.copy.ok,
+      settingsOpened: cursor.settings.ok
+    }) && cursor.cursorSetupFreshness.lastCopied) {
+      await this.state.markAutomagicalSetupCompleted(
+        automagicalSetupCompletion(cursor.cursorSetupFreshness.lastCopied, new Date().toISOString())
+      );
+    }
+
+    return cursor;
   }
 
   async copyCursorValue(key: CursorSetupValueKey): Promise<CursorCopyResult> {
