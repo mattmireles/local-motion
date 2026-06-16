@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Triggered when the user’s message includes the word **audit** (primary routing hook). Findings-first review of the Gist repo or a scoped slice (paths, diff, commits)—runs repo-appropriate mechanical signals, **reads and applies [`elon-musk`](../elon-musk/SKILL.md)** for first-principles systems judgment on architecture and complexity, optionally delegates readonly subagents by charter when scope or risk warrants it (**when in doubt, parallelize**), merges and dedupes findings, and assigns A–F grades for architecture, correctness risk, and complexity debt. Do not use when the user wants implementation fixes unless they explicitly ask to fix issues after the audit—for gating a plan phase, use phase-audit.
+description: Triggered when the user’s message includes the word **audit** (primary routing hook). Findings-first review of the Local Motion repo or a scoped slice (paths, diff, commits)—runs repo-appropriate mechanical signals, **reads and applies [`elon-musk`](../elon-musk/SKILL.md)** for first-principles systems judgment on architecture and complexity, optionally delegates readonly subagents by charter when scope or risk warrants it (**when in doubt, parallelize**), merges and dedupes findings, and assigns A–F grades for architecture, correctness risk, and complexity debt. Do not use when the user wants implementation fixes unless they explicitly ask to fix issues after the audit—for gating a plan phase, use phase-audit.
 ---
 
 # Audit
@@ -44,10 +44,10 @@ Establish **audit scope** before delegating:
 
 | Kind | How to bound |
 | --- | --- |
-| **Whole codebase** | Repo root; subagents apportion by package (`packages/*`, `scripts`) or by charter only. |
+| **Whole codebase** | Repo root; subagents apportion by `src/`, `tests/`, docs, or by charter only. |
 | **Paths** | User-provided globs or directories; all charters focus there. |
 | **Git delta** | User provides base (`main`, `origin/main`, tag) or “last N commits”; use `git diff`, `git log -n`, `git diff-tree --name-only`. |
-| **Single feature** | User names flows (e.g. Chrome extension lifecycle, reader/audio, `/try`, URL ingest, provider output, SFT export); map to directories and bindings from `README.md`, `packages/backend/wrangler.toml`, and relevant `README/Wiki/` pages. |
+| **Single feature** | User names flows (e.g. setup webview, machine profile, Hugging Face GGUF discovery, quantization compatibility, downloads, `llama-server` lifecycle, VS Code LM provider, Cursor OpenAI proxy); map to `README.md`, `README/Guides/`, `src/`, and `tests/`. |
 
 State the **chosen scope** in the final report header.
 
@@ -55,18 +55,17 @@ State the **chosen scope** in the final report header.
 
 From **repository root**, when the audited surface includes TypeScript/JavaScript:
 
-1. **`npm run typecheck`** — root TypeScript pass for backend and Chrome plugin.
-2. **`npm test`** when the audited surface touches executable logic or shared contracts.
-3. **`npm run verify:generated`** when generated protocol, reader, extension, or backend artifacts are in scope.
-4. **`npm run wiki-lint-check`** and **`npm run wiki-claims-check`** when docs/wiki/skill routing is in scope.
+1. **`npm run check`** — root TypeScript pass.
+2. **`npm run lint`** when audited source files are in scope.
+3. **`npm test`** when the audited surface touches executable logic or shared contracts.
+4. **`npm run package`** when release packaging, extension manifest, or VSIX output is in scope.
 
 Report failures as **P0 / Critical** findings with command output (summarize if
 huge). Do not “fix” unless the user later asks.
 
-Optional targeted checks: `npm -w packages/backend test -- ...`,
-`npm -w packages/chrome-plugin test -- ...`, or package-local checks when a
-focused slice is safer than the full suite. Failures are **P0** unless clearly
-unrelated to the audited scope.
+Optional targeted checks can run individual Node test files or focused manual
+Extension Development Host repros when a full suite is not the right proof.
+Failures are **P0** unless clearly unrelated to the audited scope.
 
 When subagents run, they should assume mechanical checks ran **once**; they
 focus on **review**, not on re-running gates unless a charter requires
@@ -109,10 +108,10 @@ Give each subagent (or each sequential charter pass):
 
 ### Charter 1 — Architecture & modules
 
-God modules; separation of concerns; public API surface and barrel files;
-boundary clarity (Chrome extension vs backend Worker vs Firebase Functions vs
-generated reader/protocol); fan-in choke points; misplaced orchestration vs
-domain logic. Flag files approaching
+God modules; separation of concerns; public API surface; boundary clarity
+(VS Code activation vs setup UI vs model discovery vs download vs `llama-server`
+lifecycle vs OpenAI proxy vs provider integration); fan-in choke points;
+misplaced orchestration vs domain logic. Flag files approaching
 **~1000 LOC** or cramming unrelated responsibilities (**repo norm:** well
 under 1k LOC per file).
 
@@ -121,13 +120,14 @@ under 1k LOC per file).
 Logic bugs; error paths; swallowed exceptions; off-by-one; impossible states;
 **async discipline** (missing `await`, fire-and-forget promises); idempotency and
 at-least-once handlers (queues, webhooks, cron); boundary conditions; timeouts
-and unbounded work on **Cloudflare Workers** (subrequest limits, CPU).
+and unbounded work in the extension host or local sidecar process.
 
 ### Charter 3 — Security, privacy, operational
 
 Authn/authz gaps; injection or unsafe URL/HTML construction; secrets or PII in
-logs; **env / `wrangler` binding** mismatches vs code assumptions; operational
-foot-guns (partial deploy, missing migrations) **when relevant to scope**.
+logs; unsafe shell/process execution; path traversal in downloads or model
+paths; operational foot-guns around local binaries, ports, cleanup, and
+packaging **when relevant to scope**.
 
 ### Charter 4 — Complexity, duplication, maintainability
 
@@ -172,9 +172,10 @@ holes—not only existing failing tests.
 - ...
 
 ## Mechanical checks
-- npm run typecheck: pass | fail | not run (summary)
+- npm run check: pass | fail | not run (summary)
+- npm run lint: pass | fail | not run (summary)
 - npm test / targeted tests: pass | fail | not run (summary)
-- generated/wiki checks when relevant: pass | fail | not run (summary)
+- npm run package when relevant: pass | fail | not run (summary)
 - tests (if run): ...
 
 ## Grades
@@ -228,7 +229,7 @@ holes—not only existing failing tests.
 - **`phase-audit`:** phase-scoped audit–fix loop to **A / A / A** plus plan checklist
   and phase rubric; commits when standalone; defers commit to **`execute-plan`**
   step **4d** when embedded.
-- **`git-commit`:** post-commit **non-blocking** **`npm run typecheck`** + **`HEAD`**
+- **`git-commit`:** post-commit **non-blocking** **`npm run check`** + **`HEAD`**
   diff scan only—**not** a substitute for **`audit`** (no lint-by-default, no
   grades, no multi-agent).
 - **`deploy`:** **blocking** gates before ship; audit does not replace deploy

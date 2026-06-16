@@ -1,17 +1,17 @@
 ---
 name: git-push
-description: Commits authorized pending work via git-commit, syncs with origin (fetch, merge-oriented pull), pushes the current branch, watches GitHub Actions, and fixes root causes until CI is green—including coverage gates without lowering thresholds. Use when the user asks to push, sync and push, or ship the branch and chase CI. Requires explicit invocation or a parent workflow that authorizes push and CI remediation. Do not use without permission to write to git remote or when the user forbids automated CI fix loops.
+description: Commits authorized pending work via git-commit, syncs with origin (fetch, merge-oriented pull), pushes the current branch, watches GitHub Actions when configured, and fixes root causes until required checks are green—including coverage gates without lowering thresholds. Use when the user asks to push, sync and push, or ship the branch and chase CI. Requires explicit invocation or a parent workflow that authorizes push and CI remediation. Do not use without permission to write to git remote or when the user forbids automated CI fix loops.
 ---
 
 # Git Push
 
 ## Purpose
 
-Close the loop from **authorized local changes → pushed branch → green GitHub
-Actions**: commit the scoped work authorized for this push, preserve unrelated
+Close the loop from **authorized local changes → pushed branch → green required
+checks**: commit the scoped work authorized for this push, preserve unrelated
 dirty files, integrate upstream with **merge** (not silent rebase unless the
-user prefers otherwise), push, watch workflows, and iterate on real failures
-until passes.
+user prefers otherwise), push, watch workflows when they exist, and iterate on
+real failures until passes.
 
 ## Authority
 
@@ -71,18 +71,19 @@ until passes.
   above), resolve conflicts, then **push again**—do not force-push unless the
   user explicitly requests it and it is safe for the branch.
 
-### 4. Monitor GitHub Actions
+### 4. Monitor GitHub Actions When Configured
 
-- Identify the run(s) for the pushed commit / branch (for example
+- If this repo has GitHub Actions configured, identify the run(s) for the pushed commit / branch (for example
   `gh run list --branch <branch> --limit 5` then
   `gh run watch <run-id> --exit-status`, or the Actions UI).
 - Wait until the relevant workflow(s) **finish**.
+- If no workflow is configured for the branch, say so and use the local gate
+  instead: `npm run check`, `npm run lint`, and `npm test`.
 
 ### 5. On failure: fix root cause, repeat
 
-- Read logs; reproduce locally when possible (`npm run typecheck`,
-  `npm test`, `npm run verify:generated`, targeted package tests, smoke, etc.,
-  matching what failed).
+- Read logs; reproduce locally when possible (`npm run check`, `npm run lint`,
+  `npm test`, Extension Development Host smoke, etc., matching what failed).
 - Fix the **underlying issue**—not symptoms only—then **commit** (again via
   **`git-commit`** when there are new changes) and **push**, then **re-watch**
   CI.

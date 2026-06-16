@@ -32,8 +32,9 @@ time.
     only. You may **`git fetch`** and merge/rebase **locally** to integrate
     `origin/main` when needed—**do not** **`git push`** to `origin` until **all**
     phases are complete.
-  - **After all phases (step 5):** one remote sync: integrate upstream, push the
-    branch, monitor GitHub Actions, and fix failures until green.
+  - **After all phases (step 5):** one remote sync when requested: integrate
+    upstream, push the branch, monitor GitHub Actions if configured, and fix
+    failures until green. If no CI exists, run the local gate instead.
 - If `execute-plan` was routed implicitly or inferred rather than invoked
   directly, it may prepare local implementation work but must stop before the
   first commit or push and explain why.
@@ -54,8 +55,10 @@ time.
      Make it perfect. No god modules. No bugs. Just elegant, modular code.
    - 4b. Audit the execution before the phase is marked complete or
      committed:
-     - use `scripts/run-cross-agent-phase-audit.sh <plan-path> <phase-selector>`
-     - this helper invokes fresh Codex and `claude -p` audit threads from the CLI
+    - use `scripts/run-cross-agent-phase-audit.sh <plan-path> <phase-selector>`
+      only if that helper exists
+    - otherwise run `phase-audit` locally and/or launch readonly Cursor
+      subagents with the same phase-audit charter
      - read the audit artifact
      - integrate concrete findings into the code and the plan
      - if the external reviewer is unavailable, fails, or times out, run the
@@ -74,8 +77,9 @@ time.
      here.
 5. After all phases are complete (run this block **once**, not per phase):
    - sync with `origin/main`
-   - push the branch
-   - monitor GitHub Actions until the run completes
+   - push the branch when authorized
+   - monitor GitHub Actions until the run completes when workflows exist
+   - otherwise run `npm run check`, `npm run lint`, and `npm test`
    - fix regressions and repeat until green
 
 ## Worktree Rules

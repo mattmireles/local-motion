@@ -1,53 +1,51 @@
 ---
 name: chrome-extension-debug
-description: Debug live Chrome extension failures in this repo. Use when the task involves MV3 service worker lifecycle bugs, message passing failures, content script injection issues, overlay blank or flickering states, Shadow DOM CSS breakage, or OVERLAY_SLIDE delivery races. Do not use for auto-gist gating, local-index, suggestion-bar bugs, or Escape-dismiss conflicts between the suggestion bar and the reader overlay, architecture refactors, Bedrock or Gemini provider issues, or general frontend work outside the extension runtime.
+description: >-
+  Debug Local Motion as a VS Code/Cursor extension — Extension Development Host
+  startup, command activation, setup webview behavior, VS Code Language Model
+  API provider registration, local llama-server lifecycle, and Cursor
+  OpenAI-compatible proxy setup. Use when extension runtime behavior fails and
+  the problem is not a generic TypeScript compile error.
 ---
 
-# Chrome Extension Debug
+# VS Code Extension Debug
 
 ## Purpose
 
-Use this skill to debug real failures inside `packages/chrome-plugin/`. It is for runtime bugs, timing bugs, and extension-specific regressions, not broad redesign work.
+Debug Local Motion in the environment where it actually runs: VS Code or Cursor
+Extension Development Host plus local macOS sidecar processes.
 
-## Use When
+## First Reads
 
-- The symptom is inside the Chrome extension runtime.
-- The failure mentions service worker restart, message delivery, content script injection, or `runtime.lastError`.
-- The overlay opens blank, flickers, double-injects, or stops updating.
-- Shadow DOM styles fail to load or host-page CSS is leaking into the overlay.
-- Progressive streaming or `OVERLAY_SLIDE` delivery looks out of order or missing.
+1. [`README.md`](../../../README.md).
+2. [`README/Guides/vs-code-local-ai-hugging-face-guide.md`](../../../README/Guides/vs-code-local-ai-hugging-face-guide.md).
+3. `local-motion` for subsystem invariants.
 
-## Do Not Use When
+## Workflow
 
-- The main task is splitting modules or redesigning architecture.
-- The failure is Bedrock, Gemini, or backend-only.
-- The work is ordinary web UI debugging outside the extension runtime.
-- The task is local-index or auto-gist routing work. Use `auto-gist-debug` once that skill is present.
+1. Reproduce in Extension Development Host when possible.
+2. Identify the failing surface:
+   - activation command or contribution in `package.json`
+   - setup webview in `src/ui/setupPanel.ts`
+   - controller/state path in `src/app/localMotionController.ts` or `src/state.ts`
+   - model discovery/compatibility in `src/models/`
+   - download/runtime/proxy path in `src/runtime/`
+   - provider path in `src/provider/localMotionProvider.ts`
+3. Run `npm run check` first for TypeScript failures.
+4. Add `npm run lint` and `npm test` when source logic changed.
+5. For runtime bugs, prove the fix with the smallest manual repro: command
+   activation, setup flow, `llama-server` health, proxy response, or provider
+   response.
 
-## Procedure
+## Anti-Patterns
 
-1. Confirm the bug is extension-scoped.
-2. Read [references/index.md](references/index.md) and load only the one or two guides that match the failure mode.
-3. Reduce the bug to the narrowest runtime seam:
-   - service worker lifecycle
-   - message passing
-   - content script injection
-   - CSS or Shadow DOM isolation
-   - overlay streaming and progressive delivery
-4. Prefer the repo's existing MV3 fix pattern over generic browser-extension folklore.
-5. Re-test against the actual lifecycle trigger that tends to break MV3 code:
-   - reload
-   - tab navigation
-   - service worker restart
-   - delayed content-script bootstrap
-   - late slide delivery
-6. If the root cause is structural rather than operational, hand off to `extension-architecture`.
-
-## Canonical Docs
-
-Read [references/index.md](references/index.md) first. It points to the canonical guide set for this skill.
+- Debugging this as a browser extension. Local Motion is a VS Code/Cursor extension.
+- Mutating Cursor private model-picker state. Show settings instead.
+- Declaring runtime fixes without an Extension Development Host or equivalent
+  proof path when behavior changed.
 
 ## Handoff Rules
 
-- Hand off to `extension-architecture` when the fix requires changing ownership boundaries, splitting god modules, or enforcing single-path overlay rules.
-- Hand off to `scraping` when the core problem is extraction logic or permissions rather than extension runtime behavior.
+- Use `local-motion` for architecture and subsystem invariants.
+- Use `debug` for broader unclear investigations.
+- Use `context7-mcp` for current VS Code API or llama.cpp documentation.

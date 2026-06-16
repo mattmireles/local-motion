@@ -1,6 +1,0 @@
-interface:
-  display_name: "Cloudflare"
-  short_description: "Gist Cloudflare guides plus Context7 / docs MCP for current APIs"
-  default_prompt: "Use $cloudflare to read README/Guides/backend/Cloudflare/ for this repo, then confirm behavior with Context7 MCP or Cloudflare docs MCP; use deploy for ship and shared-llm-workflow-runtime-service-guide for the llm-workflows service boundary."
-policy:
-  allow_implicit_invocation: true

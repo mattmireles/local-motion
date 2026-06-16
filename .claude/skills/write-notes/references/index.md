@@ -1,11 +1,10 @@
 # Write Notes References
 
-Canonical docs for `write-notes`.
+Canonical docs for `write-notes` in Local Motion:
 
-- `README/Guides/content/notes-consolidation-guide.md`
-  Read first for the repo's anti-sprawl notes policy and file-selection rules.
-- `README/Templates/Notes-template.md`
-  Read for the required issue structure inside a notes document.
-- the most relevant `README/Guides/...` files for the subsystem
-  Read when the note should link out to canonical guidance for context or
-  recurrence handling.
+- `README/Templates/Notes-template.md` for note structure.
+- The most relevant `README/Guides/...` files for the subsystem.
+- Existing notes under `README/Notes/` when the directory exists.
+
+If `README/Notes/` does not exist yet, create it only when the investigation is
+substantial enough to justify durable notes.

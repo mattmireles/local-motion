@@ -1,13 +1,14 @@
 # Research Debugging References
 
-Canonical docs for `research-debugging`.
+Canonical docs for `research-debugging` in Local Motion:
 
-- `README/Skills-guide.md`
-  Read first for the repo's skill-design constraints and routing rules.
-- `README/Guides/backend/Gemini/Gemini-Deep-Research-agents-guide.md`
-  Read when present for the repo's current notes on Gemini Deep Research,
-  Interactions API behavior, status polling, chaining, and preview bugs. If the
-  file is missing or stale, fall back to the official Gemini Deep Research and
-  Interactions API docs.
-- `README/Templates/guide-template.md`
-  Read when the debugging research should land as a durable field guide update.
+- `README/Templates/guide-template.md` when the debugging research should land as
+  a durable field guide update.
+- `README/Guides/vs-code-local-ai-hugging-face-guide.md` for repo-specific local
+  model and extension constraints.
+- Current official docs, issue trackers, changelogs, and community reports for
+  the external failure surface.
+
+There is no required Deep Research helper script in this repo. Use it only if it
+exists; otherwise use available MCP/web research tools and save the guide
+manually.

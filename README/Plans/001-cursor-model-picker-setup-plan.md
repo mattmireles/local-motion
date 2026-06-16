@@ -26,8 +26,7 @@ turns the manual fallback into a polished assisted setup flow with verification.
 
 | Mode | Behavior | Why it matters |
 | --- | --- | --- |
-| Assisted Setup | Local Motion opens Cursor settings, copies values, and shows a focused checklist. | This is the shippable default because it uses public Cursor UI behavior only. |
-| Automatic Setup Probe | Local Motion performs read-only schema detection and reports whether automatic private-state setup is safely supported. | This lets us investigate automation without shipping unsafe writes. |
+| Assisted Setup | One primary click verifies the local endpoint, copies the full setup block, opens Cursor settings filtered to Models when supported, and renders field-by-field copy controls. | This is the shippable default because it uses public Cursor UI behavior only. |
 | Manual Fallback | Local Motion shows all values and instructions when clipboard/settings commands fail. | Users are never blocked by Cursor UI or clipboard limits. |
 
 ## Goals and Non-Goals
@@ -35,15 +34,17 @@ turns the manual fallback into a polished assisted setup flow with verification.
 ### Goals
 
 - [ ] Make `Prepare Cursor` one primary action after a model is running.
-- [ ] Copy the Base URL, API key, and model ID to clipboard in the order Cursor
-  needs them, with visible confirmation and recovery controls.
-- [ ] Open Cursor's Models settings directly from the extension.
+- [ ] Make the primary `Prepare Cursor` click verify the local endpoint, copy a
+  full setup block, and open Cursor settings filtered to Models when supported.
+- [ ] Add recovery copy buttons for Base URL, API key, and model ID, with
+  visible confirmation and error states.
 - [ ] Add one-click copy buttons for Base URL, API key, model ID, and a full
   setup block.
 - [ ] Detect when the running Local Motion endpoint changes and mark existing
   Cursor setup values stale.
-- [ ] Add a verification action that calls the local proxy `/v1/models` and
-  confirms the model ID is reachable before the user tries Cursor.
+- [ ] Add a verification action that calls the local proxy model-list endpoint
+  with the required bearer token and confirms the model ID is reachable before
+  prompting the user to configure Cursor.
 - [ ] Keep the Cursor integration instruction-only unless a future verified
   Cursor API or schema contract exists.
 
@@ -62,8 +63,8 @@ turns the manual fallback into a polished assisted setup flow with verification.
 
 - **Scope:** `src/ui/setupPanel.ts`, `src/app/localMotionController.ts`,
   `src/cursor/cursorIntegration.ts`, `src/runtime/openAiProxy.ts`,
-  `tests/pure-logic.test.mjs`, `README.md`, and package metadata if commands or
-  tests change.
+  `src/state.ts`, `tests/pure-logic.test.mjs`, `README.md`, and package
+  metadata if commands or tests change.
 - **Architecture reference:** [Local Native LLM Extensions for VS Code and Cursor on macOS](../Guides/vs-code-local-ai-hugging-face-guide.md) — sidecar patterns, VS Code LM API, GGUF download, and Cursor integration research (with Local Motion guardrails called out).
 - **Constraints:** Cursor 3.7.36 reports VS Code `1.105.1` on this machine, so
   the extension must remain installable with `engines.vscode: ^1.105.0`.
@@ -83,6 +84,10 @@ turns the manual fallback into a polished assisted setup flow with verification.
 - **Dynamic port:** Any stopped/restarted Local Motion model may receive a new
   Base URL and invalidate Cursor's saved override.
 - **VSIX compatibility:** Packaging must keep Cursor `1.105.1` install support.
+- **Endpoint verification:** Local Motion readiness means the local proxy answers
+  `GET ${baseUrl}/models` with `Authorization: Bearer local-motion`, HTTP 200,
+  and `data[].id` containing the active `RuntimeStatus.modelId`. Cursor picker
+  readiness is only proven by manual Cursor QA after the values are entered.
 
 ## Already Shipped (Do Not Re-Solve)
 
@@ -121,8 +126,8 @@ Running Local Motion model
   -> CursorSetupViewModel
   -> Prepare Cursor action
      -> verify local endpoint
-     -> copy setup value
-     -> open Cursor Models settings
+     -> copy full setup block
+     -> open Settings filtered to Cursor Models when supported
      -> render checklist + stale-port warning
 ```
 
@@ -194,15 +199,17 @@ truthfully distinguishes Local Motion setup from Cursor feature coverage.
   - `apiKey`
   - `modelId`
   - `isRunning`
+  - `setupBlock`
   - `steps`
-  - `staleWarning`
+  - `statusMessage`
 - [ ] Generate the view model only from `RuntimeStatus`.
 - [ ] Update `src/app/localMotionController.ts` to send
   `cursorSetupViewModel` instead of unstructured instructions.
 - [ ] Extend `tests/pure-logic.test.mjs` for running and stopped states.
 
-**Verification:** `npm test` proves model ID, Base URL, API key, stopped-state
-warning, and stale-port copy are generated from runtime state only.
+**Verification:** `npm test` proves model ID, Base URL, API key, setup block,
+and stopped-state guidance are generated from runtime state only. Stale endpoint
+tests wait until Phase 3, where stale state exists.
 
 ---
 
@@ -213,6 +220,7 @@ warning, and stale-port copy are generated from runtime state only.
 **Tasks:**
 
 - [ ] Add controller actions in `src/app/localMotionController.ts`:
+  - `prepareCursor`
   - `copyCursorBaseUrl`
   - `copyCursorApiKey`
   - `copyCursorModelId`
@@ -220,18 +228,43 @@ warning, and stale-port copy are generated from runtime state only.
   - `verifyCursorEndpoint`
 - [ ] Use `vscode.env.clipboard.writeText` for copy actions.
 - [ ] Use `vscode.commands.executeCommand("workbench.action.openSettings",
-  "Cursor Models")` for opening Models settings.
-- [ ] In `src/ui/setupPanel.ts`, replace the single `Prepare Cursor` block with
-  a compact checklist:
+  "Cursor Models")` to open Settings filtered toward Cursor Models when the
+  host supports it. Do not claim this is an exact deep link unless Phase 0
+  proves one.
+- [ ] Define webview message commands and response payloads in
+  `src/ui/setupPanel.ts`:
+  - request `{ command: "prepareCursor" }` -> response
+    `{ type: "cursorSetupPrepared", viewModel, verification }`
+  - request `{ command: "copyCursorValue", key: "apiKey" | "baseUrl" | "modelId" | "setupBlock" }`
+    -> response `{ type: "cursorCopyResult", key, ok, message }`
+  - request `{ command: "verifyCursorEndpoint" }` -> response
+    `{ type: "cursorEndpointVerification", ok, message }`
+  - request `{ command: "openCursorSettings" }` -> response
+    `{ type: "cursorSettingsOpened", ok, message }`
+- [ ] Define the primary click behavior for `Prepare Cursor`:
+  1. verify the local endpoint;
+  2. copy the full setup block to the clipboard;
+  3. open Settings filtered to Cursor Models when supported;
+  4. render the checklist with field-by-field copy controls.
+- [ ] In `src/ui/setupPanel.ts`, replace the current passive instruction block
+  with a compact checklist:
   - Verify local endpoint
   - Copy API key
   - Copy Base URL
   - Copy Model ID
   - Open Cursor Models settings
+  - Add custom model in Cursor
+  - Select model in Cursor picker
 - [ ] Keep visible one-click copy buttons after the primary action runs.
+- [ ] Use this exact Cursor field mapping in UI copy:
+  - OpenAI API Key: `local-motion`
+  - Override OpenAI Base URL: active Local Motion `baseUrl`
+  - Custom Model / Model Name: active Local Motion `modelId`
 
-**Verification:** Manual extension-host run shows each copy action updates the
-clipboard and the verify action succeeds against a running proxy.
+**Verification:** Manual extension-host run shows the primary click verifies the
+endpoint, copies the full setup block, opens settings or reports why it could
+not, and leaves copy controls visible. Cursor setup is not called complete until
+manual QA confirms the model appears in Cursor's native picker.
 
 ---
 
@@ -243,38 +276,36 @@ clipboard and the verify action succeeds against a running proxy.
 
 - [ ] Persist the last prepared Cursor setup in Local Motion global state:
   `localMotion.lastPreparedCursorSetup`.
+- [ ] Use this storage shape:
+
+  ```typescript
+  interface LastPreparedCursorSetup {
+    baseUrl: string;
+    modelId: string;
+    apiKeyLabel: "local-motion";
+    preparedAt: string;
+    trigger: "prepareCursor" | "copySetupBlock";
+    endpointVerifiedAt?: string;
+  }
+  ```
+
+- [ ] Update this state only when `prepareCursor` succeeds or when the user
+  explicitly copies the full setup block. Do not update it for copying a single
+  field.
 - [ ] Compare last prepared Base URL/model ID with current `RuntimeStatus`.
 - [ ] Show a clear stale warning when the model is stopped or the Base URL
   changes.
 - [ ] Add a `Copy Updated Setup` action that copies the full replacement block.
 - [ ] Clear or mark stale state when `localMotion.stop` runs.
 
-**Verification:** Unit tests cover same endpoint, changed endpoint, and stopped
-model. Manual run confirms a stop/start cycle produces a stale warning.
+**Verification:** Unit tests cover same endpoint, changed endpoint, stopped
+model, state transition on `prepareCursor`, state transition on
+`copySetupBlock`, and no state transition on single-field copies. Manual run
+confirms a stop/start cycle produces a stale warning.
 
 ---
 
-### Phase 4: Optional Read-Only Automatic Setup Probe
-
-**Goal:** Investigate automatic setup without writing private Cursor state.
-
-**Tasks:**
-
-- [ ] Add a read-only diagnostic command:
-  `Local Motion: Diagnose Cursor Setup`.
-- [ ] Check for Cursor application support paths and report whether a known
-  public/stable setup contract exists.
-- [ ] Do not inspect or copy secrets.
-- [ ] Do not write SQLite, secure storage, JSON settings, or Cursor app files.
-- [ ] If a future Cursor version exposes a stable API, document the exact
-  version and contract before planning writes.
-
-**Verification:** Command returns a read-only report. `rg` confirms no writes to
-  Cursor app state paths.
-
----
-
-### Phase 5: Validation and Cleanup
+### Phase 4: Validation and Cleanup
 
 **Goal:** Prove the assisted setup flow and keep packaging clean.
 
@@ -298,6 +329,21 @@ model. Manual run confirms a stop/start cycle produces a stale warning.
 **Verification:** All commands pass, VSIX installs, and manual QA proves Cursor
 can select the Local Motion model through the native model picker.
 
+## Follow-Up: Read-Only Automatic Setup Research
+
+This is deliberately outside the implementation critical path. If Cursor later
+exposes a stable custom-model API, create a separate plan before adding writes.
+
+- Add a read-only diagnostic command only if needed:
+  `Local Motion: Diagnose Cursor Setup`.
+- Allowed checks: Cursor version, application path existence, and documented
+  public API/contract availability.
+- Forbidden checks: opening SQLite databases, reading secure storage, reading
+  Cursor state file contents, copying secrets, writing JSON settings, or writing
+  any Cursor application support file.
+- Required proof for future writes: official Cursor API documentation or a
+  version-pinned public contract, plus rollback and backup design.
+
 ## Executable Memory
 
 - Regression test: `npm run check && npm run lint && npm test && npm run package`
@@ -313,8 +359,8 @@ can select the Local Motion model through the native model picker.
 - [ ] `Prepare Cursor` provides one-click copy controls for API key, Base URL,
   model ID, and full setup block.
 - [ ] `Prepare Cursor` opens Cursor Models settings.
-- [ ] Local endpoint verification succeeds before telling the user setup is
-  ready.
+- [ ] Local endpoint verification succeeds before opening/copying assisted
+  setup values; Cursor picker readiness is verified only by manual Cursor QA.
 - [ ] Stale dynamic-port state is visible after stop/restart.
 - [ ] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
 
@@ -342,9 +388,9 @@ can select the Local Motion model through the native model picker.
 
 - **Q:** Does Cursor expose any stable API for custom model insertion in a newer
   version than this machine's Cursor 3.7.36 / VS Code 1.105.1?
-- **Options:** keep assisted setup, add read-only detection, or plan a separate
+- **Options:** keep assisted setup, run separate read-only research, or plan a
   version-gated automatic setup once a public contract exists. Current lean:
-  assisted setup plus read-only detection only.
+  assisted setup only for this plan.
 
 - **Q:** Which Cursor surfaces honor the OpenAI-compatible override for local
   models on the user's current Cursor build?
@@ -376,10 +422,15 @@ can select the Local Motion model through the native model picker.
 2. User installs and runs a compatible model.
 3. User clicks `Prepare Cursor`.
 4. Local Motion verifies the local endpoint.
-5. Local Motion copies the next needed value and opens Cursor Models settings.
-6. User pastes API key, Base URL, and model ID into Cursor.
+5. Local Motion copies the full setup block and opens Settings filtered toward
+   Cursor Models when supported.
+6. User pastes API key, Base URL, and model ID into Cursor:
+   - OpenAI API Key: `local-motion`
+   - Override OpenAI Base URL: active Local Motion Base URL
+   - Custom Model / Model Name: active Local Motion Model ID
 7. User selects the model in Cursor's native model picker.
-8. If Local Motion restarts on a new port, the setup panel marks the Cursor
+8. Local Motion keeps individual copy buttons visible for recovery.
+9. If Local Motion restarts on a new port, the setup panel marks the Cursor
    setup stale and offers updated copy actions.
 
 ## Error Handling and Edge Cases
@@ -388,8 +439,10 @@ can select the Local Motion model through the native model picker.
 | --- | --- | --- |
 | Local model is not running | Disable setup actions and show start-model prompt. | User starts model first. |
 | Clipboard write fails | Show error and keep selectable text visible. | User manually selects/copies values. |
-| Settings command opens wrong page | Keep instructions and copy controls visible. | User navigates to Cursor Settings -> Models manually. |
-| Endpoint verification fails | Do not claim Cursor is ready. | Restart model or inspect Local Motion output. |
+| Settings command opens wrong page | Say Settings was opened with a filter, not an exact deep link. | User navigates to Cursor Settings -> Models manually. |
+| Endpoint verification fails | Do not open/copy assisted setup as ready. | Restart model or inspect Local Motion output. |
+| Endpoint returns wrong model ID | Show mismatch and block assisted-ready state. | Restart the intended model. |
+| Endpoint returns 401 | Show API key mismatch and use `local-motion` as the required key. | Copy API key again. |
 | Cursor override breaks other providers | Warn that OpenAI Base URL override is global. | User disables override when switching back to cloud providers. |
 | Cursor Agent/Composer ignores override | Document surface limitation. | Use Cursor chat/plan mode or a separate local-agent tool. |
 
@@ -416,7 +469,7 @@ can select the Local Motion model through the native model picker.
 | `src/app/localMotionController.ts` | Modify | Add copy, verify, and stale-state actions. |
 | `src/ui/setupPanel.ts` | Modify | Add checklist UI and copy controls. |
 | `src/state.ts` | Modify | Persist last prepared Cursor setup. |
-| `src/runtime/openAiProxy.ts` | Modify | Expose enough status for setup verification if needed. |
+| `src/runtime/openAiProxy.ts` | Modify | No expected change unless verification needs a small helper endpoint; `/v1/models` already exists. |
 | `tests/pure-logic.test.mjs` | Modify | Add setup view model and stale-state tests. |
 | `README.md` | Modify | Document assisted setup and Cursor surface limits. |
 
@@ -438,4 +491,3 @@ can select the Local Motion model through the native model picker.
 - [ ] Phase 2 complete
 - [ ] Phase 3 complete
 - [ ] Phase 4 complete
-- [ ] Phase 5 complete

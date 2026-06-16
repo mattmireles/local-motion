@@ -7,7 +7,7 @@ description: Use Gemini Deep Research via the Interactions API to create or refr
 
 ## Purpose
 
-Use this skill when Gist needs hard external research before planning or
+Use this skill when Local Motion needs hard external research before planning or
 implementation. The durable artifact is usually a `README/Guides/...` field
 guide grounded in current web research, not a chat-only summary.
 
@@ -37,7 +37,8 @@ guide grounded in current web research, not a chat-only summary.
    - the decision, plan, or implementation this guide must unblock
 3. Prefer updating an existing guide over creating a sibling duplicate.
 4. Write the prompt into `tmp/deep-research/<slug>-planning-prompt.md`.
-5. Run the helper:
+5. Run the helper if this repo has one; otherwise use available MCP/web
+   research tools and save the guide yourself:
 
 ```bash
 node scripts/gemini-deep-research.js \
@@ -61,7 +62,7 @@ The default prompt shape is:
 ```md
 Create an advanced hacker's field guide for [TOPIC].
 
-Audience: senior engineers working in the Gist repo.
+Audience: senior engineers working in the Local Motion repo.
 Goal: produce a durable external research guide that will live at [TARGET_PATH]
 and unblock [DECISION OR PLAN].
 

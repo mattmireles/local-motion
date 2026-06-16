@@ -38,7 +38,7 @@
 
 ```bash
 # Include commands that produced evidence
-rg "pattern" packages/
+rg "pattern" src/ tests/ README/
 npm test -- path/to/test
 ```
 

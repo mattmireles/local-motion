@@ -13,7 +13,8 @@ editor cannot safely derive from the code itself.
 ## Use When
 
 - Adding or reviewing JSDoc or file headers.
-- Documenting state lifecycle, constant rationale, or Chrome/API gotchas.
+- Documenting state lifecycle, constant rationale, or VS Code extension /
+  local runtime API gotchas.
 - A PR review flags missing or low-quality documentation.
 
 ## Do Not Use When
@@ -48,7 +49,7 @@ Read [references/index.md](references/index.md) first.
 
 ## Handoff Rules
 
-- Hand off to `chrome-extension-debug` if the real issue is a runtime bug, not
+- Hand off to `debug` or `local-motion` if the real issue is a runtime bug, not
   missing docs.
-- Hand off to `extension-architecture` if the task is structural refactoring,
+- Hand off to `audit` if the task is structural refactoring,
   not documentation.

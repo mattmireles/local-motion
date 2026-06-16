@@ -1,13 +1,12 @@
 # Wiki References
 
-Canonical docs for `wiki`.
+The Local Motion wiki skill is disabled until the repo has a real `README/Wiki/`
+system and verification scripts.
 
-- `README/Guides/integrations/wiki-workflow-guide.md`
-  Read first for source exclusions, `sources:` provenance, `last_synced`,
-  `claims:`, lint rules, and handoff boundaries.
-- `README/Templates/Wiki-template.md`
-  Use when creating or substantially refreshing a wiki page.
-- `README/Wiki/README.md`
-  Use for topic taxonomy and existing wiki-page routing.
-- `scripts/wiki-contradictions-report.mjs`
-  Source of truth for the optional Gemini contradictions report.
+Use current docs instead:
+
+- `README.md`
+- `README/Guides/vs-code-local-ai-hugging-face-guide.md`
+- `README/Templates/guide-template.md`
+- `README/Templates/Notes-template.md`
+- `README/Templates/Plans-template.md`

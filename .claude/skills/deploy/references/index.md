@@ -1,8 +1,16 @@
-# deploy — reference index
+# Deploy References
 
-- [README.md](../../../../README.md) — CI/CD, auto-rebuild, build artifact list
-- [`.github/workflows/deploy.yml`](../../../../.github/workflows/deploy.yml) — `verify-generated`, deploy jobs
-- [`scripts/auto-update-generated-artifacts.js`](../../../../scripts/auto-update-generated-artifacts.js) — orchestrates deep-pipeline + unified-reader regeneration
-- [`scripts/verify-generated-artifacts.js`](../../../../scripts/verify-generated-artifacts.js) — byte parity checks for generated files
-- [`packages/backend/scripts/deploy.sh`](../../../../packages/backend/scripts/deploy.sh) — Worker build, Sentry, wrangler, Inngest
-- [`packages/firebase-functions/README.md`](../../../../packages/firebase-functions/README.md) — Firebase deploy, secrets, IAM
+Canonical docs for Local Motion release work:
+
+- `README.md` for development and runtime expectations.
+- `package.json` for commands, activation events, extension contribution points,
+  and `vsce` package configuration.
+- `README/Guides/vs-code-local-ai-hugging-face-guide.md` for sidecar architecture
+  and Cursor integration constraints.
+
+Release gate:
+
+- `npm run check`
+- `npm run lint`
+- `npm test`
+- `npm run package`

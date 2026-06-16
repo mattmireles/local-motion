@@ -46,12 +46,10 @@ out the mismatch.
 
 When starting work on this codebase, orient yourself by reading the README and perusing the /README directory.
 
-**LLM Wiki (first stop):** For **current belief** on a topic, start under
-`README/Wiki/` (synthesized pages with `sources:` provenance). Then drill into
-`README/Guides/`, `README/Notes/`, and `README/Hot-Paths/` for full detail.
-Maintain the wiki with the `wiki` skill: ingest mode, lint mode, capture mode,
-and contradiction-report mode. Never list `README/Plans/` or `README/Audits/`
-in wiki `sources:`.
+**Local Motion docs (first stop):** For current repo belief, start with
+`README.md`, then drill into `README/Guides/`, `README/Plans/`, and
+`README/Notes/` when notes exist. The old wiki/hot-path workflow is not active
+in this repo.
 
 Struggling with a tricky bug or issue? Look inside `README/Guides` for potential answers. The directory contains advanced developer field guides that can help you understand best practices, common bugs, edge cases and known workarounds.
 
@@ -92,17 +90,19 @@ high-level notes document. Use the `write-notes` skill
 
 Plans go in `README/Plans/` (use [Plans template](README/Templates/Plans-template.md)).
 
-## Browser Testing
+## Local Testing
 
-Always use **Brave**, not Chrome, for local browser testing:
+Local Motion manual repros run through the VS Code or Cursor Extension
+Development Host:
 
-- Extension manual repro, smoke checks, and DevTools debugging: Brave
-- Cursor browser MCP, Playwright, and any other automated browser runs: Brave
-- Do not launch or default to Google Chrome unless the user explicitly asks
+- Open this folder in VS Code or Cursor.
+- Run the extension host.
+- Execute `Local Motion: Open Setup`.
+- Verify setup UI, local runtime state, `llama-server` health, provider behavior,
+  and Cursor proxy instructions as relevant.
 
-Brave is Chromium-based; MV3 extension APIs and `chrome.*` behavior still apply.
-When docs or skills say "Chrome," use Brave locally unless the task is
-Chrome Web Store review or a Chrome-specific regression.
+Use browser automation only when the task specifically needs webview or browser
+surface verification.
 
 ## Critical Reminder: SIMPLER IS BETTER
 

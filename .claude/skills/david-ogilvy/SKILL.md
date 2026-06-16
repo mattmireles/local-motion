@@ -14,14 +14,11 @@ Use this skill when the work is primarily **words that ship**: anything a user o
 Read these before writing or rewriting meaningful copy:
 
 - [David Ogilvy persona](./david-ogilvy.md) (canonical: [README/Personas/David-Ogilvy.md](../../../README/Personas/David-Ogilvy.md))
-- [Gist brand guide](../../../packages/ui/brand-guide/production/index.html)
-- [Designing Multimodal Reading App for Learning](../../../README/Guides/design/Designing-Multimodal-Reading-App-for-Learning.md)
+- [Local Motion README](../../../README.md)
+- [Local Motion architecture guide](../../../README/Guides/vs-code-local-ai-hugging-face-guide.md)
 
-Then load the guides that match the task:
-
-- [Markdown authoring guide](../../../README/Guides/content/markdown-authoring-guide.md)
-- [Explore recommendation guide](../../../README/Guides/design/explore-recommendation-guide.md)
-- [Building AI agents guide](../../../README/Guides/design/building-ai-agents-guide.md)
+Then inspect the product surface that owns the copy, usually
+`src/ui/setupPanel.ts`, `package.json`, or `README.md`.
 
 ## Core Stance
 
@@ -40,8 +37,8 @@ Then load the guides that match the task:
 
 1. Name the surface: who reads it (user vs admin), where it appears, and what they should
    do or understand next.
-2. Read the persona, brand guide, multimodal reading guide, and the smallest relevant
-   set of task guides before drafting.
+2. Read the persona, README, Local Motion guide, and the smallest relevant
+   product surface before drafting.
 3. Turn that into concrete constraints: tone, reading level, length, required terms,
    legal or trust boundaries, and the single outcome you want.
 4. Draft the simplest copy that satisfies those constraints---then shorten it.

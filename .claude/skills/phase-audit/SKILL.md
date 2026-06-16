@@ -44,7 +44,8 @@ senior engineer doing code review. The job is to decide whether the phase is act
    - phase goal
    - checked tasks
    - phase verification text
-   - linked canonical references in [README/Guides](../../../README/Guides) and [README/Notes](../../../README/Notes)
+   - linked canonical references in [README/Guides](../../../README/Guides) and
+     [README/Notes](../../../README/Notes) when notes exist
 3. Inspect the implementation evidence:
    - changed files and diffs
    - tests or checks that were run
@@ -60,7 +61,7 @@ senior engineer doing code review. The job is to decide whether the phase is act
    - missing tests or weak verification
    - checkbox drift between the plan and the code
    - commit readiness
-   - push and CI readiness
+   - push readiness and either CI readiness or local gate readiness
    - whether **`elon-musk`** would still delete or collapse work that the phase
      left in place (flag as a finding when it indicates real debt, not mere style)
 7. If there are no findings, say so directly and note residual risks or
@@ -94,8 +95,7 @@ actually done.
 
 - Hand findings back to `execute-plan` or the user for remediation.
 - `execute-plan` may invoke this same audit contract through
-  `scripts/run-cross-agent-phase-audit.sh`, which asks fresh Codex and
-  `claude -p` CLI review threads to perform a `phase-audit`-style review
-  against the active phase, current repo state, recent commits, and canonical
-  rubric.
+  `scripts/run-cross-agent-phase-audit.sh` if that helper exists. If it does not,
+  run this skill locally or launch readonly Cursor subagents against the active
+  phase, current repo state, recent commits, and canonical rubric.
 - Re-run this skill after fixes if the phase changed materially.

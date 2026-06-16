@@ -1,14 +1,12 @@
 # Markdown References
 
-Canonical docs for `markdown`.
+Canonical docs for `markdown` in Local Motion:
 
-- `README/Guides/content/markdown-authoring-guide.md`
-  Read first for the repo's markdown rules and markdown-specific verification
-  flow.
-- `README/Templates/Plans-template.md`
-  Read when the markdown file is a plan under `README/Plans/...`.
-- `README/Templates/Notes-template.md`
-  Read when the markdown file is a notes entry under `README/Notes/...`.
-- `README/Guides/content/notes-consolidation-guide.md`
-  Read when the markdown edit touches notes and you need to avoid creating note
-  sprawl.
+- `README/Templates/Plans-template.md` for plans under `README/Plans/`.
+- `README/Templates/Notes-template.md` for notes under `README/Notes/`.
+- `README/Templates/guide-template.md` for guides under `README/Guides/`.
+- Existing markdown files in the same document family for local style.
+
+Repo markdown rules: real links, no unnecessary inline HTML, blank lines around
+headings and lists, language-tagged fenced code blocks when known, and one final
+newline.

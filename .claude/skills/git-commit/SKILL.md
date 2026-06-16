@@ -1,6 +1,6 @@
 ---
 name: git-commit
-description: Produces comprehensive Git commit messages (what and why) and, when authorized, stages and commits. By default stages only the current task/workflow scope, not unrelated user or other-agent changes; stage the whole tree only when the user explicitly asks or the parent workflow says so. After a successful commit (non-blocking), runs `npm run typecheck` and a **lightweight** read of **HEAD** only (bug risks, god-module smells, needless complexity, duplication)—not a full **audit** (no grades, no multi-agent); for that, the user invokes the **`audit`** skill. Surfacing findings as optional heads-up, never as a reason to block or unwind the commit unless the user asks. No automatic fixes. Message-only requests use the same template without running git until commit is explicitly requested. Also use inside authorized workflows (for example execute-plan phase commits). Do not use for read-only review, hypothetical history, or when git writes are not authorized.
+description: Produces comprehensive Git commit messages (what and why) and, when authorized, stages and commits. By default stages only the current task/workflow scope, not unrelated user or other-agent changes; stage the whole tree only when the user explicitly asks or the parent workflow says so. After a successful commit (non-blocking), runs `npm run check` and a **lightweight** read of **HEAD** only (bug risks, god-module smells, needless complexity, duplication)—not a full **audit** (no grades, no multi-agent); for that, the user invokes the **`audit`** skill. Surfacing findings as optional heads-up, never as a reason to block or unwind the commit unless the user asks. No automatic fixes. Message-only requests use the same template without running git until commit is explicitly requested. Also use inside authorized workflows (for example execute-plan phase commits). Do not use for read-only review, hypothetical history, or when git writes are not authorized.
 ---
 
 # Git Commit
@@ -79,7 +79,7 @@ agent.
 6. **Verify** (commit path only): `git show --stat HEAD` matches intent (entire
    staged set landed).
 7. **Post-commit audit** (commit path only): after the commit succeeds, follow
-   [Post-commit audit](#post-commit-audit). Run **`npm run typecheck`** first; then
+   [Post-commit audit](#post-commit-audit). Run **`npm run check`** first; then
    scan **only** the `HEAD` diff for bug risks, god modules, needless complexity,
    and duplication (**lightweight**—see [What this is not](#what-this-is-not)).
    **Tell the user** about findings in the same turn (paths,
@@ -118,7 +118,7 @@ branch).
   already landed. People should keep committing; this step is **extra awareness**
   for the author, not policy for the team.
 - **Alerts, not gates.** Typecheck or review findings are **heads-up** so you can
-  fix forward (`npm run typecheck` failed after commit—here is the output) or
+  fix forward (`npm run check` failed after commit—here is the output) or
   choose to ignore. Do not treat red typecheck as “the commit was wrong.”
 - **Optional follow-up.** Suggest a fix commit or local cleanup only when helpful;
   never pressure amend/revert unless the user explicitly wants that.
@@ -130,21 +130,20 @@ branch).
 
 Stay **narrow** so commits stay fast:
 
-- **Do** run **`npm run typecheck`** and read **`git show -p HEAD`** (this commit only).
+- **Do** run **`npm run check`** and read **`git show -p HEAD`** (this commit only).
 - **Do not** run the full **`npm test`** suite, generated checks, or smoke tests here by
   default—those belong to **`audit`**, **`deploy`**, or CI unless the user’s task
   already called for them.
 
 ### TypeScript checks
 
-From the **repository root**, run the workspace TypeScript pass (same as deploy
-CI gate):
+From the **repository root**, run the TypeScript pass:
 
-- **Gist:** **`npm run typecheck`** from the repo root.
+- **Local Motion:** **`npm run check`** from the repo root.
 
 If the command is missing, dependencies are not installed, or the run fails,
 **report the full relevant output to the user** with neutral framing (for example
-“Heads-up: `npm run typecheck` failed after your commit”). The commit stays;
+“Heads-up: `npm run check` failed after your commit”). The commit stays;
 the user can fix in a follow-up when ready. Do not hide type errors.
 
 ### Diff scope
@@ -168,9 +167,9 @@ test suite unless already part of the task):
 - **Async discipline (spot-check):** missing `await`, fire-and-forget promises,
   or ambiguous error propagation in the diff—borrowed from **`audit`** charter,
   but **only** what you see in this patch.
-- **Workers / queues / webhooks / cron (spot-check):** if the diff touches those,
-  glance for obvious at-least-once hazards (duplicate side effects without
-  idempotency)—**one-line flag**, not a full reliability audit.
+- **Local runtime / subprocess / proxy (spot-check):** if the diff touches those,
+  glance for obvious lifecycle, port, streaming, or cleanup hazards—**one-line
+  flag**, not a full reliability audit.
 - **Security / privacy (glance):** obvious secrets or PII logged in the diff; if
   it needs auth review, nudge toward **`audit`** instead of digging here.
 - Anything that would make you say “wait, that can’t be right” on a PR.
@@ -227,7 +226,7 @@ matters.
 - Claiming a “single logical change” while silently including co-present dirty
   files.
 - **Skipping the post-commit audit** after a successful commit when this skill’s
-  commit path ran—especially omitting **`npm run typecheck`** or staying silent when
+  commit path ran—especially omitting **`npm run check`** or staying silent when
   it fails or the diff clearly introduces risk.
 - **Skipping TypeScript** when the repo root has `package.json` and npm is
   usable; hiding or summarizing away compiler errors instead of showing them.

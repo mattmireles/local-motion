@@ -28,7 +28,7 @@ When the user opens a repo in Cursor/Claude, tools load **that repo’s** `.clau
 When **creating** a new **project** skill (checked into a repository), write the
 skill under **`<repo>/.claude/skills/skill-name/`**.
 
-**Gist:** `.agents/skills` and `.cursor/skills` symlink to `.claude/skills`. Add new project skills only under `.claude/skills/skill-name/`; do not recreate a parallel tree under `.cursor/skills`. Confirm with `ls -la .agents/skills .cursor/skills`.
+**Local Motion:** `.agents/skills` and `.cursor/skills` symlink to `.claude/skills`. Add new project skills only under `.claude/skills/skill-name/`; do not recreate a parallel tree under `.cursor/skills`. Confirm with `ls -la .agents/skills .cursor/skills`.
 
 **Other repos:** use that repo's local convention. Prefer one source of truth:
 `.claude/skills/` with `.cursor/skills` and `.agents/skills` symlinked to it.
@@ -337,7 +337,7 @@ If you have access to the AskQuestion tool, use it for efficient structured gath
 2. Write the SKILL.md file with frontmatter
 3. Create any supporting reference files
 4. Create any utility scripts if needed
-5. **Project skills:** add **`skill-name/`** under **`<repo>/.claude/skills/`**. If **`.cursor/skills`** and **`.agents/skills`** symlink to **`.claude/skills`** (Gist default), stop there. Otherwise mirror the same `SKILL.md` (and siblings) to those paths, or add symlinks once at the repo root.
+5. **Project skills:** add **`skill-name/`** under **`<repo>/.claude/skills/`**. If **`.cursor/skills`** and **`.agents/skills`** symlink to **`.claude/skills`** (Local Motion default), stop there. Otherwise mirror the same `SKILL.md` (and siblings) to those paths, or add symlinks once at the repo root.
 6. **Do not** create **`~/.claude/skills`**, **`~/.cursor/skills`**, or **`~/.agents/skills`** unless the user explicitly requested global skills.
 
 ### Phase 4: Verification
@@ -347,7 +347,7 @@ If you have access to the AskQuestion tool, use it for efficient structured gath
 3. Ensure consistent terminology throughout
 4. Verify all file references are one level deep
 5. **No global skills:** `~/.claude/skills`, `~/.cursor/skills`, and `~/.agents/skills` should **not** exist (unless the user opted in)
-6. **Project skills:** `SKILL.md` exists under **`<repo>/.claude/skills/`**; **`readlink .cursor/skills`** and **`readlink .agents/skills`** point at **`.claude/skills`** when the repo uses symlinks (Gist default)
+6. **Project skills:** `SKILL.md` exists under **`<repo>/.claude/skills/`**; **`readlink .cursor/skills`** and **`readlink .agents/skills`** point at **`.claude/skills`** when the repo uses symlinks (Local Motion default)
 7. Test that the skill can be discovered and applied
 
 ## Summary Checklist
@@ -372,7 +372,7 @@ Before finalizing a skill, verify:
 - [ ] User explicitly requested global skills before creating anything under `~/`
 
 ### Project (repo) skills — default
-- [ ] `SKILL.md` under `.claude/skills/` is the canonical file; `.cursor/skills` and `.agents/skills` either symlink to `.claude/skills` (Gist) or hold identical copies
+- [ ] `SKILL.md` under `.claude/skills/` is the canonical file; `.cursor/skills` and `.agents/skills` either symlink to `.claude/skills` (Local Motion) or hold identical copies
 
 ### If Including Scripts
 - [ ] Scripts solve problems rather than punt

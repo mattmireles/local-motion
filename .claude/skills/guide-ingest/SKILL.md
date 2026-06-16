@@ -13,8 +13,8 @@ description: >-
 
 ## Purpose
 
-Turn raw, offline research into a **durable repo guide** that matches Gist
-markdown conventions, reflects **current** library and platform facts where
+Turn raw, offline research into a **durable repo guide** that matches Local
+Motion markdown conventions, reflects **current** library and platform facts where
 Context7 can verify them, and sits correctly in the **bidirectional** web of
 `README/Guides/` and `README/Notes/`.
 
@@ -44,8 +44,8 @@ Context7 can verify them, and sits correctly in the **bidirectional** web of
 ### 1. Normalize to proper markdown
 
 1. Read the **`markdown`** skill and
-   [README/Guides/content/markdown-authoring-guide.md](../../../README/Guides/content/markdown-authoring-guide.md)
-   for repo rules.
+   [README/Templates/guide-template.md](../../../README/Templates/guide-template.md)
+   for guide structure.
 2. Produce guide-shaped markdown:
    - real markdown links, not bare URLs
    - blank lines around headings and lists
@@ -64,7 +64,7 @@ Context7 can verify them, and sits correctly in the **bidirectional** web of
 3. **Update the guide** when Context7 contradicts the export: correct API
    names, replace deprecated patterns, fix version-specific statements.
 4. For claims **outside** Context7’s scope (product strategy, subjective
-   opinion, internal Gist behavior not in public docs), do **not** fake
+   opinion, internal Local Motion behavior not in public docs), do **not** fake
    verification. Either leave as non-factual narrative, mark as
    opinion/heuristic, or point to a repo note/guide that is authoritative.
 
@@ -104,11 +104,11 @@ both directions.
 | Situation | Hand off to |
 |-----------|-------------|
 | Repo markdown rules, lint, structure | **`markdown`** |
-| Substack API / edge / DOM guides or research | **`substack`** |
+| Local Motion extension/runtime guides or research | **`local-motion`** |
 | Where a note should live, note sprawl | **`write-notes`** |
 | JSDoc / code comments | **`documentation`** |
 
 ## References
 
-- [Markdown authoring guide](../../../README/Guides/content/markdown-authoring-guide.md)
-- [Notes consolidation guide](../../../README/Guides/content/notes-consolidation-guide.md)
+- [Guide template](../../../README/Templates/guide-template.md)
+- [Notes template](../../../README/Templates/Notes-template.md)

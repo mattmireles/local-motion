@@ -1,19 +1,13 @@
 # Phase Audit References
 
-Canonical docs for `phase-audit`.
+Canonical docs for `phase-audit` in Local Motion:
 
-- `README/Guides/integrations/plan-workflow-skills-guide.md`
-  Read first for the shared workflow contract and the boundary between
-  `phase-audit` and `execute-plan`.
-- `README/Guides/integrations/phase-audit-rubric.md`
-  Read for the canonical review checklist and commit-readiness criteria.
-- `README/Templates/Plans-template.md`
-  Read when you need to validate whether the active plan phase, checkbox
-  updates, and verification text still match the template contract.
+- `README/Templates/Plans-template.md` when validating plan phase structure,
+  checkbox state, and verification text.
+- The active plan file under `README/Plans/`.
+- `README.md` and directly linked `README/Guides/...` files for product context.
+- `README/Notes/...` only when notes exist and constrain the phase.
 
-Always inspect:
-
-- the active plan file and the specific phase being audited
-- the changed files for that phase
-- any directly linked `README/Guides/...` or `README/Notes/...` files that
-  constrain the implementation
+Always inspect the active phase, changed files, and checks that were actually
+run. Local gate readiness means `npm run check`, `npm run lint`, and `npm test`
+where relevant.

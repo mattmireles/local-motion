@@ -1,56 +1,26 @@
 # Create Plan References
 
-Canonical docs for `create-plan`.
+Canonical docs for `create-plan` in Local Motion.
 
-## Plan filename and id
+## Plan Filename And Id
 
-- New plans use a **monotonic numeric prefix** and kebab-case slug at the **Plans root** (canonical):
-  `README/Plans/{id}-{kebab-slug}.md` (for example
-  `README/Plans/216-my-feature-plan.md`).
-- The id is **global** across all plans (including `.archive`), not per category folder.
-- Pick the next id as **one plus the maximum** leading numeric prefix among **canonical**
-  files only:
+- New plans use a **monotonic numeric prefix** and kebab-case slug at the Plans root:
+  `README/Plans/{id}-{kebab-slug}.md`.
+- Pick the next id as one plus the maximum leading numeric prefix among
+  `README/Plans/[0-9]*.md` files.
+- Zero-pad to three digits below 1000, matching the existing plan style.
+- Do not create category symlinks unless the repo later adds a documented plan
+  index layout.
 
-  ```bash
-  find README/Plans -maxdepth 1 -name '[0-9]*.md' -type f
-  ```
+## Docs To Read
 
-  Do not scan category symlinks (`find` without `-maxdepth 1` duplicates paths).
-  If tools are unavailable, infer from neighboring high-numbered plans and recheck before saving.
-- **Zero-pad to three digits** when the new id is below 1000
-  (`042-feature-plan.md`, `184-foo-plan.md`) so new files stay aligned with
-  current repo style. Do not reuse ids.
+- `README.md` for the current product surface.
+- `README/Guides/vs-code-local-ai-hugging-face-guide.md` for architecture.
+- `README/Templates/Plans-template.md` for plan structure.
+- Existing neighboring plans under `README/Plans/` for naming and verification style.
 
-## Category symlink (browse path)
+## Cross-Links
 
-After saving the canonical plan, add **one** relative symlink in the most specific
-existing category subdirectory (for example `README/Plans/features/content/`):
-
-```bash
-ln -sf ../216-my-feature-plan.md README/Plans/features/content/216-my-feature-plan.md
-```
-
-Use `../` repeated to reach the Plans root from nested folders (see
-[README/Plans/README.md](../../../README/Plans/README.md)).
-
-## Cross-links
-
-- Link to other plans with stable repo paths:
-  `[Plan 200](README/Plans/200-reader-audio-server-tts-plan.md)` — not
-  `../features/content/...` relative paths.
-- Guides and notes may keep relative `README/Guides/...` / `README/Notes/...` links.
-
-## Docs to read
-
-- `README/Guides/integrations/plan-workflow-skills-guide.md`
-- `README/Templates/Plans-template.md`
-- `README/Plans/README.md` — layout and symlink convention
-- `README/Skills-index.md` — when the plan touches repo skills
-- `README/Skills-guide.md` — when creating or modifying skills
-
-Also inspect:
-
-- the most relevant `README/Guides/...` and `README/Notes/...` files for the
-  task domain
-- neighboring plans in the target **category symlink folder** for local style and
-  naming patterns (canonical files are at `README/Plans/` root)
+- Link to other plans with stable repo paths such as
+  `README/Plans/001-cursor-model-picker-setup-plan.md`.
+- Guides and notes may use `README/Guides/...` and `README/Notes/...` paths.

@@ -2,7 +2,7 @@
 name: execute-plan-hardcore
 description: >-
   Execute a checked-in implementation plan like execute-plan (phase-by-phase,
-  commits, push, CI), then run the full audit skill on the execution scope and
+  commits, optional push/CI or local gate), then run the full audit skill on the execution scope and
   require Architecture, Correctness risk, and Complexity debt grades all A—fix
   findings and repeat until all three are A. Use when the user explicitly
   invokes this skill or wants the hardcore post-audit gate after plan execution.
@@ -56,7 +56,7 @@ way, and **repeat** until those grades are **A** across the board.
   **`execute-plan`**.
 
 - At workflow start, state that **`execute-plan-hardcore`** is running: phase
-  commits through Part A, **then** one push/CI tail, **then** **audit → fix →
+  commits through Part A, **then** one push/CI or local-gate tail, **then** **audit → fix →
   repeat until A/A/A** (additional commits/pushes only as needed for that
   loop—not per-phase push during Part A).
 
@@ -64,18 +64,15 @@ way, and **repeat** until those grades are **A** across the board.
 
 ### Part A — Execute the plan (same as `execute-plan`)
 
-1. Read the same primers as **`execute-plan`**
-   ([plan workflow](../../../README/Guides/integrations/plan-workflow-skills-guide.md),
-   [phase-audit rubric](../../../README/Guides/integrations/phase-audit-rubric.md));
-   see also
-   [execute-plan/references/index.md](../../../.claude/skills/execute-plan/references/index.md).
+1. Read the same primers as **`execute-plan`**:
+   [execute-plan/references/index.md](../../../.claude/skills/execute-plan/references/index.md),
+   the active plan, and the linked Local Motion guides.
 2. Follow the **`execute-plan`** skill end-to-end: read the plan and linked
    guides/notes, one phase at a time, **`phase-audit`** per phase, **after each
    phase: update the plan—check that phase’s boxes and mark the phase
    completed in the document** (same timing as **`execute-plan`** step 4c, before
    the phase commit), narrow phase commits, then after all phases complete the
-   remote sync / push / CI steps spelled out in **`execute-plan`** (this repo
-   may use explicit shell steps rather than the **`git-push`** skill).
+   remote sync / push / CI-or-local-gate steps spelled out in **`execute-plan`**.
 
 Use the **`execute-plan`**
 [SKILL.md](../../../.claude/skills/execute-plan/SKILL.md) as the canonical
@@ -84,8 +81,8 @@ procedure for Part A.
 ### Part B — Hardcore audit gate (after Part A is complete)
 
 Run only when **all phases** are implemented, the plan reflects reality, and the
-**`execute-plan`** push/CI expectations are satisfied (no known failing CI from
-this work unless the user explicitly overrides).
+**`execute-plan`** push/CI-or-local-gate expectations are satisfied (no known
+failing required check from this work unless the user explicitly overrides).
 
 This repo ships a standalone [**`audit`**](../audit/SKILL.md) skill. Part B uses
 that graded output contract: **Architecture**, **Correctness risk**, and
@@ -98,7 +95,7 @@ for Architecture and Complexity.
    scope in the audit report header.
 
 2. **Run the repo `audit` workflow** against the plan execution scope:
-   - mechanical signals from repo root, adapted to the touched workspaces;
+   - mechanical signals from repo root, adapted to the touched files;
    - multiple readonly charters when depth warrants it;
    - `elon-musk` deletion-first pressure before final Architecture and
      Complexity grades.
@@ -141,8 +138,6 @@ do not revert unrelated user work.
 
 ## Canonical Docs
 
-Start with
-[README/Guides/integrations/plan-workflow-skills-guide.md](../../../README/Guides/integrations/plan-workflow-skills-guide.md)
-and
-[README/Guides/integrations/phase-audit-rubric.md](../../../README/Guides/integrations/phase-audit-rubric.md),
-then the active plan and linked **`README/Guides`** and **`README/Notes`**.
+Start with [execute-plan/references/index.md](../../../.claude/skills/execute-plan/references/index.md),
+then the active plan and linked **`README/Guides`** and **`README/Notes`** when
+notes exist.

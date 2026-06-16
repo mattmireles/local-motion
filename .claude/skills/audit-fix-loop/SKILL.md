@@ -117,14 +117,12 @@ move and is the one the auditors will not propose on their own.
 3. **Internal audit pass (read + grade):** Follow this repo's
    [**`audit`**](../audit/SKILL.md) skill end-to-end. For graded output and
    mechanical checks, align with
-   [phase-audit rubric](../../../README/Guides/integrations/phase-audit-rubric.md)
-   and **`execute-plan-hardcore`** Part B:
+   the **`phase-audit`** skill and **`execute-plan-hardcore`** Part B:
 
    - **Mechanical signals** from repo root when TS/JS is in scope: at minimum
-     **`npm run typecheck`** (see root `package.json`); add targeted workspace
-     **lint** / **test** scripts when the change warrants confidence (e.g.
-     **`npm test`**, **`npm -w packages/backend test`**, extension guardrails as
-     needed).
+     **`npm run check`** (see root `package.json`); add **`npm run lint`** /
+     **`npm test`** when the change warrants confidence. Use
+     **`npm run package`** for release packaging changes.
    - Delegate **multiple readonly** charters when depth warrants it (**when in
      doubt, parallelize** per **`audit`**).
    - Merge, dedupe, assign **P0–P3** severities, and **Architecture** /
@@ -146,7 +144,9 @@ Do **not** proceed to Part B until Part A is **A / A / A**.
 
 ### Part B — External cross-agent audit gate
 
-Run only after Part A passes in the same cycle. **Do not add a new script.**
+Run only after Part A passes in the same cycle. Reuse the shared CLI helpers in
+`scripts/lib/cross-agent-review.sh` (or `scripts/run-cross-agent-audit.sh`
+when the scope prompt file already exists). Do not add a plan-specific script.
 
 1. **Write a scope prompt file** under `tmp/cross-agent-audits/` with:
    - audit scope (paths, git slice, feature name)
@@ -156,25 +156,15 @@ Run only after Part A passes in the same cycle. **Do not add a new script.**
      risk**, **Complexity debt**, **A–F**) plus severity-ordered findings
 
 2. **Run fresh external reviewers** with the same mechanics as
-   `scripts/run-cross-agent-plan-review.sh`, but inline so the plan-specific
-   helper is not stretched past its purpose. Use a timestamped output directory
-   and save raw logs plus final markdown artifacts:
+   `scripts/run-cross-agent-plan-review.sh`. Prefer:
 
    ```bash
-   codex exec -C "$repo_root" --sandbox read-only --json \
-     --output-last-message "$output_dir/codex-audit.md" \
-     - <"$scope_prompt" >"$output_dir/codex-audit.raw" \
-     2>"$output_dir/codex-audit.log"
-
-   claude -p --permission-mode plan \
-     --tools "Read,Grep,Glob" \
-     --output-format json \
-     <"$scope_prompt" >"$output_dir/claude-audit.raw" \
-     2>"$output_dir/claude-audit.log"
+   scripts/run-cross-agent-audit.sh "$scope_prompt" audit
    ```
 
-   Parse the final Claude JSON result into `claude-audit.md`, following the
-   same extraction behavior as `scripts/run-cross-agent-plan-review.sh`.
+   Or invoke `codex exec` and `claude -p` inline with the same flags as
+   `scripts/lib/cross-agent-review.sh` when the helper script is unavailable.
+   Artifacts: `codex-audit.md`, `claude-audit.md`, plus `*.raw` and `*.log`.
 
 3. **Require both external agents.** Codex and Claude Code must both produce
    usable audit artifacts for Part B to pass. If either CLI is missing,
@@ -218,8 +208,9 @@ Run only after Part A passes in the same cycle. **Do not add a new script.**
 - Do **not** grade-inflate; **`audit`** rubric applies to both gates.
 - Do **not** lower thresholds to reach **A**—raise quality.
 - Do **not** skip Part B after Part A passes.
-- Do **not** add repo scripts for Part B; reuse **`create-plan`**'s CLI pattern
-  inline with an audit prompt.
+- Do **not** add plan-specific repo scripts for Part B; reuse
+  **`scripts/run-cross-agent-audit.sh`** or the shared lib with a scoped audit
+  prompt.
 - Do **not** treat a failed/missing external reviewer as an automatic pass.
 - Do **not** fix a finding without doing the [Triaging findings](#triaging-findings)
   pass first. The default-fix loop will spin on the wrong axis if you skip it;

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Videoask"
-  short_description: "Debug Gist feedback voice recorder"
-  default_prompt: "Use $videoask to debug or iterate on gist.is/feedback."
-
-policy:
-  allow_implicit_invocation: true

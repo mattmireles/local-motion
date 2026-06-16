@@ -9,8 +9,7 @@ description: Create an implementation plan for this repo. Use when the user want
 
 Use this skill to turn a concrete request into a repo-native implementation
 plan. The output is a real **canonical** plan file at
-`README/Plans/{id}-{kebab-slug}.md` plus a category symlink, not a chat-only
-outline.
+`README/Plans/{id}-{kebab-slug}.md`, not a chat-only outline.
 
 ## Use When
 
@@ -30,39 +29,34 @@ outline.
 2. Gather repo context in this order:
    - directly related `README/Guides`
    - directly related `README/Notes`
-   - neighboring plans in the target category folder (symlinks under
-     `README/Plans/...`; canonical files at `README/Plans/` root)
+   - neighboring plans under `README/Plans/`
 3. Use Context7 only when the plan depends on current library, framework, or
    API behavior that may have changed.
 4. If Context7 is insufficient, fall back to official vendor docs.
-5. Choose the most specific existing `README/Plans/...` subdirectory for the
-   **category symlink**. If none fits cleanly, use the closest higher-level
-   folder instead of inventing a noisy new folder.
-6. **Number the plan file:** assign the next monotonic id and use the filename
+5. **Number the plan file:** assign the next monotonic id and use the filename
    pattern `{id}-{kebab-slug}.md` (for example `216-tenant-routing-plan.md`). See
    [references/index.md](references/index.md) for how to pick `id` without
    colliding with existing plans.
-7. Write the first draft to **`README/Plans/{id}-{kebab-slug}.md`** (canonical
-   root path). Link other plans with stable paths
-   (`README/Plans/200-foo-plan.md`). Then add one relative symlink in the
-   category folder (see [references/index.md](references/index.md)). Make the
-   plan implementation ready:
+6. Write the first draft to **`README/Plans/{id}-{kebab-slug}.md`**. Link other
+   plans with stable paths (`README/Plans/001-foo-plan.md`). Make the plan
+   implementation ready:
    - concrete phases
    - specific files where knowable
    - verification per phase
    - hard requirements
    - rollback or kill switch when relevant
-8. Run a fresh cross-agent CLI review pass on the saved draft when the Codex
+7. Run a fresh cross-agent CLI review pass on the saved draft when the Codex
    or Claude Code CLIs are available:
-   - use `scripts/run-cross-agent-plan-review.sh <plan-path>`
-   - this helper invokes fresh `codex exec` and `claude -p` review threads
+   - use `scripts/run-cross-agent-plan-review.sh <plan-path>` only if that helper exists
+   - otherwise launch Cursor subagents or run a local audit-style review using
+     the same plan rubric
    - read both review artifacts (whichever ran)
    - integrate concrete findings into the plan
    - prefer repo ground truth over reviewer speculation
    - move unresolved disagreements into `Open Questions`
-9. If the external reviewer is unavailable or fails, run the same audit locally
+8. If the external reviewer is unavailable or fails, run the same audit locally
    and note the missing reviewer path in your handoff.
-10. Audit the final plan before stopping:
+9. Audit the final plan before stopping:
    - no missing policy that an implementer would have to invent
    - no fake certainty where the repo context is incomplete
    - no implementation work performed while planning

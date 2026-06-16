@@ -1,8 +1,8 @@
 ---
 name: debug
 description: >-
-  Systematic debugging for Gist: consult README/Wiki, README/Guides, and
-  README/Notes first,
+  Systematic debugging for Local Motion: consult README.md, README/Guides, and
+  README/Notes when present first,
   pull current library docs via Context7 MCP, parallelize investigation with
   multiple subagents when stuck, prove fixes before calling success, then capture
   one consolidated note in README/Notes via **write-notes** as the **final**
@@ -41,13 +41,13 @@ stuck**, **proof before “fixed”**, **one write-notes pass at session end**,
 
 Before writing code or deep-diving the stack:
 
-1. **Skim `README/Wiki/`** for current belief on the subsystem.
+1. **Skim `README.md`** for the current product path.
 2. **Skim `README/Guides/`** for titles or files that match the subsystem
-   (backend Worker, Chrome extension, generated reader, Firebase Functions,
-   provider output, URL ingest, Kokoro/audio, Cloudflare, auth, etc.). Open the
+   (setup webview, machine profile, Hugging Face GGUF discovery, compatibility
+   checks, downloader, `llama-server`, VS Code LM provider, Cursor proxy, etc.). Open the
    most relevant guides and look for **known issues**, **workarounds**, and
    **checklists**.
-3. **Skim `README/Notes/`** (and any high-level notes documents linked from
+3. **Skim `README/Notes/` when it exists** (and any high-level notes documents linked from
    `README.md`) for past investigations, incident writeups, or **“we already
    fixed X by Y”** history.
 
@@ -55,8 +55,8 @@ Many answers live here; **do not skip** this step to “save time.”
 
 ### 2. Context7 MCP (library and platform docs)
 
-When the bug touches **specific libraries, CLIs, or cloud products** (React,
-Hono, Wrangler, Cloudflare primitives, AI SDKs, etc.):
+When the bug touches **specific libraries, CLIs, or platform APIs** (VS Code
+Extension API, Hugging Face APIs, llama.cpp / `llama-server`, Node APIs, etc.):
 
 1. Use the **Context7** MCP server: resolve the library ID, then fetch focused
    docs for the API or behavior in question (errors, limits, migration notes).
@@ -79,8 +79,8 @@ If the problem is **hard**, **cross-cutting**, or you have been **going in
 circles** after the reproduce-and-narrow pass (step 3):
 
 - In **one turn**, spin up **multiple** `Task` subagents with **`readonly: true`**
-  and **narrow charters** (e.g. “data path only”, “auth/bindings only”, “async
-  and Worker limits only”).
+  and **narrow charters** (e.g. “download path only”, “subprocess lifecycle
+  only”, “proxy streaming only”, “VS Code provider only”).
 - Ask each for **plausible hypotheses** ranked by likelihood and **concrete
   next checks** (files, logs, experiments)—not generic advice.
 - **Merge** overlapping hypotheses; avoid duplicate deep reads of the same file.
@@ -160,8 +160,5 @@ not dribble edits earlier).
   the end** of the debug session (step 7), after honest verification status;
   consolidates the full investigation for the next engineer’s step 1.
 - **`phase-audit`:** plan-phase checks—not the same as production debugging.
-- **Domain skills:** once the failure narrows to a subsystem, hand off to the
-  matching skill such as **`cloudflare`**, **`react`**,
-  **`chrome-extension-debug`**, **`auto-gist-debug`**, **`scraping`**,
-  **`kokoro`**, **`bedrock-ops`**, or **`gemini-pipeline`** instead of keeping
-  the debug loop generic forever.
+- **Domain skills:** once the failure narrows to a Local Motion subsystem, hand
+  off to **`local-motion`** instead of keeping the debug loop generic forever.

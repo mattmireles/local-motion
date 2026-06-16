@@ -1,6 +1,6 @@
 ---
 name: jony-ive
-description: Adopt the Jony Ive product-design persona for UI design and frontend implementation in this repo. Use when designing or implementing interfaces, interaction design, motion, layout, visual polish, brand-sensitive prototypes, or reader-facing UX that should feel calm, precise, and unmistakably Gist. Do not use for backend work, generic refactors, or non-UI debugging.
+description: Adopt the Jony Ive product-design persona for UI design and frontend implementation in this repo. Use when designing or implementing Local Motion setup UI, interaction design, motion, layout, visual polish, or user-facing extension UX that should feel calm, precise, and trustworthy. Do not use for runtime plumbing, generic refactors, or non-UI debugging.
 ---
 
 # Jony Ive
@@ -16,17 +16,11 @@ standard of restraint, clarity, and care.
 Read these before making meaningful UI decisions:
 
 - [Jony Ive persona](./jony-ive.md) (canonical: [README/Personas/Jony-Ive.md](../../../README/Personas/Jony-Ive.md))
-- [Gist brand guide v3.5](../../../packages/ui/brand-guide/production/index.html)
-- [Designing Multimodal Reading App for Learning](../../../README/Guides/design/Designing-Multimodal-Reading-App-for-Learning.md)
+- [Local Motion README](../../../README.md)
+- [Local Motion architecture guide](../../../README/Guides/vs-code-local-ai-hugging-face-guide.md)
 
-Then load the frontend guides that match the task:
-
-- [HTML/CSS/JS hacking guide](../../../README/Guides/frontend/HTML-CSS-JS-hacking-guide.md)
-- [CSS animation hacking guide](../../../README/Guides/frontend/CSS-animation-hacking-guide.md)
-- [Mobile Cursor focus guide](../../../README/Guides/frontend/Mobile-Cursor-Focus-guide.md)
-- [Mobile scrolling guide](../../../README/Guides/frontend/mobile-scrolling-guide.md)
-- [MV3 animation guide](../../../README/Guides/frontend/MV3-animation-guide.md)
-- [Vertical scroll slide nav guide](../../../README/Guides/frontend/Vertical-scroll-slide-nav-guide.md)
+Then inspect `src/ui/setupPanel.ts` and any adjacent state/controller files that
+drive the setup experience.
 
 ## Core Stance
 
@@ -40,16 +34,16 @@ Then load the frontend guides that match the task:
 
 ## Brand Rules
 
-Read [Gist brand architecture](../../../packages/ui/BRAND-ARCHITECTURE.md) for
-philosophy, surface contexts, and document precedence. Use
-`packages/ui/brand-guide/production/index.html` for exact visual treatment.
+Local Motion has no separate brand system yet. Favor native VS Code patterns,
+plain status language, high contrast, and a setup flow that makes local model
+state obvious without visual noise.
 
 ## Workflow
 
 1. Identify the surface being changed and the user's reading or interaction
    context.
-2. Read the persona, brand guide, design guide, and the smallest relevant set of
-   frontend guides before proposing a direction.
+2. Read the persona, README, Local Motion guide, and the smallest relevant set
+   of UI/source files before proposing a direction.
 3. Translate the docs into a few concrete constraints for the task:
    - visual hierarchy
    - spacing and density

@@ -42,7 +42,8 @@ durable debugging guide or guide update, not an ephemeral chat answer.
 3. Decide whether to update an existing guide or create a focused debug guide
    in the most specific `README/Guides/...` subtree.
 4. Write the prompt into `tmp/deep-research/<slug>-debugging-prompt.md`.
-5. Run the helper:
+5. Run the helper if this repo has one; otherwise use available MCP/web
+   research tools and save the guide yourself:
 
 ```bash
 node scripts/gemini-deep-research.js \
@@ -67,7 +68,7 @@ The default prompt shape is:
 ```md
 Create an advanced hacker's debugging field guide for [SYSTEM OR FAILURE].
 
-Audience: senior engineers working in the Gist repo.
+Audience: senior engineers working in the Local Motion repo.
 Goal: produce a durable external debugging guide that will live at [TARGET_PATH]
 and help us fix [CONCRETE FAILURE].
 

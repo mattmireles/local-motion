@@ -1,6 +1,6 @@
 ---
 name: build-vs-buy
-description: Decide whether to adopt an open-source library or build in-house before committing to a design. Use when scoping a feature, writing a plan, evaluating architecture, or when the user suggests implementing infrastructure, parsing, UI primitives, SDK wrappers, or other reusable capabilities from scratch. Runs a short OSS scan (WebSearch), shortlists candidates, and records a dependency cost note. Prefer edge-safe, TypeScript-friendly libraries that reduce complexity in this repo.
+description: Decide whether to adopt an open-source library or build in-house before committing to a design. Use when scoping a feature, writing a plan, evaluating architecture, or when the user suggests implementing infrastructure, parsing, UI primitives, SDK wrappers, or other reusable capabilities from scratch. Runs a short OSS scan (WebSearch), shortlists candidates, and records a dependency cost note. Prefer TypeScript-friendly libraries that work cleanly inside a VS Code extension and reduce complexity in this repo.
 ---
 
 # Build vs Buy
@@ -15,8 +15,8 @@ Default bias:
 - Prefer a well-supported library when it clearly fits.
 - Prefer building in-house when library fit is weak, heavy, abandoned, unsafe,
   or would add more complexity than it removes.
-- In this repo, prefer libraries that are friendly to Cloudflare, edge runtimes,
-  ESM, and TypeScript.
+- In this repo, prefer libraries that are friendly to VS Code extensions,
+  macOS local runtime constraints, ESM, and TypeScript.
 
 ## Use When
 
@@ -64,8 +64,8 @@ Use targeted searches like:
 - `best open source <capability> <language>`
 - `github <capability> library typescript`
 - `<capability> npm mature maintained`
-- `<capability> cloudflare workers`
-- `<capability> react`
+- `<capability> vscode extension`
+- `<capability> node typescript`
 - `<capability> comparison open source`
 
 Favor signals like:
@@ -76,14 +76,13 @@ Favor signals like:
 - compatibility with the repo runtime
 - small, understandable API surface
 
-For Gist, add these filters early:
+For Local Motion, add these filters early:
 
-- works in Cloudflare Workers, browser, or edge-safe server environments when
-  relevant
+- works in a VS Code extension host or Node sidecar context when relevant
 - ships ESM or clean modern bundler support
 - has solid TypeScript support
-- avoids native binaries or Node-only assumptions unless the target surface is
-  explicitly Node-only
+- avoids native install steps unless the target surface is explicitly local
+  macOS tooling
 - can be hidden behind a local adapter if we ever replace it
 
 ## Evaluation Rubric
@@ -94,7 +93,7 @@ Check each candidate for:
 - **Weight**: dependency size, API sprawl, operational overhead
 - **Maintenance**: recent activity, issue health, release cadence
 - **Adoption**: real usage, stars are a weak signal but still useful
-- **Compatibility**: TypeScript, ESM, Cloudflare/edge, browser/server limits
+- **Compatibility**: TypeScript, ESM, VS Code extension host, Node/macOS limits
 - **License**: acceptable for the project
 - **Escape hatch**: can we replace it later without surgery?
 - **Dependency cost**: package count, transitive risk, cognitive overhead, and
@@ -104,12 +103,11 @@ Reject candidates fast if they are:
 
 - abandoned
 - overbuilt for the need
-- Node-only when the runtime is edge/browser
+- browser-only when the runtime is the VS Code extension host or Node sidecar
 - difficult to integrate safely
 - poorly documented
 - coupled to a larger framework we do not want
-- dependent on native install steps or Node APIs that do not survive the target
-  runtime
+- dependent on native install steps that add more user pain than they remove
 
 ## Repo Bias
 
@@ -117,7 +115,7 @@ When two options are otherwise close, prefer the one that is:
 
 - smaller
 - framework-agnostic
-- edge-safe
+- extension-host safe
 - TypeScript-first
 - easy to wrap behind a thin local interface
 

@@ -86,7 +86,7 @@ High-level approach before diving into phases. Include a simple diagram if helpf
 
 **Goal:** [What this phase accomplishes]
 
-**Skills:** [Skills to use in this phase, e.g. `cloudflare`, `react`, `phase-audit`]
+**Skills:** [Skills to use in this phase, e.g. `local-motion`, `phase-audit`]
 
 **Tasks:**
 
