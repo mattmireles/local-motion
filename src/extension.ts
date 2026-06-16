@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { LocalMotionController } from "./app/localMotionController";
-import { shouldOpenSetupOnboarding, shouldResumeAutomagicalSetup, shouldRunFirstStartupAutomagicalSetup } from "./onboarding";
+import {
+  hasCompletedAutomagicalSetupForInstalledModel,
+  shouldOpenSetupOnboarding,
+  shouldResumeAutomagicalSetup,
+  shouldRunFirstStartupAutomagicalSetup
+} from "./onboarding";
 import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
@@ -89,10 +94,13 @@ async function maybeResumeAutomagicalSetup(
   output: vscode.OutputChannel
 ): Promise<boolean> {
   const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("resumeAutomagicalSetupOnStartup", true);
+  const installedModel = state.installedModel();
   if (!shouldResumeAutomagicalSetup({
     enabled,
-    setupCompleted: state.automagicalSetupCompleted(),
-    hasInstalledModel: state.installedModel() !== undefined,
+    hasCompletedSetupForInstalledModel: hasCompletedAutomagicalSetupForInstalledModel(
+      installedModel,
+      state.automagicalSetupCompletion()
+    ),
     runtimeRunning: runtime?.status().running ?? false
   })) {
     return false;

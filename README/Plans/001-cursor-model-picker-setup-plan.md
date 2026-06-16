@@ -381,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 35 tests.
+- `npm test`: passed, 37 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -454,9 +454,13 @@ can select the Local Motion model through the native model picker.
   regression tests
   `OpenAI proxy uses the preferred Cursor port when it is available` and
   `OpenAI proxy falls back to a dynamic port when the preferred Cursor port is occupied`.
-- Completion state: `localMotion.automagicalSetupCompleted` is written only
-  when endpoint verification, setup-block copy, and Cursor settings opening all
-  succeed. Guarded by regression test
+- Completion evidence: `localMotion.automagicalSetupCompleted` stores the
+  verified setup identity, not a loose boolean, and startup resume only trusts it
+  when it matches the installed model. It is written only when endpoint
+  verification, setup-block copy, and Cursor settings opening all succeed.
+  Guarded by regression tests
+  `automagical setup completion records the verified setup identity`,
+  `automagical setup completion rejects unverified copied setup`, and
   `automagical setup completion requires endpoint, clipboard, and settings
   success`.
 - Command-palette setup progress: the command now runs through

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
+  automagicalSetupCompletion,
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
@@ -166,8 +167,10 @@ export class LocalMotionController {
       endpointVerified: cursor.verification.ok,
       setupCopied: cursor.copy.ok,
       settingsOpened: cursor.settings.ok
-    })) {
-      await this.state.markAutomagicalSetupCompleted();
+    }) && cursor.cursorSetupFreshness.lastCopied) {
+      await this.state.markAutomagicalSetupCompleted(
+        automagicalSetupCompletion(cursor.cursorSetupFreshness.lastCopied, new Date().toISOString())
+      );
     }
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { InstalledModel, LastCopiedCursorSetup } from "./types";
+import type { AutomagicalSetupCompletion, InstalledModel, LastCopiedCursorSetup } from "./types";
 
 const INSTALLED_MODEL_KEY = "localMotion.installedModel";
 const LAST_COPIED_CURSOR_SETUP_KEY = "localMotion.lastCopiedCursorSetup";
@@ -33,11 +33,12 @@ export class LocalMotionState {
     await this.context.globalState.update(SETUP_ONBOARDING_OPENED_KEY, true);
   }
 
-  automagicalSetupCompleted(): boolean {
-    return this.context.globalState.get<boolean>(AUTOMAGICAL_SETUP_COMPLETED_KEY, false);
+  automagicalSetupCompletion(): AutomagicalSetupCompletion | undefined {
+    const completion = this.context.globalState.get<AutomagicalSetupCompletion | boolean>(AUTOMAGICAL_SETUP_COMPLETED_KEY);
+    return typeof completion === "object" && completion !== null ? completion : undefined;
   }
 
-  async markAutomagicalSetupCompleted(): Promise<void> {
-    await this.context.globalState.update(AUTOMAGICAL_SETUP_COMPLETED_KEY, true);
+  async markAutomagicalSetupCompleted(completion: AutomagicalSetupCompletion): Promise<void> {
+    await this.context.globalState.update(AUTOMAGICAL_SETUP_COMPLETED_KEY, completion);
   }
 }

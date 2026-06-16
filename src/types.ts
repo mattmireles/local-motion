@@ -83,3 +83,12 @@ export interface LastCopiedCursorSetup {
   trigger: "prepareCursor" | "copySetupBlock";
   endpointVerifiedAt?: string;
 }
+
+export interface AutomagicalSetupCompletion {
+  baseUrl: string;
+  modelId: string;
+  apiKeyLabel: "local-motion";
+  cursorSetupCopiedAt: string;
+  endpointVerifiedAt: string;
+  completedAt: string;
+}

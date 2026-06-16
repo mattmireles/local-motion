@@ -1,4 +1,4 @@
-import type { LastCopiedCursorSetup, RuntimeStatus } from "../types";
+import type { AutomagicalSetupCompletion, LastCopiedCursorSetup, RuntimeStatus } from "../types";
 import { LOCAL_MOTION_API_KEY } from "../runtime/openAiChat";
 
 export interface CursorSetupViewModel {
@@ -107,6 +107,24 @@ export function lastCopiedCursorSetup(
     copiedAt,
     trigger,
     endpointVerifiedAt
+  };
+}
+
+export function automagicalSetupCompletion(
+  setup: LastCopiedCursorSetup,
+  completedAt: string
+): AutomagicalSetupCompletion {
+  if (!setup.endpointVerifiedAt) {
+    throw new Error("Automagical setup completion requires verified Cursor setup.");
+  }
+
+  return {
+    baseUrl: setup.baseUrl,
+    modelId: setup.modelId,
+    apiKeyLabel: setup.apiKeyLabel,
+    cursorSetupCopiedAt: setup.copiedAt,
+    endpointVerifiedAt: setup.endpointVerifiedAt,
+    completedAt
   };
 }
 

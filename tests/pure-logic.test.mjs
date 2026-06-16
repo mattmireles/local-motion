@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
+  automagicalSetupCompletion,
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
@@ -18,6 +19,7 @@ import {
 } from "../out/models/compatibility.js";
 import { canReuseInstalledModel } from "../out/models/installedModel.js";
 import {
+  hasCompletedAutomagicalSetupForInstalledModel,
   shouldOpenSetupOnboarding,
   shouldResumeAutomagicalSetup,
   shouldRunFirstStartupAutomagicalSetup
@@ -364,6 +366,42 @@ test("last copied Cursor setup records trigger and verification timestamp", () =
   );
 });
 
+test("automagical setup completion records the verified setup identity", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    modelId: "local-motion-test",
+    message: "running"
+  });
+  const copied = lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z");
+
+  assert.deepEqual(
+    automagicalSetupCompletion(copied, "2026-06-16T00:00:02.000Z"),
+    {
+      baseUrl: "http://127.0.0.1:50000/v1",
+      modelId: "local-motion-test",
+      apiKeyLabel: "local-motion",
+      cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
+      endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
+      completedAt: "2026-06-16T00:00:02.000Z"
+    }
+  );
+});
+
+test("automagical setup completion rejects unverified copied setup", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    modelId: "local-motion-test",
+    message: "running"
+  });
+
+  assert.throws(
+    () => automagicalSetupCompletion(lastCopiedCursorSetup(viewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z"), "2026-06-16T00:00:02.000Z"),
+    /verified Cursor setup/
+  );
+});
+
 test("only successful full setup-block copies update last copied Cursor setup", () => {
   assert.equal(shouldPersistCursorSetupCopy("setupBlock", true), true);
   assert.equal(shouldPersistCursorSetupCopy("setupBlock", false), false);
@@ -414,24 +452,52 @@ test("opens setup onboarding only for first startup without an installed model",
 });
 
 test("resumes automagical setup only after a completed setup with an installed model", () => {
+  const installed = {
+    repoId: "example/model-GGUF",
+    fileName: "model-Q4_K_M.gguf",
+    revision: "main",
+    sizeBytes: 4,
+    modelPath: "/tmp/model-Q4_K_M.gguf",
+    modelId: "local-motion-test",
+    displayName: "Example",
+    contextTokens: 8192
+  };
+  const completion = {
+    baseUrl: "http://127.0.0.1:50000/v1",
+    modelId: "local-motion-test",
+    apiKeyLabel: "local-motion",
+    cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
+    endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
+    completedAt: "2026-06-16T00:00:02.000Z"
+  };
+
+  assert.equal(hasCompletedAutomagicalSetupForInstalledModel(installed, completion), true);
   assert.equal(
-    shouldResumeAutomagicalSetup({ enabled: true, setupCompleted: true, hasInstalledModel: true, runtimeRunning: false }),
+    shouldResumeAutomagicalSetup({ enabled: true, hasCompletedSetupForInstalledModel: true, runtimeRunning: false }),
     true
   );
   assert.equal(
-    shouldResumeAutomagicalSetup({ enabled: false, setupCompleted: true, hasInstalledModel: true, runtimeRunning: false }),
+    shouldResumeAutomagicalSetup({ enabled: false, hasCompletedSetupForInstalledModel: true, runtimeRunning: false }),
     false
   );
   assert.equal(
-    shouldResumeAutomagicalSetup({ enabled: true, setupCompleted: false, hasInstalledModel: true, runtimeRunning: false }),
+    shouldResumeAutomagicalSetup({ enabled: true, hasCompletedSetupForInstalledModel: false, runtimeRunning: false }),
     false
   );
   assert.equal(
-    shouldResumeAutomagicalSetup({ enabled: true, setupCompleted: true, hasInstalledModel: false, runtimeRunning: false }),
+    hasCompletedAutomagicalSetupForInstalledModel(undefined, completion),
     false
   );
   assert.equal(
-    shouldResumeAutomagicalSetup({ enabled: true, setupCompleted: true, hasInstalledModel: true, runtimeRunning: true }),
+    hasCompletedAutomagicalSetupForInstalledModel({ ...installed, modelId: "other-model" }, completion),
+    false
+  );
+  assert.equal(
+    hasCompletedAutomagicalSetupForInstalledModel(installed, { ...completion, endpointVerifiedAt: "" }),
+    false
+  );
+  assert.equal(
+    shouldResumeAutomagicalSetup({ enabled: true, hasCompletedSetupForInstalledModel: true, runtimeRunning: true }),
     false
   );
 });
