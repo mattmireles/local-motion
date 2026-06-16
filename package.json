@@ -88,6 +88,11 @@
           "default": true,
           "description": "Open Local Motion setup automatically once on first startup when no model has been installed."
         },
+        "localMotion.runAutomagicalSetupOnFirstStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run Automagical Setup automatically once on first startup when no model has been installed. This may install llama.cpp and download the default compatible GGUF model."
+        },
         "localMotion.resumeAutomagicalSetupOnStartup": {
           "type": "boolean",
           "default": true,

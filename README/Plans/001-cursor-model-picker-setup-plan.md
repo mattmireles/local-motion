@@ -412,6 +412,13 @@ can select the Local Motion model through the native model picker.
   discover a command before seeing the automagical path. This is guarded by
   regression test
   `opens setup onboarding only for first startup without an installed model`.
+- First-start automagical setup: by default, the first startup with no installed
+  model opens the setup panel and starts `Automagical Setup` once. This may
+  install `llama.cpp` and download the default compatible GGUF model. The attempt
+  is marked before it starts so failures do not silently retry on every editor
+  launch, and users can disable it with
+  `localMotion.runAutomagicalSetupOnFirstStartup`. Guarded by regression test
+  `runs first startup automagical setup only once before any model is installed`.
 - Startup resume: after a successful Automagical Setup, future startups can
   restart the size-valid installed model and prepare Cursor without another
   click. This path is reuse-only and does not select or download a replacement

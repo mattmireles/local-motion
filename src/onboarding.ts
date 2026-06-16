@@ -11,10 +11,21 @@ export interface AutomagicalResumeInput {
   runtimeRunning: boolean;
 }
 
+export interface FirstStartupAutomagicalInput {
+  enabled: boolean;
+  alreadyOpened: boolean;
+  hasInstalledModel: boolean;
+  runtimeRunning: boolean;
+}
+
 export function shouldOpenSetupOnboarding(input: SetupOnboardingInput): boolean {
   return input.enabled && !input.alreadyOpened && !input.hasInstalledModel;
 }
 
 export function shouldResumeAutomagicalSetup(input: AutomagicalResumeInput): boolean {
   return input.enabled && input.setupCompleted && input.hasInstalledModel && !input.runtimeRunning;
+}
+
+export function shouldRunFirstStartupAutomagicalSetup(input: FirstStartupAutomagicalInput): boolean {
+  return input.enabled && !input.alreadyOpened && !input.hasInstalledModel && !input.runtimeRunning;
 }

@@ -16,7 +16,11 @@ import {
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
 import { canReuseInstalledModel } from "../out/models/installedModel.js";
-import { shouldOpenSetupOnboarding, shouldResumeAutomagicalSetup } from "../out/onboarding.js";
+import {
+  shouldOpenSetupOnboarding,
+  shouldResumeAutomagicalSetup,
+  shouldRunFirstStartupAutomagicalSetup
+} from "../out/onboarding.js";
 import {
   isAuthorizedBearer,
   LOCAL_MOTION_API_KEY,
@@ -368,6 +372,29 @@ test("resumes automagical setup only after a completed setup with an installed m
   );
   assert.equal(
     shouldResumeAutomagicalSetup({ enabled: true, setupCompleted: true, hasInstalledModel: true, runtimeRunning: true }),
+    false
+  );
+});
+
+test("runs first startup automagical setup only once before any model is installed", () => {
+  assert.equal(
+    shouldRunFirstStartupAutomagicalSetup({ enabled: true, alreadyOpened: false, hasInstalledModel: false, runtimeRunning: false }),
+    true
+  );
+  assert.equal(
+    shouldRunFirstStartupAutomagicalSetup({ enabled: false, alreadyOpened: false, hasInstalledModel: false, runtimeRunning: false }),
+    false
+  );
+  assert.equal(
+    shouldRunFirstStartupAutomagicalSetup({ enabled: true, alreadyOpened: true, hasInstalledModel: false, runtimeRunning: false }),
+    false
+  );
+  assert.equal(
+    shouldRunFirstStartupAutomagicalSetup({ enabled: true, alreadyOpened: false, hasInstalledModel: true, runtimeRunning: false }),
+    false
+  );
+  assert.equal(
+    shouldRunFirstStartupAutomagicalSetup({ enabled: true, alreadyOpened: false, hasInstalledModel: false, runtimeRunning: true }),
     false
   );
 });

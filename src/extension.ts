@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { LocalMotionController } from "./app/localMotionController";
-import { shouldOpenSetupOnboarding, shouldResumeAutomagicalSetup } from "./onboarding";
+import { shouldOpenSetupOnboarding, shouldResumeAutomagicalSetup, shouldRunFirstStartupAutomagicalSetup } from "./onboarding";
 import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
@@ -49,7 +49,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  if (!await maybeResumeAutomagicalSetup(state, controller, output)) {
+  if (!await maybeResumeAutomagicalSetup(state, controller, output) && !await maybeRunFirstStartupAutomagicalSetup(state, controller, output)) {
     await maybeOpenSetupOnboarding(state, controller, output);
   }
 }
@@ -92,6 +92,30 @@ async function maybeResumeAutomagicalSetup(
   }
 
   void SetupPanel.resumeAutomagicalSetup(controller, output).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(message);
+    void vscode.window.showErrorMessage(message);
+  });
+  return true;
+}
+
+async function maybeRunFirstStartupAutomagicalSetup(
+  state: LocalMotionState,
+  controller: LocalMotionController,
+  output: vscode.OutputChannel
+): Promise<boolean> {
+  const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("runAutomagicalSetupOnFirstStartup", true);
+  if (!shouldRunFirstStartupAutomagicalSetup({
+    enabled,
+    alreadyOpened: state.setupOnboardingOpened(),
+    hasInstalledModel: state.installedModel() !== undefined,
+    runtimeRunning: runtime?.status().running ?? false
+  })) {
+    return false;
+  }
+
+  await state.markSetupOnboardingOpened();
+  void SetupPanel.runAutomagicalSetup(controller, output).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(message);
     void vscode.window.showErrorMessage(message);

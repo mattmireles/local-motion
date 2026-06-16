@@ -30,11 +30,15 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 ## Setup
 
 1. Install Local Motion.
-2. Use the setup panel that opens on first startup, or run
-   `Local Motion: Automagical Setup`.
+2. Local Motion opens setup and runs `Automagical Setup` once on first startup.
 
 The setup panel also exposes the same `Automagical Setup` action through
 `Local Motion: Open Setup`.
+
+First-start Automagical Setup may install `llama.cpp` through Homebrew and
+download the default compatible GGUF model. Disable
+`localMotion.runAutomagicalSetupOnFirstStartup` to make first startup open the
+setup panel without starting the install.
 
 After Automagical Setup succeeds, Local Motion can restart the installed model
 and prepare Cursor automatically on future editor startups without downloading a
