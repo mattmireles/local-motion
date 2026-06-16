@@ -39,13 +39,6 @@ export class SetupPanel {
     return SetupPanel.show(controller, output).hostStartedAutomagicalSetup();
   }
 
-  static async resumeAutomagicalSetup(
-    controller: LocalMotionController,
-    output: vscode.OutputChannel
-  ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    return SetupPanel.show(controller, output).hostStartedResumeAutomagicalSetup();
-  }
-
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly controller: LocalMotionController,
@@ -153,35 +146,9 @@ export class SetupPanel {
     }
   }
 
-  private async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    this.setupOperationActive = true;
-    try {
-      await this.waitUntilReady();
-      await this.post({ type: "automagicalSetupStarted" });
-      const payload = await this.controller.resumeAutomagicalSetup();
-      if (payload) {
-        await this.post(payload);
-      } else {
-        await this.postInitialState();
-      }
-      return payload;
-    } finally {
-      this.setupOperationActive = false;
-    }
-  }
-
   private async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
     try {
       return await this.automagicalSetup();
-    } catch (error) {
-      await this.reportError(error);
-      throw error;
-    }
-  }
-
-  private async hostStartedResumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    try {
-      return await this.resumeAutomagicalSetup();
     } catch (error) {
       await this.reportError(error);
       throw error;

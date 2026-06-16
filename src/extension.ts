@@ -98,8 +98,27 @@ async function maybeResumeAutomagicalSetup(
     return false;
   }
 
-  void SetupPanel.resumeAutomagicalSetup(controller, output).catch(() => undefined);
+  void resumeAutomagicalSetupInBackground(controller, output);
   return true;
+}
+
+async function resumeAutomagicalSetupInBackground(
+  controller: LocalMotionController,
+  output: vscode.OutputChannel
+): Promise<void> {
+  try {
+    await controller.resumeAutomagicalSetup();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`Automagical startup resume failed: ${message}`);
+    const answer = await vscode.window.showWarningMessage(
+      `Local Motion could not restart automatically: ${message}`,
+      "Open Setup"
+    );
+    if (answer === "Open Setup") {
+      SetupPanel.show(controller, output);
+    }
+  }
 }
 
 async function maybeRunFirstStartupAutomagicalSetup(

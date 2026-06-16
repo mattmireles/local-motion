@@ -426,7 +426,6 @@ test("runs first startup automagical setup only once before any model is install
 test("host-started automagical setup reports errors to the webview", async () => {
   const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
   assert.equal(panelSource.includes("hostStartedAutomagicalSetup"), true);
-  assert.equal(panelSource.includes("hostStartedResumeAutomagicalSetup"), true);
   assert.equal(panelSource.includes("type: \"error\""), true);
 });
 
@@ -461,4 +460,11 @@ test("host-started automagical setup hydrates base state before progress", async
   assert.equal(runtimeStateIndex < readyIndex, true);
   assert.equal(panelSource.includes("shouldPostInitialQuantizations"), true);
   assert.equal(panelSource.includes("automagicalSetupRunning"), true);
+});
+
+test("startup resume does not open the setup panel unless recovery is requested", async () => {
+  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
+  assert.equal(extensionSource.includes("resumeAutomagicalSetupInBackground"), true);
+  assert.match(extensionSource, /controller\.resumeAutomagicalSetup\(\)/);
+  assert.equal(extensionSource.includes("SetupPanel.resumeAutomagicalSetup"), false);
 });

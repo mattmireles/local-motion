@@ -379,7 +379,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 31 tests.
+- `npm test`: passed, 32 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -436,6 +436,10 @@ can select the Local Motion model through the native model picker.
   dependency; explicit Automagical Setup and manual Install and Run are the only
   paths allowed to invoke Homebrew dependency installation. Guarded by
   regression test `startup resume does not install missing llama dependency`.
+  Startup resume now runs through the controller directly instead of opening the
+  setup panel every time; recovery opens setup only if resume fails and the user
+  chooses that action. Guarded by regression test
+  `startup resume does not open the setup panel unless recovery is requested`.
 - Completion state: `localMotion.automagicalSetupCompleted` is written only
   when endpoint verification, setup-block copy, and Cursor settings opening all
   succeed. Guarded by regression test

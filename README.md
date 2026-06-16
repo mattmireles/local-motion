@@ -45,8 +45,9 @@ If first-start setup fails or is cancelled, run
 
 After Automagical Setup succeeds, Local Motion can restart the installed model
 and prepare Cursor automatically on future editor startups without downloading a
-new model. Disable `localMotion.resumeAutomagicalSetupOnStartup` to turn that
-off.
+new model or opening the setup panel. If background resume fails, Local Motion
+offers to open setup for recovery. Disable
+`localMotion.resumeAutomagicalSetupOnStartup` to turn that off.
 
 For manual control:
 
