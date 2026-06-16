@@ -379,7 +379,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 21 tests.
+- `npm test`: passed, 22 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
