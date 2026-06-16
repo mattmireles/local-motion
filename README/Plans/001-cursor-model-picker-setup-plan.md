@@ -392,15 +392,21 @@ can select the Local Motion model through the native model picker.
 - Public extension readiness: packaged README now explains setup, requirements,
   Cursor limitations, and privacy; manifest metadata points to the public origin
   repository and issue tracker. `CHANGELOG.md`, `SUPPORT.md`, and a Marketplace
-  gallery banner are included for the public listing.
+  gallery banner are included for the public listing. A manual
+  `Publish VS Code Extension` GitHub Actions workflow is checked in and excluded
+  from the VSIX.
 - Automagical setup: setup UI now exposes one primary `Automagical Setup` action
   that reuses a size-valid installed model file when available; otherwise it
   selects the lowest-memory compatible default quantization, installs/runs it,
   then prepares Cursor. The selector and installed-model reuse predicate are
   covered by regression tests.
+- Command-palette setup: `Local Motion: Automagical Setup` now runs the same
+  path directly, so the user no longer has to open the setup panel first.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
-  needs authenticated ownership confirmation before `vsce publish`.
+  needs authenticated ownership confirmation before `vsce publish`. The GitHub
+  workflow expects a `VSCE_PAT` repository secret with Marketplace `Manage`
+  scope.
 - Manual Cursor model-picker QA: Not testable in this non-interactive run. The
   machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
   existing Local Motion GGUF storage was found and Cursor CLI does not expose a
@@ -443,6 +449,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] `Automagical Setup` owns the default Local Motion path: reuse an installed
   model when possible; otherwise select compatible quantization, install/run
   model, verify endpoint, copy Cursor setup, and open Cursor Models settings.
+- [x] Command palette exposes `Local Motion: Automagical Setup` as the shortest
+  default setup path.
 
 ### Definition of Done
 

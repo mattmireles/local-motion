@@ -35,6 +35,7 @@
   },
   "activationEvents": [
     "onCommand:localMotion.open",
+    "onCommand:localMotion.automagicalSetup",
     "onCommand:localMotion.stop",
     "onLanguageModelChatProvider:local-motion"
   ],
@@ -44,6 +45,10 @@
       {
         "command": "localMotion.open",
         "title": "Local Motion: Open Setup"
+      },
+      {
+        "command": "localMotion.automagicalSetup",
+        "title": "Local Motion: Automagical Setup"
       },
       {
         "command": "localMotion.stop",

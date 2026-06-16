@@ -3,6 +3,7 @@
 .agents/**
 .claude/**
 .cursor/**
+.github/**
 .serena/**
 README/**
 scripts/**

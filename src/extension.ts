@@ -27,6 +27,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.automagicalSetup", async () => {
+      try {
+        SetupPanel.show(controller, output);
+        const result = await controller.automagicalSetup(() => undefined);
+        if (result) {
+          await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        output.appendLine(message);
+        await vscode.window.showErrorMessage(message);
+      }
+    })
+  );
+  context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.stop", async () => {
       await runtime?.stop();
       provider.refresh();

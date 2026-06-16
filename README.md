@@ -28,8 +28,10 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 ## Setup
 
 1. Install Local Motion.
-2. Run `Local Motion: Open Setup`.
-3. Click `Automagical Setup`.
+2. Run `Local Motion: Automagical Setup`.
+
+The setup panel also exposes the same `Automagical Setup` action through
+`Local Motion: Open Setup`.
 
 For manual control:
 
@@ -82,6 +84,35 @@ npm run package
 
 Open this folder in VS Code or Cursor, run the Extension Development Host, and
 execute `Local Motion: Open Setup`.
+
+## Publishing
+
+Local Motion publishes to the Visual Studio Marketplace with `vsce`.
+
+Local package proof:
+
+```bash
+npm run check
+npm run lint
+npm test
+npm run package
+```
+
+Manual Marketplace publish:
+
+```bash
+VSCE_PAT=<token> npx vsce publish -p "$VSCE_PAT"
+```
+
+GitHub Actions publish:
+
+1. Create or verify the Visual Studio Marketplace publisher ID from
+   `package.json`.
+2. Add a repository secret named `VSCE_PAT` with Marketplace `Manage` scope.
+3. Run the `Publish VS Code Extension` workflow manually.
+
+Microsoft recommends moving automated publishing to Entra ID before global Azure
+DevOps Personal Access Tokens retire on December 1, 2026.
 
 See [Local Native LLM Extensions for VS Code and Cursor on macOS](README/Guides/vs-code-local-ai-hugging-face-guide.md)
 for the sidecar architecture field guide.
