@@ -555,13 +555,15 @@ test("host-started automagical setup hydrates base state before progress", async
   assert.equal(shouldPostInitialQuantizations({ setupOperationActive: true }), false);
 
   const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
+  const panelHtmlSource = await readFile(new URL("../out/ui/setupPanelHtml.js", import.meta.url), "utf8");
   const runtimeStateIndex = panelSource.indexOf("await this.postInitialRuntimeState()");
   const readyIndex = panelSource.indexOf("this.markReady()");
   assert.notEqual(runtimeStateIndex, -1);
   assert.notEqual(readyIndex, -1);
   assert.equal(runtimeStateIndex < readyIndex, true);
   assert.equal(panelSource.includes("shouldPostInitialQuantizations"), true);
-  assert.equal(panelSource.includes("automagicalSetupRunning"), true);
+  assert.equal(panelSource.includes("setupPanelHtml"), true);
+  assert.equal(panelHtmlSource.includes("automagicalSetupRunning"), true);
 });
 
 test("startup resume does not prepare Cursor or open the setup panel unless recovery is requested", async () => {

@@ -481,6 +481,9 @@ can select the Local Motion model through the native model picker.
   quantization loading while setup is active, and keeps late quantization
   responses from re-enabling manual install. Guarded by regression test
   `host-started automagical setup hydrates base state before progress`.
+  `SetupPanel` now owns webview lifecycle and message routing only; the HTML
+  document lives in `src/ui/setupPanelHtml.ts` so setup UI rendering changes no
+  longer expand the controller/router module.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub
