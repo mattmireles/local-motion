@@ -541,15 +541,20 @@ test("retry automagical setup command is registered and contributed", async () =
   assert.equal(extensionSource.includes("localMotion.retryAutomagicalSetup"), true);
 });
 
-test("prepare Cursor command is registered and reuses assisted setup action", async () => {
+test("prepare Cursor command is registered and starts a reusable installed model first", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const commands = packageJson.contributes.commands.map((command) => command.command);
   assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.prepareCursor"), true);
   assert.equal(commands.includes("localMotion.prepareCursor"), true);
 
   const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
+  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
   assert.equal(extensionSource.includes("localMotion.prepareCursor"), true);
-  assert.match(extensionSource, /controller\.prepareCursor\(\)/);
+  assert.match(extensionSource, /controller\.prepareCursorAfterStartingInstalledModel\(\)/);
+  assert.match(controllerSource, /prepareCursorAfterStartingInstalledModel/);
+  assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
+  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
+  assert.match(controllerSource, /return this\.prepareCursor\(\)/);
 });
 
 test("startup resume does not install missing llama dependency", async () => {

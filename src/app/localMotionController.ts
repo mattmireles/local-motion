@@ -220,6 +220,19 @@ export class LocalMotionController {
     return { type: "cursorSetupPrepared", viewModel, cursorSetupFreshness: freshness, verification, copy, settings };
   }
 
+  async prepareCursorAfterStartingInstalledModel(): Promise<CursorSetupPreparedResponse> {
+    if (!this.runtime.status().running) {
+      const installedModel = await this.reusableInstalledModel();
+      if (installedModel) {
+        await this.startInstalledModel(installedModel, {
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+        });
+      }
+    }
+
+    return this.prepareCursor();
+  }
+
   async copyCursorValue(key: CursorSetupValueKey): Promise<CursorCopyResult> {
     const viewModel = this.currentCursorSetupViewModel();
     const result = await this.writeCursorValue(key, viewModel);

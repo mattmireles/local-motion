@@ -409,11 +409,12 @@ can select the Local Motion model through the native model picker.
   `automagical dependency install has no second confirmation prompt`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
-- Command-palette Cursor handoff: `Local Motion: Prepare Cursor` runs the same
+- Command-palette Cursor handoff: `Local Motion: Prepare Cursor` starts a
+  size-valid installed model when the runtime is stopped, then runs the same
   endpoint verification, setup-block copy, and Cursor Models settings action
-  directly when a model is already running, so users do not need to open setup
-  just to refresh Cursor values. Guarded by regression test
-  `prepare Cursor command is registered and reuses assisted setup action`.
+  directly, so users do not need to open setup just to refresh Cursor values.
+  Guarded by regression test
+  `prepare Cursor command is registered and starts a reusable installed model first`.
 - Retry setup: `Local Motion: Retry Automagical Setup` is a command-palette
   alias for the same automagical path, so users can recover explicitly after a
   cancelled or failed first-start install/download. Guarded by regression test
@@ -543,7 +544,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] Command palette exposes `Local Motion: Automagical Setup` as the shortest
   default setup path.
 - [x] Command palette exposes `Local Motion: Prepare Cursor` for one-command
-  Cursor handoff when a local model is already running.
+  Cursor handoff when a local model is already running or a reusable installed
+  model can be restarted.
 
 ### Definition of Done
 

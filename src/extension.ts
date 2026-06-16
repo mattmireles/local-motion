@@ -76,7 +76,7 @@ async function runAutomagicalSetupCommand(controller: LocalMotionController, out
 }
 
 async function prepareCursorCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
-  const result = await controller.prepareCursor();
+  const result = await controller.prepareCursorAfterStartingInstalledModel();
   output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
   if (result.verification.ok && result.copy.ok && result.settings.ok) {
     await vscode.window.showInformationMessage("Local Motion Cursor setup block copied and Cursor Models settings opened.");
