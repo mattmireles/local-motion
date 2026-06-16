@@ -398,3 +398,10 @@ test("runs first startup automagical setup only once before any model is install
     false
   );
 });
+
+test("host-started automagical setup reports errors to the webview", async () => {
+  const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
+  assert.equal(panelSource.includes("hostStartedAutomagicalSetup"), true);
+  assert.equal(panelSource.includes("hostStartedResumeAutomagicalSetup"), true);
+  assert.equal(panelSource.includes("type: \"error\""), true);
+});

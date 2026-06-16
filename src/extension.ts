@@ -34,10 +34,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (result) {
           await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        output.appendLine(message);
-        await vscode.window.showErrorMessage(message);
+      } catch {
+        // SetupPanel reports command-started automagical errors into the webview.
       }
     })
   );
@@ -91,11 +89,7 @@ async function maybeResumeAutomagicalSetup(
     return false;
   }
 
-  void SetupPanel.resumeAutomagicalSetup(controller, output).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    output.appendLine(message);
-    void vscode.window.showErrorMessage(message);
-  });
+  void SetupPanel.resumeAutomagicalSetup(controller, output).catch(() => undefined);
   return true;
 }
 
@@ -115,10 +109,6 @@ async function maybeRunFirstStartupAutomagicalSetup(
   }
 
   await state.markSetupOnboardingOpened();
-  void SetupPanel.runAutomagicalSetup(controller, output).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    output.appendLine(message);
-    void vscode.window.showErrorMessage(message);
-  });
+  void SetupPanel.runAutomagicalSetup(controller, output).catch(() => undefined);
   return true;
 }

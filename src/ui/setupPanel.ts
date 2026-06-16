@@ -34,14 +34,14 @@ export class SetupPanel {
     controller: LocalMotionController,
     output: vscode.OutputChannel
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    return SetupPanel.show(controller, output).automagicalSetup();
+    return SetupPanel.show(controller, output).hostStartedAutomagicalSetup();
   }
 
   static async resumeAutomagicalSetup(
     controller: LocalMotionController,
     output: vscode.OutputChannel
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    return SetupPanel.show(controller, output).resumeAutomagicalSetup();
+    return SetupPanel.show(controller, output).hostStartedResumeAutomagicalSetup();
   }
 
   private constructor(
@@ -103,10 +103,7 @@ export class SetupPanel {
           throw new Error("Unknown setup command.");
       }
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      this.output.appendLine(messageText);
-      await this.post({ type: "error", message: messageText });
-      void vscode.window.showErrorMessage(messageText);
+      await this.reportError(error);
     }
   }
 
@@ -146,6 +143,31 @@ export class SetupPanel {
       await this.postInitialState();
     }
     return payload;
+  }
+
+  private async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    try {
+      return await this.automagicalSetup();
+    } catch (error) {
+      await this.reportError(error);
+      throw error;
+    }
+  }
+
+  private async hostStartedResumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    try {
+      return await this.resumeAutomagicalSetup();
+    } catch (error) {
+      await this.reportError(error);
+      throw error;
+    }
+  }
+
+  private async reportError(error: unknown): Promise<void> {
+    const messageText = error instanceof Error ? error.message : String(error);
+    this.output.appendLine(messageText);
+    await this.post({ type: "error", message: messageText });
+    void vscode.window.showErrorMessage(messageText);
   }
 
   private markReady(): void {

@@ -419,6 +419,10 @@ can select the Local Motion model through the native model picker.
   launch, and users can disable it with
   `localMotion.runAutomagicalSetupOnFirstStartup`. Guarded by regression test
   `runs first startup automagical setup only once before any model is installed`.
+- Host-started error surfacing: automagical setup started by activation or the
+  command palette now reports failures into the setup webview instead of leaving
+  the panel stuck on the started state. Guarded by regression test
+  `host-started automagical setup reports errors to the webview`.
 - Startup resume: after a successful Automagical Setup, future startups can
   restart the size-valid installed model and prepare Cursor without another
   click. This path is reuse-only and does not select or download a replacement
