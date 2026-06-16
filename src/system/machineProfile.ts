@@ -1,0 +1,87 @@
+import * as childProcess from "node:child_process";
+import * as os from "node:os";
+import * as path from "node:path";
+import { promisify } from "node:util";
+import type { MachineProfile } from "../types";
+
+const execFile = promisify(childProcess.execFile);
+
+export async function profileMachine(storageRoot: string): Promise<MachineProfile> {
+  const [cpuBrand, availableMemoryBytes, availableDiskBytes] = await Promise.all([
+    readCpuBrand(),
+    readAvailableMemory(),
+    readAvailableDisk(storageRoot)
+  ]);
+
+  const totalMemoryBytes = os.totalmem();
+  const isMac = process.platform === "darwin";
+  const isAppleSilicon = isMac && process.arch === "arm64";
+
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    cpuBrand,
+    isMac,
+    isAppleSilicon,
+    totalMemoryBytes,
+    availableMemoryBytes,
+    recommendedModelMemoryBytes: Math.floor(totalMemoryBytes * 0.72),
+    storageRoot,
+    availableDiskBytes
+  };
+}
+
+async function readCpuBrand(): Promise<string> {
+  if (process.platform !== "darwin") {
+    return os.cpus()[0]?.model ?? "Unknown CPU";
+  }
+  try {
+    const { stdout } = await execFile("/usr/sbin/sysctl", ["-n", "machdep.cpu.brand_string"]);
+    return stdout.trim() || os.cpus()[0]?.model || "Unknown CPU";
+  } catch {
+    return os.cpus()[0]?.model ?? "Unknown CPU";
+  }
+}
+
+async function readAvailableMemory(): Promise<number> {
+  if (process.platform !== "darwin") {
+    return os.freemem();
+  }
+
+  try {
+    const { stdout } = await execFile("/usr/bin/vm_stat", []);
+    const pageSizeMatch = stdout.match(/page size of (\d+) bytes/i);
+    const pageSize = pageSizeMatch ? Number(pageSizeMatch[1]) : 4096;
+    const pages = new Map<string, number>();
+
+    for (const line of stdout.split("\n")) {
+      const match = line.match(/^Pages\s+([^:]+):\s+([0-9.]+)\.?$/i);
+      if (match) {
+        pages.set(match[1].trim().toLowerCase(), Number(match[2]));
+      }
+    }
+
+    const free =
+      (pages.get("free") ?? 0) +
+      (pages.get("inactive") ?? 0) +
+      (pages.get("speculative") ?? 0) +
+      (pages.get("purgeable") ?? 0);
+
+    return free > 0 ? free * pageSize : os.freemem();
+  } catch {
+    return os.freemem();
+  }
+}
+
+async function readAvailableDisk(storageRoot: string): Promise<number> {
+  const target = path.resolve(storageRoot);
+  try {
+    const { stdout } = await execFile("/bin/df", ["-Pk", target]);
+    const lines = stdout.trim().split("\n");
+    const columns = lines[lines.length - 1]?.trim().split(/\s+/);
+    const availableKilobytes = Number(columns?.[3]);
+    return Number.isFinite(availableKilobytes) ? availableKilobytes * 1024 : 0;
+  } catch {
+    return 0;
+  }
+}

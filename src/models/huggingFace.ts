@@ -1,0 +1,113 @@
+import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
+import { classifyCompatibility, parameterCountFromText, quantizationFromFileName } from "./compatibility";
+
+interface HuggingFaceModel {
+  id?: string;
+  modelId?: string;
+  sha?: string;
+  downloads?: number;
+  likes?: number;
+  tags?: string[];
+  siblings?: Array<{
+    rfilename?: string;
+    size?: number;
+    lfs?: { size?: number };
+  }>;
+}
+
+export async function searchModels(query: string): Promise<ModelSearchResult[]> {
+  const params = new URLSearchParams({
+    search: query,
+    limit: "25",
+    sort: "downloads",
+    direction: "-1"
+  });
+  const response = await fetch(`https://huggingface.co/api/models?${params.toString()}`, {
+    headers: { accept: "application/json" }
+  });
+  if (!response.ok) {
+    throw new Error(`Hugging Face search failed: ${response.status} ${response.statusText}`);
+  }
+
+  const models = (await response.json()) as HuggingFaceModel[];
+  return models
+    .map((model) => ({
+      repoId: model.modelId ?? model.id ?? "",
+      downloads: model.downloads,
+      likes: model.likes,
+      tags: model.tags ?? []
+    }))
+    .filter((model) => model.repoId.includes("/") && looksLikeGgufModel(model));
+}
+
+export async function listQuantizations(
+  repoId: string,
+  machine: MachineProfile,
+  contextTokens: number
+): Promise<CandidateQuantization[]> {
+  const model = await fetchModelInfo(repoId);
+  const files = await Promise.all((model.siblings ?? [])
+    .filter((sibling) => sibling.rfilename?.toLowerCase().endsWith(".gguf"))
+    .map(async (sibling): Promise<GgufFile> => {
+      const fileName = sibling.rfilename ?? "";
+      const revision = model.sha ?? "main";
+      const url = downloadUrl(repoId, fileName, revision);
+      return {
+        repoId,
+        fileName,
+        sizeBytes: sibling.lfs?.size ?? sibling.size ?? (await readRemoteSize(url)),
+        revision,
+        quantization: quantizationFromFileName(fileName),
+        parameterCount: parameterCountFromText(`${repoId} ${fileName}`),
+        downloadUrl: url
+      };
+    }));
+
+  return files
+    .map((file) => ({
+      ...file,
+      compatibility: classifyCompatibility(file, machine, contextTokens)
+    }))
+    .sort((a, b) => {
+      if (a.compatibility.status !== b.compatibility.status) {
+        return a.compatibility.status === "compatible" ? -1 : 1;
+      }
+      return (a.sizeBytes ?? Number.MAX_SAFE_INTEGER) - (b.sizeBytes ?? Number.MAX_SAFE_INTEGER);
+    });
+}
+
+async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {
+  const response = await fetch(`https://huggingface.co/api/models/${repoPath(repoId)}`, {
+    headers: { accept: "application/json" }
+  });
+  if (!response.ok) {
+    throw new Error(`Could not read ${repoId}: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as HuggingFaceModel;
+}
+
+async function readRemoteSize(url: string): Promise<number | undefined> {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    const size = Number(response.headers.get("content-length"));
+    return response.ok && Number.isFinite(size) ? size : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function downloadUrl(repoId: string, fileName: string, revision: string): string {
+  return `https://huggingface.co/${repoPath(repoId)}/resolve/${encodeURIComponent(revision)}/${fileName
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}?download=true`;
+}
+
+function repoPath(repoId: string): string {
+  return repoId.split("/").map(encodeURIComponent).join("/");
+}
+
+function looksLikeGgufModel(model: ModelSearchResult): boolean {
+  const haystack = `${model.repoId} ${model.tags.join(" ")}`.toLowerCase();
+  return haystack.includes("gguf");
+}

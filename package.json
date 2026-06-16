@@ -1,0 +1,90 @@
+{
+  "name": "local-motion",
+  "displayName": "Local Motion",
+  "description": "Install and run GGUF coding models locally inside VS Code and Cursor.",
+  "version": "0.0.1",
+  "publisher": "local-motion",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mm/local-motion.git"
+  },
+  "engines": {
+    "vscode": "^1.120.0"
+  },
+  "categories": [
+    "AI",
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:localMotion.open",
+    "onCommand:localMotion.stop",
+    "onLanguageModelChatProvider:local-motion"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "localMotion.open",
+        "title": "Local Motion: Open Setup"
+      },
+      {
+        "command": "localMotion.stop",
+        "title": "Local Motion: Stop Local Model"
+      }
+    ],
+    "configuration": {
+      "title": "Local Motion",
+      "properties": {
+        "localMotion.llamaServerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to llama-server. If empty, Local Motion searches PATH and Homebrew locations."
+        },
+        "localMotion.contextTokens": {
+          "type": "number",
+          "default": 8192,
+          "minimum": 2048,
+          "maximum": 131072,
+          "description": "Context window to request from llama-server."
+        },
+        "localMotion.parallelRequests": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Number of parallel requests to allow in llama-server."
+        },
+        "localMotion.defaultModelRepo": {
+          "type": "string",
+          "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
+          "description": "Default Hugging Face GGUF repository shown in Local Motion setup."
+        }
+      }
+    },
+    "languageModelChatProviders": [
+      {
+        "vendor": "local-motion",
+        "displayName": "Local Motion"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc -p ./ --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "npm run compile && node --test tests/*.test.mjs",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/node": "^24.0.3",
+    "@types/vscode": "1.120.0",
+    "@vscode/vsce": "^3.6.0",
+    "eslint": "^9.29.0",
+    "typescript-eslint": "^8.34.1",
+    "typescript": "^6.0.3"
+  }
+}
