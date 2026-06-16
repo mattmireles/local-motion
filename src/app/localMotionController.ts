@@ -136,6 +136,15 @@ export class LocalMotionController {
   }
 
   async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    const resumed = await this.resumeAutomagicalRuntime();
+    if (!resumed) {
+      return undefined;
+    }
+
+    return this.completeAutomagicalSetup();
+  }
+
+  async resumeAutomagicalRuntime(): Promise<RuntimeResponse | undefined> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();
       if (!installedModel) {
@@ -146,7 +155,9 @@ export class LocalMotionController {
       });
     }
 
-    return this.completeAutomagicalSetup();
+    const runtime = this.runtime.status();
+    const cursorSetup = this.cursorSetupPayload(runtime);
+    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {

@@ -107,7 +107,16 @@ async function resumeAutomagicalSetupInBackground(
   output: vscode.OutputChannel
 ): Promise<void> {
   try {
-    await controller.resumeAutomagicalSetup();
+    const result = await controller.resumeAutomagicalRuntime();
+    if (result?.cursorSetupFreshness.status === "stale") {
+      const answer = await vscode.window.showWarningMessage(
+        result.cursorSetupFreshness.message,
+        "Open Setup"
+      );
+      if (answer === "Open Setup") {
+        SetupPanel.show(controller, output);
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Automagical startup resume failed: ${message}`);

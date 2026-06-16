@@ -498,9 +498,10 @@ test("host-started automagical setup hydrates base state before progress", async
   assert.equal(panelSource.includes("automagicalSetupRunning"), true);
 });
 
-test("startup resume does not open the setup panel unless recovery is requested", async () => {
+test("startup resume does not prepare Cursor or open the setup panel unless recovery is requested", async () => {
   const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
   assert.equal(extensionSource.includes("resumeAutomagicalSetupInBackground"), true);
-  assert.match(extensionSource, /controller\.resumeAutomagicalSetup\(\)/);
+  assert.match(extensionSource, /controller\.resumeAutomagicalRuntime\(\)/);
+  assert.equal(extensionSource.includes("controller.resumeAutomagicalSetup()"), false);
   assert.equal(extensionSource.includes("SetupPanel.resumeAutomagicalSetup"), false);
 });

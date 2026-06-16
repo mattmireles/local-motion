@@ -430,18 +430,20 @@ can select the Local Motion model through the native model picker.
   the panel stuck on the started state. Guarded by regression test
   `host-started automagical setup reports errors to the webview`.
 - Startup resume: after a successful Automagical Setup, future startups can
-  restart the size-valid installed model and prepare Cursor without another
-  click. This path is reuse-only and does not select or download a replacement
-  model when the stored GGUF is missing or invalid. Guarded by regression test
+  restart the size-valid installed model without another click. This path is
+  reuse-only and does not select or download a replacement model when the stored
+  GGUF is missing or invalid. Guarded by regression test
   `resumes automagical setup only after a completed setup with an installed
   model`. Startup resume also does not install a missing `llama-server`
   dependency; explicit Automagical Setup and manual Install and Run are the only
   paths allowed to invoke Homebrew dependency installation. Guarded by
   regression test `startup resume does not install missing llama dependency`.
-  Startup resume now runs through the controller directly instead of opening the
-  setup panel every time; recovery opens setup only if resume fails and the user
-  chooses that action. Guarded by regression test
-  `startup resume does not open the setup panel unless recovery is requested`.
+  Startup resume runs through the controller's runtime-only path instead of
+  copying setup values, opening Cursor settings, replacing the clipboard, or
+  opening the setup panel. Recovery opens setup only if resume fails or the
+  Cursor setup becomes stale and the user chooses that action. Guarded by
+  regression test
+  `startup resume does not prepare Cursor or open the setup panel unless recovery is requested`.
 - Stable Cursor proxy: Local Motion now prefers
   `http://127.0.0.1:41434/v1` for the Cursor-facing OpenAI proxy so Cursor's
   Base URL can survive editor restarts even when the upstream `llama-server`
