@@ -39,6 +39,7 @@
     "onCommand:localMotion.automagicalSetup",
     "onCommand:localMotion.retryAutomagicalSetup",
     "onCommand:localMotion.prepareCursor",
+    "onCommand:localMotion.diagnoseSetup",
     "onCommand:localMotion.stop",
     "onLanguageModelChatProvider:local-motion"
   ],
@@ -60,6 +61,10 @@
       {
         "command": "localMotion.prepareCursor",
         "title": "Local Motion: Prepare Cursor"
+      },
+      {
+        "command": "localMotion.diagnoseSetup",
+        "title": "Local Motion: Diagnose Setup"
       },
       {
         "command": "localMotion.stop",

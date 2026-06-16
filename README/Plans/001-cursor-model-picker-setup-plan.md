@@ -383,7 +383,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 45 tests.
+- `npm test`: passed, 47 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -392,7 +392,7 @@ can select the Local Motion model through the native model picker.
   passed.
 - `npm run smoke:local-runtime`: passed. It selected
   `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF`
-  `qwen2.5-coder-1.5b-instruct-q2_k.gguf`, downloaded it to
+  `qwen2.5-coder-1.5b-instruct-q3_k_m.gguf`, downloaded it to
   `tmp/local-runtime-smoke`, started `llama-server`, verified
   `GET /v1/models` through `http://127.0.0.1:41434/v1`, and completed one local
   chat completion through the Cursor-facing proxy.
@@ -440,6 +440,13 @@ can select the Local Motion model through the native model picker.
   directly, so users do not need to open setup just to refresh Cursor values.
   Guarded by regression test
   `prepare Cursor command is registered and starts a reusable installed model first`.
+- Diagnostic setup proof: `Local Motion: Diagnose Setup` reports installed model
+  identity, installed file validity, runtime status, local endpoint verification,
+  copied Cursor setup freshness, automagical completion state, and the remaining
+  Cursor picker verification step without reading or writing Cursor private
+  state. Guarded by regression tests
+  `setup diagnostics distinguish ready setup from required action` and
+  `diagnose setup command is registered and contributed`.
 - Retry setup: `Local Motion: Retry Automagical Setup` is a command-palette
   alias for the same automagical path, so users can recover explicitly after a
   cancelled or failed first-start install/download. Guarded by regression test
@@ -581,6 +588,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] Command palette exposes `Local Motion: Prepare Cursor` for one-command
   Cursor handoff when a local model is already running or a reusable installed
   model can be restarted.
+- [x] Command palette exposes `Local Motion: Diagnose Setup` as a read-only
+  setup proof and recovery guide.
 - [x] Native language-model provider management opens `Local Motion: Automagical
   Setup`.
 

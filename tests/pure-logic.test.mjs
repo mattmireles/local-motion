@@ -12,6 +12,7 @@ import {
   shouldPersistCursorSetupCopy
 } from "../out/cursor/cursorIntegration.js";
 import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
+import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
   effectiveMemoryBudget,
   parameterCountFromText,
@@ -157,6 +158,45 @@ test("native language model provider config opens automagical setup", async () =
   const provider = packageJson.contributes.languageModelChatProviders.find((candidate) => candidate.vendor === "local-motion");
   assert.equal(provider?.displayName, "Local Motion");
   assert.equal(provider?.managementCommand, "localMotion.automagicalSetup");
+});
+
+test("setup diagnostics distinguish ready setup from required action", () => {
+  const ready = setupDiagnosticSummary({
+    installedModelId: "local-motion-test",
+    installedFileValid: true,
+    runtimeRunning: true,
+    runtimeBaseUrl: "http://127.0.0.1:41434/v1",
+    runtimeModelId: "local-motion-test",
+    endpointVerified: true,
+    cursorSetupFreshness: "current",
+    completedForInstalledModel: true
+  });
+  assert.equal(ready.status, "ready");
+  assert.match(ready.message, /ready/);
+  assert.equal(ready.lines.some((line) => line.includes("Cursor private state")), true);
+
+  const missingModel = setupDiagnosticSummary({
+    installedFileValid: false,
+    runtimeRunning: false,
+    endpointVerified: false,
+    cursorSetupFreshness: "not-copied",
+    completedForInstalledModel: false
+  });
+  assert.equal(missingModel.status, "action-needed");
+  assert.match(missingModel.message, /Automagical Setup/);
+
+  const stale = setupDiagnosticSummary({
+    installedModelId: "local-motion-test",
+    installedFileValid: true,
+    runtimeRunning: true,
+    runtimeBaseUrl: "http://127.0.0.1:41434/v1",
+    runtimeModelId: "local-motion-test",
+    endpointVerified: true,
+    cursorSetupFreshness: "stale",
+    completedForInstalledModel: true
+  });
+  assert.equal(stale.status, "action-needed");
+  assert.match(stale.message, /Prepare Cursor/);
 });
 
 test("reuses an installed model only when its file is present and size-valid", () => {
@@ -623,6 +663,19 @@ test("prepare Cursor command is registered and starts a reusable installed model
   assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
   assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
   assert.match(controllerSource, /return this\.prepareCursor\(\)/);
+});
+
+test("diagnose setup command is registered and contributed", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const commands = packageJson.contributes.commands.map((command) => command.command);
+  assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.diagnoseSetup"), true);
+  assert.equal(commands.includes("localMotion.diagnoseSetup"), true);
+
+  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
+  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
+  assert.equal(extensionSource.includes("localMotion.diagnoseSetup"), true);
+  assert.match(extensionSource, /controller\.diagnoseSetup\(\)/);
+  assert.match(controllerSource, /setupDiagnosticSummary/);
 });
 
 test("manual install and run prepares Cursor automatically", async () => {

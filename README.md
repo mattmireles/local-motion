@@ -55,6 +55,10 @@ setup panel without starting the install.
 If first-start setup fails or is cancelled, run
 `Local Motion: Retry Automagical Setup`.
 
+Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
+model file, local runtime, proxy verification, copied Cursor values, and the
+remaining Cursor picker verification step.
+
 After Automagical Setup succeeds, Local Motion can restart the installed model
 automatically on future editor startups without downloading a new model,
 opening the setup panel, opening Cursor settings, or replacing the clipboard.

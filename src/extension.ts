@@ -48,6 +48,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.diagnoseSetup", async () => {
+      await diagnoseSetupCommand(controller, output);
+    })
+  );
+  context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.stop", async () => {
       await runtime?.stop();
       provider.refresh();
@@ -84,6 +89,20 @@ async function prepareCursorCommand(controller: LocalMotionController, output: v
   }
 
   await vscode.window.showWarningMessage([result.verification.message, result.copy.message, result.settings.message].join(" "));
+}
+
+async function diagnoseSetupCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
+  const result = await controller.diagnoseSetup();
+  output.appendLine("Local Motion setup diagnostic:");
+  for (const line of result.lines) {
+    output.appendLine(`- ${line}`);
+  }
+  output.show(true);
+  if (result.status === "ready") {
+    await vscode.window.showInformationMessage(result.message);
+    return;
+  }
+  await vscode.window.showWarningMessage(result.message);
 }
 
 async function maybeOpenSetupOnboarding(

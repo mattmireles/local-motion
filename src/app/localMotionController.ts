@@ -3,10 +3,12 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
+import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { selectBestCompatibleQuantization } from "../models/compatibility";
 import { automagicalModelRepos, DEFAULT_MODEL_REPO } from "../models/defaultRepos";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { canReuseInstalledModel } from "../models/installedModel";
+import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
 import { LlamaServerManager } from "../runtime/llamaServer";
@@ -212,6 +214,28 @@ export class LocalMotionController {
 
   async openCursorSettings(): Promise<CursorSettingsOpened> {
     return this.cursorSetup.openCursorSettings();
+  }
+
+  async diagnoseSetup(): Promise<SetupDiagnosticSummary> {
+    const installedModel = this.state.installedModel();
+    const installedFileValid = installedModel !== undefined &&
+      canReuseInstalledModel(installedModel, await this.modelFileSize(installedModel.modelPath));
+    const runtime = this.runtime.status();
+    const cursorSetup = this.cursorSetupPayload(runtime);
+    const endpoint = await this.verifyCursorEndpoint();
+    return setupDiagnosticSummary({
+      installedModelId: installedModel?.modelId,
+      installedFileValid,
+      runtimeRunning: runtime.running,
+      runtimeBaseUrl: runtime.baseUrl,
+      runtimeModelId: runtime.modelId,
+      endpointVerified: endpoint.ok,
+      cursorSetupFreshness: cursorSetup.freshness.status,
+      completedForInstalledModel: hasCompletedAutomagicalSetupForInstalledModel(
+        installedModel,
+        this.state.automagicalSetupCompletion()
+      )
+    });
   }
 
   defaultRepo(): string {
