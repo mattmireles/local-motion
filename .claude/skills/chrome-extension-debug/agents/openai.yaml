@@ -1,0 +1,6 @@
+interface:
+  display_name: "Chrome Extension Debug"
+  short_description: "Debug Chrome extension runtime failures"
+  default_prompt: "Use $chrome-extension-debug to debug a Chrome extension runtime failure."
+policy:
+  allow_implicit_invocation: true

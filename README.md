@@ -12,6 +12,8 @@ The intended path is:
 6. Start a tiny local OpenAI-compatible proxy that sanitizes Cursor request payloads before forwarding them to `llama-server`.
 7. For Cursor, show the exact proxy base URL and model name. Cursor does not expose a stable extension API for changing its native model picker, so Local Motion gives precise settings instead of mutating Cursor's private state.
 
+See [Local Native LLM Extensions for VS Code and Cursor on macOS](README/Guides/vs-code-local-ai-hugging-face-guide.md) for the full sidecar architecture field guide (VS Code LM API, GGUF downloads, `llama-server`, Cursor integration patterns, and debugging).
+
 ## Development
 
 ```bash
