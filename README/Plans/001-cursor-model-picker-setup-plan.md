@@ -412,6 +412,12 @@ can select the Local Motion model through the native model picker.
   discover a command before seeing the automagical path. This is guarded by
   regression test
   `opens setup onboarding only for first startup without an installed model`.
+- Startup resume: after a successful Automagical Setup, future startups can
+  restart the size-valid installed model and prepare Cursor without another
+  click. This path is reuse-only and does not select or download a replacement
+  model when the stored GGUF is missing or invalid. Guarded by regression test
+  `resumes automagical setup only after a completed setup with an installed
+  model`.
 - Command-palette setup progress: the command now runs through
   `SetupPanel.runAutomagicalSetup`, so the command-palette path and setup-panel
   button share one progress/completion pipeline instead of running the controller

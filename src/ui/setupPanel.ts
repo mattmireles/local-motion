@@ -37,6 +37,13 @@ export class SetupPanel {
     return SetupPanel.show(controller, output).automagicalSetup();
   }
 
+  static async resumeAutomagicalSetup(
+    controller: LocalMotionController,
+    output: vscode.OutputChannel
+  ): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    return SetupPanel.show(controller, output).resumeAutomagicalSetup();
+  }
+
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly controller: LocalMotionController,
@@ -125,6 +132,18 @@ export class SetupPanel {
     });
     if (payload) {
       await this.post(payload);
+    }
+    return payload;
+  }
+
+  private async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    await this.waitUntilReady();
+    await this.post({ type: "automagicalSetupStarted" });
+    const payload = await this.controller.resumeAutomagicalSetup();
+    if (payload) {
+      await this.post(payload);
+    } else {
+      await this.postInitialState();
     }
     return payload;
   }

@@ -87,6 +87,11 @@
           "type": "boolean",
           "default": true,
           "description": "Open Local Motion setup automatically once on first startup when no model has been installed."
+        },
+        "localMotion.resumeAutomagicalSetupOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "After Automagical Setup succeeds, restart the installed local model and prepare Cursor automatically on future startups without downloading a new model."
         }
       }
     },

@@ -36,6 +36,11 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 The setup panel also exposes the same `Automagical Setup` action through
 `Local Motion: Open Setup`.
 
+After Automagical Setup succeeds, Local Motion can restart the installed model
+and prepare Cursor automatically on future editor startups without downloading a
+new model. Disable `localMotion.resumeAutomagicalSetupOnStartup` to turn that
+off.
+
 For manual control:
 
 1. Load a Hugging Face GGUF repository.

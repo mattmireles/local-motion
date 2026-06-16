@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { LocalMotionController } from "./app/localMotionController";
-import { shouldOpenSetupOnboarding } from "./onboarding";
+import { shouldOpenSetupOnboarding, shouldResumeAutomagicalSetup } from "./onboarding";
 import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
@@ -49,7 +49,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  await maybeOpenSetupOnboarding(state, controller, output);
+  if (!await maybeResumeAutomagicalSetup(state, controller, output)) {
+    await maybeOpenSetupOnboarding(state, controller, output);
+  }
 }
 
 export async function deactivate(): Promise<void> {
@@ -72,4 +74,27 @@ async function maybeOpenSetupOnboarding(
 
   await state.markSetupOnboardingOpened();
   SetupPanel.show(controller, output);
+}
+
+async function maybeResumeAutomagicalSetup(
+  state: LocalMotionState,
+  controller: LocalMotionController,
+  output: vscode.OutputChannel
+): Promise<boolean> {
+  const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("resumeAutomagicalSetupOnStartup", true);
+  if (!shouldResumeAutomagicalSetup({
+    enabled,
+    setupCompleted: state.automagicalSetupCompleted(),
+    hasInstalledModel: state.installedModel() !== undefined,
+    runtimeRunning: runtime?.status().running ?? false
+  })) {
+    return false;
+  }
+
+  void SetupPanel.resumeAutomagicalSetup(controller, output).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(message);
+    void vscode.window.showErrorMessage(message);
+  });
+  return true;
 }

@@ -115,8 +115,8 @@ export class LocalMotionController {
     onProgress: (progress: DownloadProgress) => void
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
     if (!this.runtime.status().running) {
-      const installedModel = this.state.installedModel();
-      if (canReuseInstalledModel(installedModel, installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined)) {
+      const installedModel = await this.reusableInstalledModel();
+      if (installedModel) {
         await this.startInstalledModel(installedModel);
       } else {
         const repoId = this.defaultRepo();
@@ -128,7 +128,26 @@ export class LocalMotionController {
       }
     }
 
+    return this.completeAutomagicalSetup();
+  }
+
+  async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    if (!this.runtime.status().running) {
+      const installedModel = await this.reusableInstalledModel();
+      if (!installedModel) {
+        return undefined;
+      }
+      await this.startInstalledModel(installedModel);
+    }
+
+    return this.completeAutomagicalSetup();
+  }
+
+  private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
     const cursor = await this.prepareCursor();
+    if (cursor.verification.ok && cursor.copy.ok) {
+      await this.state.markAutomagicalSetupCompleted();
+    }
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
     return {
@@ -291,6 +310,16 @@ export class LocalMotionController {
     } catch {
       return undefined;
     }
+  }
+
+  private async reusableInstalledModel(): Promise<InstalledModel | undefined> {
+    const installedModel = this.state.installedModel();
+    return canReuseInstalledModel(
+      installedModel,
+      installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined
+    )
+      ? installedModel
+      : undefined;
   }
 
   private currentCursorSetupViewModel(): CursorSetupViewModel {
