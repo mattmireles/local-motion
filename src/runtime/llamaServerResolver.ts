@@ -31,14 +31,6 @@ export class LlamaServerResolver {
     const brew = await commandPath("brew");
     if (brew) {
       throwIfCancelled(options.token);
-      const answer = await vscode.window.showWarningMessage(
-        "Local Motion needs llama-server. Install llama.cpp with Homebrew now?",
-        "Install",
-        "Cancel"
-      );
-      if (answer !== "Install") {
-        throw new Error('llama-server was not found. Install it with "brew install llama.cpp" or set localMotion.llamaServerPath.');
-      }
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,

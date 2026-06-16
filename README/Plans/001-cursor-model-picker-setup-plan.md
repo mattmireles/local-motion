@@ -400,6 +400,11 @@ can select the Local Motion model through the native model picker.
   selects the lowest-memory compatible default quantization, installs/runs it,
   then prepares Cursor. The selector and installed-model reuse predicate are
   covered by regression tests.
+- Dependency setup: when `allowInstall` is true and `llama-server` is missing,
+  Local Motion now installs `llama.cpp` through Homebrew under progress without
+  a second confirmation prompt. The user's explicit `Automagical Setup` or
+  `Install and Run` action is the confirmation. Guarded by regression test
+  `automagical dependency install has no second confirmation prompt`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
 - Command-palette setup progress: the command now runs through

@@ -15,14 +15,16 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 - Offers `Automagical Setup`: reuses an installed model when available, otherwise
   selects a compatible default quantization, installs it, starts it, verifies the
   local endpoint, copies the Cursor setup block, and opens Settings filtered
-  toward Models.
+  toward Models. If `llama-server` is missing and Homebrew is available,
+  Automagical Setup installs `llama.cpp` as part of the same run.
 
 ## Requirements
 
 - macOS.
 - VS Code or Cursor compatible with VS Code `^1.105.0`.
 - Homebrew, when `llama-server` is not already available on `PATH`,
-  `/opt/homebrew/bin`, or `/usr/local/bin`.
+  `/opt/homebrew/bin`, or `/usr/local/bin`; Automagical Setup uses it to install
+  `llama.cpp`.
 - Enough free disk and unified memory for the selected GGUF file.
 
 ## Setup

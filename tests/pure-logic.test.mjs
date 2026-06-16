@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   cursorSetupFreshness,
@@ -332,4 +333,10 @@ test("validates Cursor setup copy keys at runtime", () => {
   assert.equal(isCursorSetupValueKey("setupBlock"), true);
   assert.equal(isCursorSetupValueKey("bad"), false);
   assert.equal(isCursorSetupValueKey(undefined), false);
+});
+
+test("automagical dependency install has no second confirmation prompt", async () => {
+  const resolverSource = await readFile(new URL("../out/runtime/llamaServerResolver.js", import.meta.url), "utf8");
+  assert.equal(resolverSource.includes("showWarningMessage"), false);
+  assert.equal(resolverSource.includes("withProgress"), true);
 });
