@@ -18,6 +18,7 @@ import {
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
 import { canReuseInstalledModel } from "../out/models/installedModel.js";
+import { NO_INSTALLED_MODEL_MESSAGE } from "../out/provider/providerMessages.js";
 import {
   hasCompletedAutomagicalSetupForInstalledModel,
   shouldOpenSetupOnboarding,
@@ -568,6 +569,14 @@ test("manual install and run prepares Cursor automatically", async () => {
   assert.match(panelHtmlSource, /message\.type === 'installed'/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
+});
+
+test("provider no-model error points to automagical setup", () => {
+  assert.equal(
+    NO_INSTALLED_MODEL_MESSAGE,
+    "No Local Motion model is installed. Run Local Motion: Automagical Setup."
+  );
+  assert.equal(NO_INSTALLED_MODEL_MESSAGE.includes("Open Setup first"), false);
 });
 
 test("startup resume does not install missing llama dependency", async () => {

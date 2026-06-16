@@ -381,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 39 tests.
+- `npm test`: passed, 40 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -413,6 +413,10 @@ can select the Local Motion model through the native model picker.
   `manual install and run prepares Cursor automatically`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Provider setup guidance: if the VS Code Language Model provider is invoked
+  before any model is installed, its error points to `Local Motion: Automagical
+  Setup` instead of the older open-setup-first flow. Guarded by regression test
+  `provider no-model error points to automagical setup`.
 - Command-palette Cursor handoff: `Local Motion: Prepare Cursor` starts a
   size-valid installed model when the runtime is stopped, then runs the same
   endpoint verification, setup-block copy, and Cursor Models settings action

@@ -4,6 +4,7 @@ import type { OpenAiMessage } from "../runtime/openAiChat";
 import { streamChatCompletion } from "../runtime/openAiStream";
 import { LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
+import { NO_INSTALLED_MODEL_MESSAGE } from "./providerMessages";
 
 export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vscode.LanguageModelChatInformation> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -58,7 +59,7 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
   ): Promise<void> {
     const installed = this.readInstalledModel();
     if (!installed) {
-      throw new Error("No Local Motion model is installed. Run Local Motion: Open Setup first.");
+      throw new Error(NO_INSTALLED_MODEL_MESSAGE);
     }
 
     const llamaServerPath = await this.resolver.resolve({ allowInstall: false, token });
