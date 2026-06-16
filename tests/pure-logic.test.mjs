@@ -16,6 +16,7 @@ import {
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
 import { canReuseInstalledModel } from "../out/models/installedModel.js";
+import { shouldOpenSetupOnboarding } from "../out/onboarding.js";
 import {
   isAuthorizedBearer,
   LOCAL_MOTION_API_KEY,
@@ -339,4 +340,11 @@ test("automagical dependency install has no second confirmation prompt", async (
   const resolverSource = await readFile(new URL("../out/runtime/llamaServerResolver.js", import.meta.url), "utf8");
   assert.equal(resolverSource.includes("showWarningMessage"), false);
   assert.equal(resolverSource.includes("withProgress"), true);
+});
+
+test("opens setup onboarding only for first startup without an installed model", () => {
+  assert.equal(shouldOpenSetupOnboarding({ enabled: true, alreadyOpened: false, hasInstalledModel: false }), true);
+  assert.equal(shouldOpenSetupOnboarding({ enabled: false, alreadyOpened: false, hasInstalledModel: false }), false);
+  assert.equal(shouldOpenSetupOnboarding({ enabled: true, alreadyOpened: true, hasInstalledModel: false }), false);
+  assert.equal(shouldOpenSetupOnboarding({ enabled: true, alreadyOpened: false, hasInstalledModel: true }), false);
 });

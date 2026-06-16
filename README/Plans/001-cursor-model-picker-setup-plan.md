@@ -407,6 +407,11 @@ can select the Local Motion model through the native model picker.
   `automagical dependency install has no second confirmation prompt`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- First-run onboarding: the extension activates on `onStartupFinished` and opens
+  the setup panel once when no model is installed, so a new user does not have to
+  discover a command before seeing the automagical path. This is guarded by
+  regression test
+  `opens setup onboarding only for first startup without an installed model`.
 - Command-palette setup progress: the command now runs through
   `SetupPanel.runAutomagicalSetup`, so the command-palette path and setup-panel
   button share one progress/completion pipeline instead of running the controller

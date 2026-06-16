@@ -30,7 +30,8 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 ## Setup
 
 1. Install Local Motion.
-2. Run `Local Motion: Automagical Setup`.
+2. Use the setup panel that opens on first startup, or run
+   `Local Motion: Automagical Setup`.
 
 The setup panel also exposes the same `Automagical Setup` action through
 `Local Motion: Open Setup`.

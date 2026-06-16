@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { LocalMotionController } from "./app/localMotionController";
+import { shouldOpenSetupOnboarding } from "./onboarding";
 import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
@@ -47,8 +48,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.window.showInformationMessage("Local Motion model stopped.");
     })
   );
+
+  await maybeOpenSetupOnboarding(state, controller, output);
 }
 
 export async function deactivate(): Promise<void> {
   await runtime?.stop();
+}
+
+async function maybeOpenSetupOnboarding(
+  state: LocalMotionState,
+  controller: LocalMotionController,
+  output: vscode.OutputChannel
+): Promise<void> {
+  const enabled = vscode.workspace.getConfiguration("localMotion").get<boolean>("openSetupOnStartup", true);
+  if (!shouldOpenSetupOnboarding({
+    enabled,
+    alreadyOpened: state.setupOnboardingOpened(),
+    hasInstalledModel: state.installedModel() !== undefined
+  })) {
+    return;
+  }
+
+  await state.markSetupOnboardingOpened();
+  SetupPanel.show(controller, output);
 }

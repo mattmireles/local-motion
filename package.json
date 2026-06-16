@@ -34,6 +34,7 @@
     "theme": "dark"
   },
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:localMotion.open",
     "onCommand:localMotion.automagicalSetup",
     "onCommand:localMotion.stop",
@@ -81,6 +82,11 @@
           "type": "string",
           "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
           "description": "Default Hugging Face GGUF repository shown in Local Motion setup."
+        },
+        "localMotion.openSetupOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open Local Motion setup automatically once on first startup when no model has been installed."
         }
       }
     },

@@ -3,6 +3,7 @@ import type { InstalledModel, LastCopiedCursorSetup } from "./types";
 
 const INSTALLED_MODEL_KEY = "localMotion.installedModel";
 const LAST_COPIED_CURSOR_SETUP_KEY = "localMotion.lastCopiedCursorSetup";
+const SETUP_ONBOARDING_OPENED_KEY = "localMotion.setupOnboardingOpened";
 
 export class LocalMotionState {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -21,5 +22,13 @@ export class LocalMotionState {
 
   async setLastCopiedCursorSetup(setup: LastCopiedCursorSetup): Promise<void> {
     await this.context.globalState.update(LAST_COPIED_CURSOR_SETUP_KEY, setup);
+  }
+
+  setupOnboardingOpened(): boolean {
+    return this.context.globalState.get<boolean>(SETUP_ONBOARDING_OPENED_KEY, false);
+  }
+
+  async markSetupOnboardingOpened(): Promise<void> {
+    await this.context.globalState.update(SETUP_ONBOARDING_OPENED_KEY, true);
   }
 }
