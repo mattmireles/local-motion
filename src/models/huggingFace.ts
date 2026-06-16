@@ -1,4 +1,5 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
+import { parseContentLengthHeader } from "../runtime/runtimeGuards";
 import { classifyCompatibility, parameterCountFromText, quantizationFromFileName } from "./compatibility";
 
 const HF_TIMEOUT_MS = 30_000;
@@ -92,8 +93,9 @@ async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {
 async function readRemoteSize(url: string): Promise<number | undefined> {
   try {
     const response = await fetchWithTimeout(url, { method: "HEAD" });
-    const size = Number(response.headers.get("content-length"));
-    return response.ok && Number.isFinite(size) ? size : undefined;
+    const rawSize = response.headers.get("content-length");
+    const size = parseContentLengthHeader(rawSize);
+    return response.ok && size !== undefined ? size : undefined;
   } catch {
     return undefined;
   }

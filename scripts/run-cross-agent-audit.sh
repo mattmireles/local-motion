@@ -9,7 +9,7 @@ Usage: scripts/run-cross-agent-audit.sh <prompt-file> [artifact-prefix]
 
 Runs fresh Codex and Claude CLI reviewers against the repo using the prompt
 file (stdin content for both agents). Writes artifacts under:
-  tmp/cross-agent-audits/audit-<timestamp>/
+  tmp/cross-agent-audits/audit-XXXXXX/
 
 Optional artifact-prefix (default: audit) controls output filenames, e.g.
 codex-audit.md and claude-audit.md.

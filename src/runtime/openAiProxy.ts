@@ -114,7 +114,7 @@ export class OpenAiProxy {
         controller.abort();
       }
     };
-    request.once("close", abortIfOpen);
+    request.once("aborted", abortIfOpen);
     response.once("close", abortIfOpen);
     try {
       const upstream = await fetch(`${this.options.upstreamBaseUrl}/chat/completions`, {
@@ -154,7 +154,7 @@ export class OpenAiProxy {
       throw error;
     } finally {
       this.abortControllers.delete(controller);
-      request.off("close", abortIfOpen);
+      request.off("aborted", abortIfOpen);
       response.off("close", abortIfOpen);
     }
   }

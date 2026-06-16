@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { GgufFile } from "../types";
+import { parseContentLengthHeader } from "./runtimeGuards";
 import { safeId } from "../util/format";
 
 const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 60 * 1000;
@@ -48,9 +49,9 @@ export async function downloadGguf(
   }
 
   const resumed = existingBytes > 0 && response.status === 206;
-  const contentLength = Number(response.headers.get("content-length"));
+  const contentLength = parseContentLengthHeader(response.headers.get("content-length"));
   const totalBytes =
-    file.sizeBytes ?? (Number.isFinite(contentLength) ? contentLength + (resumed ? existingBytes : 0) : undefined);
+    file.sizeBytes ?? (contentLength !== undefined ? contentLength + (resumed ? existingBytes : 0) : undefined);
   let downloadedBytes = resumed ? existingBytes : 0;
 
   const writeStream = fs.createWriteStream(partialPath, { flags: resumed ? "a" : "w" });

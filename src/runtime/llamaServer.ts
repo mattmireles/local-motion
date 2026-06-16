@@ -2,6 +2,7 @@ import * as childProcess from "node:child_process";
 import * as vscode from "vscode";
 import type { InstalledModel, RuntimeSession, RuntimeStatus } from "../types";
 import { waitForHealth } from "./llamaHealth";
+import { isStartStale } from "./runtimeGuards";
 import { OpenAiProxy } from "./openAiProxy";
 import { releasePortHolder, reserveLocalhostPort } from "./ports";
 
@@ -38,13 +39,13 @@ export class LlamaServerManager {
     llamaServerPath: string,
     token?: vscode.CancellationToken
   ): Promise<RuntimeSession> {
+    const requestedGeneration = this.sessionGeneration;
     let release!: () => void;
     const previous = this.startQueue;
     this.startQueue = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;
-    const requestedGeneration = this.sessionGeneration;
     try {
       return await this.startLocked(model, llamaServerPath, token, requestedGeneration);
     } finally {
@@ -61,7 +62,7 @@ export class LlamaServerManager {
     const startAbort = new AbortController();
     this.startAbort = startAbort;
     const abortIfNeeded = (): void => {
-      if (requestedGeneration !== this.sessionGeneration || startAbort.signal.aborted || token?.isCancellationRequested) {
+      if (isStartStale(requestedGeneration, this.sessionGeneration) || startAbort.signal.aborted || token?.isCancellationRequested) {
         throw new Error("Local model startup was cancelled.");
       }
     };

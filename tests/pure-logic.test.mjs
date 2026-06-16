@@ -13,6 +13,7 @@ import {
   sanitizeStop
 } from "../out/runtime/openAiChat.js";
 import { childFailureMessage } from "../out/runtime/llamaHealth.js";
+import { isStartStale, parseContentLengthHeader } from "../out/runtime/runtimeGuards.js";
 import { filterForwardHeaders } from "../out/runtime/openAiProxy.js";
 
 test("extracts GGUF quantization names from common filenames", () => {
@@ -80,6 +81,17 @@ test("sanitizes stop sequences from external chat payloads", () => {
   assert.deepEqual(sanitizeStop(["END", "STOP"]), ["END", "STOP"]);
   assert.equal(sanitizeStop({ bad: true }), undefined);
   assert.equal(sanitizeStop(null), undefined);
+});
+
+test("ignores missing content-length headers instead of treating them as zero", () => {
+  assert.equal(parseContentLengthHeader(null), undefined);
+  assert.equal(parseContentLengthHeader("1024"), 1024);
+  assert.equal(parseContentLengthHeader("chunked"), undefined);
+});
+
+test("detects stale queued starts after stop increments session generation", () => {
+  assert.equal(isStartStale(0, 1), true);
+  assert.equal(isStartStale(1, 1), false);
 });
 
 test("formats llama-server child failure messages", () => {
