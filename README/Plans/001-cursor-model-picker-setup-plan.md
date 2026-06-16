@@ -341,7 +341,7 @@ confirms a stop/start cycle produces a stale warning.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 22 tests.
+- `npm test`: passed, 28 tests.
 - Phase audit: local fallback used. The stale-state path persists only
   `localMotion.lastCopiedCursorSetup`, compares it with active runtime status,
   distinguishes copied values from verified endpoint setup, and marks stopped or
@@ -452,7 +452,9 @@ can select the Local Motion model through the native model picker.
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub
   workflow expects a `VSCE_PAT` repository secret with Marketplace `Manage`
-  scope.
+  scope. Live GitHub check: PR #1 is open and mergeable, no workflow is listed
+  on `main` yet, and `gh secret list --repo mattmireles/local-motion` returned
+  no visible secrets.
 - Manual Cursor model-picker QA: Not testable in this non-interactive run. The
   machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
   existing Local Motion GGUF storage was found and Cursor CLI does not expose a
