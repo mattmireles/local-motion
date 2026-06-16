@@ -2,8 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
+  cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
+  lastPreparedCursorSetup,
+  shouldPersistCursorSetupCopy,
   type CursorSetupValueKey,
   type CursorSetupViewModel
 } from "../cursor/cursorIntegration";
@@ -41,6 +44,7 @@ export class LocalMotionController {
     await fs.promises.mkdir(this.context.globalStorageUri.fsPath, { recursive: true });
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const runtime = this.runtime.status();
+    const cursorSetup = this.cursorSetupPayload(runtime);
 
     return {
       type: "state",
@@ -57,7 +61,8 @@ export class LocalMotionController {
       },
       installed: this.state.installedModel(),
       runtime,
-      cursorSetupViewModel: cursorSetupViewModel(runtime)
+      cursorSetupViewModel: cursorSetup.viewModel,
+      cursorSetupFreshness: cursorSetup.freshness
     };
   }
 
@@ -108,11 +113,13 @@ export class LocalMotionController {
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
 
     const runtime = this.runtime.status();
+    const cursorSetup = this.cursorSetupPayload(runtime);
     return {
       type: "installed",
       installed,
       runtime,
-      cursorSetupViewModel: cursorSetupViewModel(runtime)
+      cursorSetupViewModel: cursorSetup.viewModel,
+      cursorSetupFreshness: cursorSetup.freshness
     };
   }
 
@@ -120,7 +127,8 @@ export class LocalMotionController {
     await this.runtime.stop();
     this.provider.refresh();
     const runtime = this.runtime.status();
-    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetupViewModel(runtime) };
+    const cursorSetup = this.cursorSetupPayload(runtime);
+    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
   }
 
   async prepareCursor(): Promise<Record<string, unknown>> {
@@ -130,19 +138,32 @@ export class LocalMotionController {
       return {
         type: "cursorSetupPrepared",
         viewModel,
+        cursorSetupFreshness: this.currentCursorSetupFreshness(viewModel),
         verification,
         copy: { ok: false, message: "Setup block was not copied because endpoint verification failed." },
         settings: { ok: false, message: "Cursor settings were not opened because endpoint verification failed." }
       };
     }
     const copy = await this.writeCursorValue("setupBlock", viewModel);
+    let freshness = this.currentCursorSetupFreshness(viewModel);
+    if (copy.ok) {
+      const preparedAt = new Date().toISOString();
+      await this.state.setLastPreparedCursorSetup(lastPreparedCursorSetup(viewModel, "prepareCursor", preparedAt, preparedAt));
+      freshness = this.currentCursorSetupFreshness(viewModel);
+    }
     const settings = await this.openCursorSettings();
-    return { type: "cursorSetupPrepared", viewModel, verification, copy, settings };
+    return { type: "cursorSetupPrepared", viewModel, cursorSetupFreshness: freshness, verification, copy, settings };
   }
 
   async copyCursorValue(key: CursorSetupValueKey): Promise<Record<string, unknown>> {
-    const result = await this.writeCursorValue(key, this.currentCursorSetupViewModel());
-    return { type: "cursorCopyResult", key, ...result };
+    const viewModel = this.currentCursorSetupViewModel();
+    const result = await this.writeCursorValue(key, viewModel);
+    let freshness = this.currentCursorSetupFreshness(viewModel);
+    if (shouldPersistCursorSetupCopy(key, result.ok)) {
+      await this.state.setLastPreparedCursorSetup(lastPreparedCursorSetup(viewModel, "copySetupBlock", new Date().toISOString()));
+      freshness = this.currentCursorSetupFreshness(viewModel);
+    }
+    return { type: "cursorCopyResult", key, cursorSetupFreshness: freshness, ...result };
   }
 
   async verifyCursorEndpoint(): Promise<CursorEndpointVerification> {
@@ -204,6 +225,21 @@ export class LocalMotionController {
 
   private currentCursorSetupViewModel(): CursorSetupViewModel {
     return cursorSetupViewModel(this.runtime.status());
+  }
+
+  private cursorSetupPayload(runtime: ReturnType<LlamaServerManager["status"]>): {
+    viewModel: CursorSetupViewModel;
+    freshness: ReturnType<typeof cursorSetupFreshness>;
+  } {
+    const viewModel = cursorSetupViewModel(runtime);
+    return {
+      viewModel,
+      freshness: this.currentCursorSetupFreshness(viewModel)
+    };
+  }
+
+  private currentCursorSetupFreshness(viewModel: CursorSetupViewModel): ReturnType<typeof cursorSetupFreshness> {
+    return cursorSetupFreshness(viewModel, this.state.lastPreparedCursorSetup());
   }
 
   private async writeCursorValue(key: CursorSetupValueKey, viewModel: CursorSetupViewModel): Promise<CursorActionResult> {

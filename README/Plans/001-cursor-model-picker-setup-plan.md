@@ -308,9 +308,9 @@ manual QA confirms the model appears in Cursor's native picker.
 
 **Tasks:**
 
-- [ ] Persist the last prepared Cursor setup in Local Motion global state:
+- [x] Persist the last prepared Cursor setup in Local Motion global state:
   `localMotion.lastPreparedCursorSetup`.
-- [ ] Use this storage shape:
+- [x] Use this storage shape:
 
   ```typescript
   interface LastPreparedCursorSetup {
@@ -323,19 +323,30 @@ manual QA confirms the model appears in Cursor's native picker.
   }
   ```
 
-- [ ] Update this state only when `prepareCursor` succeeds or when the user
+- [x] Update this state only when `prepareCursor` succeeds or when the user
   explicitly copies the full setup block. Do not update it for copying a single
   field.
-- [ ] Compare last prepared Base URL/model ID with current `RuntimeStatus`.
-- [ ] Show a clear stale warning when the model is stopped or the Base URL
+- [x] Compare last prepared Base URL/model ID with current `RuntimeStatus`.
+- [x] Show a clear stale warning when the model is stopped or the Base URL
   changes.
-- [ ] Add a `Copy Updated Setup` action that copies the full replacement block.
-- [ ] Clear or mark stale state when `localMotion.stop` runs.
+- [x] Add a `Copy Updated Setup` action that copies the full replacement block.
+- [x] Clear or mark stale state when `localMotion.stop` runs.
 
 **Verification:** Unit tests cover same endpoint, changed endpoint, stopped
 model, state transition on `prepareCursor`, state transition on
 `copySetupBlock`, and no state transition on single-field copies. Manual run
 confirms a stop/start cycle produces a stale warning.
+
+**Phase 3 evidence:**
+
+- `npm run check`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 17 tests.
+- Phase audit: local fallback used. The stale-state path persists only
+  `localMotion.lastPreparedCursorSetup`, compares it with active runtime status,
+  and marks stopped or changed dynamic-port setup stale.
+- Manual stop/start UI proof is deferred to Phase 4 with the rest of real Cursor
+  picker QA.
 
 ---
 
@@ -523,5 +534,5 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] Phase 0 complete
 - [x] Phase 1 complete
 - [x] Phase 2 complete
-- [ ] Phase 3 complete
+- [x] Phase 3 complete
 - [ ] Phase 4 complete

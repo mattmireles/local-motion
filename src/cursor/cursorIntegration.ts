@@ -1,4 +1,4 @@
-import type { RuntimeStatus } from "../types";
+import type { LastPreparedCursorSetup, RuntimeStatus } from "../types";
 import { LOCAL_MOTION_API_KEY } from "../runtime/openAiChat";
 
 export interface CursorSetupViewModel {
@@ -12,6 +12,12 @@ export interface CursorSetupViewModel {
 }
 
 export type CursorSetupValueKey = "apiKey" | "baseUrl" | "modelId" | "setupBlock";
+
+export interface CursorSetupFreshness {
+  status: "not-prepared" | "current" | "stale";
+  message: string;
+  lastPrepared?: LastPreparedCursorSetup;
+}
 
 export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewModel {
   const baseUrl = status.baseUrl ?? "";
@@ -67,4 +73,58 @@ export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSet
     case "setupBlock":
       return viewModel.setupBlock;
   }
+}
+
+export function shouldPersistCursorSetupCopy(key: CursorSetupValueKey, ok: boolean): boolean {
+  return ok && key === "setupBlock";
+}
+
+export function lastPreparedCursorSetup(
+  viewModel: CursorSetupViewModel,
+  trigger: LastPreparedCursorSetup["trigger"],
+  preparedAt: string,
+  endpointVerifiedAt?: string
+): LastPreparedCursorSetup {
+  return {
+    baseUrl: viewModel.baseUrl,
+    modelId: viewModel.modelId,
+    apiKeyLabel: "local-motion",
+    preparedAt,
+    trigger,
+    endpointVerifiedAt
+  };
+}
+
+export function cursorSetupFreshness(
+  viewModel: CursorSetupViewModel,
+  lastPrepared: LastPreparedCursorSetup | undefined
+): CursorSetupFreshness {
+  if (!lastPrepared) {
+    return {
+      status: "not-prepared",
+      message: "Cursor has not been prepared for this Local Motion session."
+    };
+  }
+
+  if (!viewModel.isRunning) {
+    return {
+      status: "stale",
+      message: `Cursor was last prepared for ${lastPrepared.modelId} at ${lastPrepared.baseUrl}, but no Local Motion model is running.`,
+      lastPrepared
+    };
+  }
+
+  if (lastPrepared.baseUrl !== viewModel.baseUrl || lastPrepared.modelId !== viewModel.modelId) {
+    return {
+      status: "stale",
+      message: `Cursor setup may be stale. Last prepared ${lastPrepared.modelId} at ${lastPrepared.baseUrl}; current setup is ${viewModel.modelId} at ${viewModel.baseUrl}.`,
+      lastPrepared
+    };
+  }
+
+  return {
+    status: "current",
+    message: `Cursor setup matches ${viewModel.modelId} at ${viewModel.baseUrl}.`,
+    lastPrepared
+  };
 }

@@ -407,6 +407,7 @@ export class SetupPanel {
         state.installed = message.installed;
         state.runtime = message.runtime;
         state.cursorSetupViewModel = message.cursorSetupViewModel;
+        state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderMachine(message.machine);
         renderRuntime();
         setStatus('Ready.');
@@ -418,12 +419,14 @@ export class SetupPanel {
         state.installed = message.installed;
         state.runtime = message.runtime;
         state.cursorSetupViewModel = message.cursorSetupViewModel;
+        state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderRuntime();
         setStatus('Running ' + message.installed.displayName);
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;
         state.cursorSetupViewModel = message.cursorSetupViewModel;
+        state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderRuntime();
         setStatus(message.runtime.message);
       }
@@ -434,6 +437,7 @@ export class SetupPanel {
       }
       if (message.type === 'cursorSetupPrepared') {
         state.cursorSetupViewModel = message.viewModel;
+        state.cursorSetupFreshness = message.cursorSetupFreshness;
         state.verification = message.verification;
         state.settings = message.settings;
         if (message.copy) state.copyResults.setupBlock = message.copy;
@@ -442,6 +446,7 @@ export class SetupPanel {
       }
       if (message.type === 'cursorCopyResult') {
         state.copyResults[message.key] = { ok: message.ok, message: message.message };
+        if (message.cursorSetupFreshness) state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderCursorSetup();
         setStatus(message.message);
       }
@@ -537,6 +542,7 @@ export class SetupPanel {
         ['setupBlock', 'Full setup block', viewModel.setupBlock]
       ];
       const statusLines = [
+        state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale' && state.cursorSetupFreshness.message,
         state.verification && state.verification.message,
         state.settings && state.settings.message
       ].filter(Boolean);
@@ -551,6 +557,9 @@ export class SetupPanel {
             (result ? '<span class="meta">' + esc(result.message) + '</span>' : '') +
             '</div>';
         }).join('') +
+        (state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale' && viewModel.isRunning
+          ? '<div class="actions"><button class="copy" data-key="setupBlock">Copy Updated Setup</button></div>'
+          : '') +
         '<ol class="checklist">' + (viewModel.steps || []).map(step => '<li>' + esc(step) + '</li>').join('') + '</ol>' +
         (statusLines.length ? '<p class="notice">' + esc(statusLines.join(' ')) + '</p>' : '');
       for (const button of els.cursorSetupFields.querySelectorAll('button.copy')) {
