@@ -406,6 +406,9 @@ can select the Local Motion model through the native model picker.
   `SetupPanel.runAutomagicalSetup`, so the command-palette path and setup-panel
   button share one progress/completion pipeline instead of running the controller
   directly with no webview progress updates.
+  The panel waits for its webview `ready` handshake before posting automagical
+  setup progress, with a short fallback so the command cannot hang if the webview
+  never replies.
   Not testable: command-palette webview progress requires a live VS Code/Cursor
   extension host; guarded here by `npm run check` and VSIX install proof.
 - Architecture hardening: controller/webview setup payloads now use

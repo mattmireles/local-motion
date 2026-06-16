@@ -7,6 +7,9 @@ import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
   private static current: SetupPanel | undefined;
+  private readonly readyPromise: Promise<void>;
+  private resolveReady: (() => void) | undefined;
+  private isReady = false;
 
   static show(
     controller: LocalMotionController,
@@ -39,6 +42,9 @@ export class SetupPanel {
     private readonly controller: LocalMotionController,
     private readonly output: vscode.OutputChannel
   ) {
+    this.readyPromise = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => {
       SetupPanel.current = undefined;
@@ -50,6 +56,7 @@ export class SetupPanel {
     try {
       switch (message.command) {
         case "ready":
+          this.markReady();
           await this.postInitialState();
           break;
         case "search":
@@ -111,6 +118,7 @@ export class SetupPanel {
   }
 
   private async automagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    await this.waitUntilReady();
     await this.post({ type: "automagicalSetupStarted" });
     const payload = await this.controller.automagicalSetup((progress) => {
       void this.post({ type: "installProgress", progress });
@@ -119,6 +127,26 @@ export class SetupPanel {
       await this.post(payload);
     }
     return payload;
+  }
+
+  private markReady(): void {
+    if (this.isReady) {
+      return;
+    }
+    this.isReady = true;
+    this.resolveReady?.();
+  }
+
+  private async waitUntilReady(): Promise<void> {
+    if (this.isReady) {
+      return;
+    }
+    await Promise.race([
+      this.readyPromise,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 3_000);
+      })
+    ]);
   }
 
   private async post(payload: SetupResponse): Promise<void> {
