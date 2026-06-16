@@ -23,6 +23,10 @@ import {
   shouldRunFirstStartupAutomagicalSetup
 } from "../out/onboarding.js";
 import {
+  allowLlamaInstallForAutomagicalStart,
+  shouldPostInitialQuantizations
+} from "../out/setupPolicy.js";
+import {
   isAuthorizedBearer,
   LOCAL_MOTION_API_KEY,
   sanitizeExternalChatRequest,
@@ -434,4 +438,27 @@ test("retry automagical setup command is registered and contributed", async () =
 
   const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
   assert.equal(extensionSource.includes("localMotion.retryAutomagicalSetup"), true);
+});
+
+test("startup resume does not install missing llama dependency", async () => {
+  assert.equal(allowLlamaInstallForAutomagicalStart("explicit"), true);
+  assert.equal(allowLlamaInstallForAutomagicalStart("startupResume"), false);
+
+  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
+  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
+  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("startupResume"\)/);
+});
+
+test("host-started automagical setup hydrates base state before progress", async () => {
+  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: false }), true);
+  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: true }), false);
+
+  const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
+  const runtimeStateIndex = panelSource.indexOf("await this.postInitialRuntimeState()");
+  const readyIndex = panelSource.indexOf("this.markReady()");
+  assert.notEqual(runtimeStateIndex, -1);
+  assert.notEqual(readyIndex, -1);
+  assert.equal(runtimeStateIndex < readyIndex, true);
+  assert.equal(panelSource.includes("shouldPostInitialQuantizations"), true);
+  assert.equal(panelSource.includes("automagicalSetupRunning"), true);
 });

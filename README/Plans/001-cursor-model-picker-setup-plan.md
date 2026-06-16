@@ -379,7 +379,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 22 tests.
+- `npm test`: passed, 31 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -432,7 +432,10 @@ can select the Local Motion model through the native model picker.
   click. This path is reuse-only and does not select or download a replacement
   model when the stored GGUF is missing or invalid. Guarded by regression test
   `resumes automagical setup only after a completed setup with an installed
-  model`.
+  model`. Startup resume also does not install a missing `llama-server`
+  dependency; explicit Automagical Setup and manual Install and Run are the only
+  paths allowed to invoke Homebrew dependency installation. Guarded by
+  regression test `startup resume does not install missing llama dependency`.
 - Completion state: `localMotion.automagicalSetupCompleted` is written only
   when endpoint verification, setup-block copy, and Cursor settings opening all
   succeed. Guarded by regression test
@@ -451,7 +454,11 @@ can select the Local Motion model through the native model picker.
   `src/setupProtocol.ts` discriminated TypeScript types instead of loose
   `Record<string, unknown>` responses, and automagical setup shares the
   controller's internal `installAndStart` primitive instead of calling the
-  manual `installRun` command handler. Guard: `npm run check`.
+  manual `installRun` command handler. Host-started automagical setup now posts
+  base webview state before reporting setup progress, skips default
+  quantization loading while setup is active, and keeps late quantization
+  responses from re-enabling manual install. Guarded by regression test
+  `host-started automagical setup hydrates base state before progress`.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub

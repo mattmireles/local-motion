@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
 import type { AutomagicalSetupCompleteResponse, SetupRequest, SetupResponse } from "../setupProtocol";
+import { shouldPostInitialQuantizations } from "../setupPolicy";
 import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
@@ -10,6 +11,7 @@ export class SetupPanel {
   private readonly readyPromise: Promise<void>;
   private resolveReady: (() => void) | undefined;
   private isReady = false;
+  private setupOperationActive = false;
 
   static show(
     controller: LocalMotionController,
@@ -63,8 +65,11 @@ export class SetupPanel {
     try {
       switch (message.command) {
         case "ready":
+          await this.postInitialRuntimeState();
           this.markReady();
-          await this.postInitialState();
+          if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
+            await this.postDefaultQuantizations();
+          }
           break;
         case "search":
           await this.post(await this.controller.search(message.query ?? ""));
@@ -108,7 +113,17 @@ export class SetupPanel {
   }
 
   private async postInitialState(): Promise<void> {
+    await this.postInitialRuntimeState();
+    if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
+      await this.postDefaultQuantizations();
+    }
+  }
+
+  private async postInitialRuntimeState(): Promise<void> {
     await this.post(await this.controller.initialState());
+  }
+
+  private async postDefaultQuantizations(): Promise<void> {
     await this.post(await this.controller.quantizations(this.controller.defaultRepo()));
   }
 
@@ -122,27 +137,37 @@ export class SetupPanel {
   }
 
   private async automagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    await this.waitUntilReady();
-    await this.post({ type: "automagicalSetupStarted" });
-    const payload = await this.controller.automagicalSetup((progress) => {
-      void this.post({ type: "installProgress", progress });
-    });
-    if (payload) {
-      await this.post(payload);
+    this.setupOperationActive = true;
+    try {
+      await this.waitUntilReady();
+      await this.post({ type: "automagicalSetupStarted" });
+      const payload = await this.controller.automagicalSetup((progress) => {
+        void this.post({ type: "installProgress", progress });
+      });
+      if (payload) {
+        await this.post(payload);
+      }
+      return payload;
+    } finally {
+      this.setupOperationActive = false;
     }
-    return payload;
   }
 
   private async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    await this.waitUntilReady();
-    await this.post({ type: "automagicalSetupStarted" });
-    const payload = await this.controller.resumeAutomagicalSetup();
-    if (payload) {
-      await this.post(payload);
-    } else {
-      await this.postInitialState();
+    this.setupOperationActive = true;
+    try {
+      await this.waitUntilReady();
+      await this.post({ type: "automagicalSetupStarted" });
+      const payload = await this.controller.resumeAutomagicalSetup();
+      if (payload) {
+        await this.post(payload);
+      } else {
+        await this.postInitialState();
+      }
+      return payload;
+    } finally {
+      this.setupOperationActive = false;
     }
-    return payload;
   }
 
   private async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
@@ -460,7 +485,13 @@ export class SetupPanel {
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const state = { selected: undefined, installed: undefined, runtime: undefined, copyResults: {} };
+    const state = {
+      selected: undefined,
+      installed: undefined,
+      runtime: undefined,
+      copyResults: {},
+      automagicalSetupRunning: false
+    };
     const els = {
       repo: document.getElementById('repo'),
       machine: document.getElementById('machine'),
@@ -514,6 +545,7 @@ export class SetupPanel {
       if (message.type === 'quantizations') renderQuantizations(message.quantizations);
       if (message.type === 'installProgress') setStatus('Downloading ' + Math.round(message.progress.percent || 0) + '%');
       if (message.type === 'automagicalSetupStarted') {
+        state.automagicalSetupRunning = true;
         document.getElementById('autoSetup').disabled = true;
         document.getElementById('install').disabled = true;
         setStatus('Selecting a compatible model, starting it, and preparing Cursor.');
@@ -536,6 +568,7 @@ export class SetupPanel {
         setStatus(message.runtime.message);
       }
       if (message.type === 'automagicalSetupComplete') {
+        state.automagicalSetupRunning = false;
         state.installed = message.installed;
         state.runtime = message.runtime;
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
@@ -579,8 +612,9 @@ export class SetupPanel {
         renderCursorSetup();
         setStatus(message.message);
       }
-      if (message.type === 'error') setStatus(message.message);
       if (message.type === 'error') {
+        state.automagicalSetupRunning = false;
+        setStatus(message.message);
         document.getElementById('autoSetup').disabled = false;
         document.getElementById('install').disabled = !state.selected;
       }
@@ -629,11 +663,15 @@ export class SetupPanel {
           buttons.forEach(b => b.classList.remove('selected'));
           button.classList.add('selected');
           state.selected = items[index];
-          els.install.disabled = false;
+          els.install.disabled = state.automagicalSetupRunning;
         });
       });
       const firstCompatible = items.findIndex(item => item.compatibility.status === 'compatible');
       if (firstCompatible >= 0 && buttons[firstCompatible]) buttons[firstCompatible].click();
+      if (state.automagicalSetupRunning) {
+        els.install.disabled = true;
+        return;
+      }
       setStatus(items.length ? 'Compatible quantization selected. Use Automagical Setup or install manually.' : 'No GGUF files found in this repository.');
     }
 

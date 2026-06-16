@@ -31,6 +31,7 @@ import type {
   SearchResultsResponse,
   SetupStateResponse
 } from "../setupProtocol";
+import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
 import type { CandidateQuantization, InstalledModel, RuntimeSession } from "../types";
@@ -118,7 +119,9 @@ export class LocalMotionController {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();
       if (installedModel) {
-        await this.startInstalledModel(installedModel);
+        await this.startInstalledModel(installedModel, {
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+        });
       } else {
         const repoId = this.defaultRepo();
         const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
@@ -138,7 +141,9 @@ export class LocalMotionController {
       if (!installedModel) {
         return undefined;
       }
-      await this.startInstalledModel(installedModel);
+      await this.startInstalledModel(installedModel, {
+        allowInstall: allowLlamaInstallForAutomagicalStart("startupResume")
+      });
     }
 
     return this.completeAutomagicalSetup();
@@ -295,13 +300,18 @@ export class LocalMotionController {
       contextTokens
     };
 
-    await this.startInstalledModel(installed);
+    await this.startInstalledModel(installed, {
+      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+    });
     await this.state.setInstalledModel(installed);
     return installed;
   }
 
-  private async startInstalledModel(installed: InstalledModel): Promise<RuntimeSession> {
-    const llamaServerPath = await this.resolver.resolve({ allowInstall: true });
+  private async startInstalledModel(
+    installed: InstalledModel,
+    options: { allowInstall: boolean }
+  ): Promise<RuntimeSession> {
+    const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
     const session = await this.runtime.start(installed, llamaServerPath);
     this.provider.refresh();
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
