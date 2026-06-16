@@ -140,15 +140,6 @@ export class LocalMotionController {
     return this.completeAutomagicalSetup();
   }
 
-  async resumeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    const resumed = await this.resumeAutomagicalRuntime();
-    if (!resumed) {
-      return undefined;
-    }
-
-    return this.completeAutomagicalSetup();
-  }
-
   async resumeAutomagicalRuntime(): Promise<RuntimeResponse | undefined> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();
@@ -326,6 +317,7 @@ export class LocalMotionController {
       allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
     });
     await this.state.setInstalledModel(installed);
+    this.provider.refresh();
     return installed;
   }
 
@@ -335,7 +327,6 @@ export class LocalMotionController {
   ): Promise<RuntimeSession> {
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
     const session = await this.runtime.start(installed, llamaServerPath);
-    this.provider.refresh();
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
     return session;
   }

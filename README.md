@@ -117,6 +117,9 @@ npm test
 npm run package
 ```
 
+The `CI` GitHub Actions workflow runs the same deterministic gate on pull
+requests and pushes: install, typecheck, lint, test, and package.
+
 Optional local runtime smoke proof:
 
 ```bash

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   automagicalSetupCompletion,
@@ -36,6 +35,10 @@ import {
   allowLlamaInstallForAutomagicalStart,
   shouldPostInitialQuantizations
 } from "../out/setupPolicy.js";
+import {
+  isAutomagicalSetupCompletion,
+  isLastCopiedCursorSetup
+} from "../out/stateValidation.js";
 import {
   isAuthorizedBearer,
   LOCAL_MOTION_API_KEY,
@@ -142,22 +145,6 @@ test("automagical setup tries configured repo before built-in fallback repos", (
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), true);
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"), true);
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), true);
-});
-
-test("automagical setup settings describe fallback repositories", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const properties = packageJson.contributes.configuration.properties;
-  assert.equal(properties["localMotion.defaultModelRepo"].default, DEFAULT_MODEL_REPO);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /tried first/);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /fallback repositories/);
-  assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);
-});
-
-test("native language model provider config opens automagical setup", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const provider = packageJson.contributes.languageModelChatProviders.find((candidate) => candidate.vendor === "local-motion");
-  assert.equal(provider?.displayName, "Local Motion");
-  assert.equal(provider?.managementCommand, "localMotion.automagicalSetup");
 });
 
 test("setup diagnostics distinguish ready setup from required action", () => {
@@ -546,12 +533,6 @@ test("validates Cursor setup copy keys at runtime", () => {
   assert.equal(isCursorSetupValueKey(undefined), false);
 });
 
-test("automagical dependency install has no second confirmation prompt", async () => {
-  const resolverSource = await readFile(new URL("../out/runtime/llamaServerResolver.js", import.meta.url), "utf8");
-  assert.equal(resolverSource.includes("showWarningMessage"), false);
-  assert.equal(resolverSource.includes("withProgress"), true);
-});
-
 test("opens setup onboarding only for first startup without an installed model", () => {
   assert.equal(shouldOpenSetupOnboarding({ enabled: true, alreadyOpened: false, hasInstalledModel: false }), true);
   assert.equal(shouldOpenSetupOnboarding({ enabled: false, alreadyOpened: false, hasInstalledModel: false }), false);
@@ -633,64 +614,6 @@ test("runs first startup automagical setup only once before any model is install
   );
 });
 
-test("host-started automagical setup reports errors to the webview", async () => {
-  const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
-  assert.equal(panelSource.includes("hostStartedAutomagicalSetup"), true);
-  assert.equal(panelSource.includes("type: \"error\""), true);
-});
-
-test("retry automagical setup command is registered and contributed", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const commands = packageJson.contributes.commands.map((command) => command.command);
-  assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.retryAutomagicalSetup"), true);
-  assert.equal(commands.includes("localMotion.retryAutomagicalSetup"), true);
-
-  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
-  assert.equal(extensionSource.includes("localMotion.retryAutomagicalSetup"), true);
-});
-
-test("prepare Cursor command is registered and starts a reusable installed model first", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const commands = packageJson.contributes.commands.map((command) => command.command);
-  assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.prepareCursor"), true);
-  assert.equal(commands.includes("localMotion.prepareCursor"), true);
-
-  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
-  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
-  assert.equal(extensionSource.includes("localMotion.prepareCursor"), true);
-  assert.match(extensionSource, /controller\.prepareCursorAfterStartingInstalledModel\(\)/);
-  assert.match(controllerSource, /prepareCursorAfterStartingInstalledModel/);
-  assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
-  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
-  assert.match(controllerSource, /return this\.prepareCursor\(\)/);
-});
-
-test("diagnose setup command is registered and contributed", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const commands = packageJson.contributes.commands.map((command) => command.command);
-  assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.diagnoseSetup"), true);
-  assert.equal(commands.includes("localMotion.diagnoseSetup"), true);
-
-  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
-  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
-  assert.equal(extensionSource.includes("localMotion.diagnoseSetup"), true);
-  assert.match(extensionSource, /controller\.diagnoseSetup\(\)/);
-  assert.match(controllerSource, /setupDiagnosticSummary/);
-});
-
-test("manual install and run prepares Cursor automatically", async () => {
-  const protocolSource = await readFile(new URL("../src/setupProtocol.ts", import.meta.url), "utf8");
-  const controllerSource = await readFile(new URL("../src/app/localMotionController.ts", import.meta.url), "utf8");
-  const panelHtmlSource = await readFile(new URL("../out/ui/setupPanelHtml.js", import.meta.url), "utf8");
-
-  assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
-  assert.match(controllerSource, /const cursor = await this\.cursorSetup\.prepareCursorAndMarkCompleted\(\)/);
-  assert.match(controllerSource, /cursor\s*[,}]/);
-  assert.match(panelHtmlSource, /message\.type === 'installed'/);
-  assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
-  assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
-});
-
 test("provider no-model error points to automagical setup", () => {
   assert.equal(
     NO_INSTALLED_MODEL_MESSAGE,
@@ -699,47 +622,41 @@ test("provider no-model error points to automagical setup", () => {
   assert.equal(NO_INSTALLED_MODEL_MESSAGE.includes("Open Setup first"), false);
 });
 
-test("startup resume does not install missing llama dependency", async () => {
+test("startup resume does not install missing llama dependency", () => {
   assert.equal(allowLlamaInstallForAutomagicalStart("explicit"), true);
   assert.equal(allowLlamaInstallForAutomagicalStart("startupResume"), false);
-
-  const controllerSource = await readFile(new URL("../out/app/localMotionController.js", import.meta.url), "utf8");
-  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
-  assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("startupResume"\)/);
 });
 
-test("host-started automagical setup hydrates base state before progress", async () => {
+test("host-started automagical setup skips default quantization loading while active", () => {
   assert.equal(shouldPostInitialQuantizations({ setupOperationActive: false }), true);
   assert.equal(shouldPostInitialQuantizations({ setupOperationActive: true }), false);
-
-  const panelSource = await readFile(new URL("../out/ui/setupPanel.js", import.meta.url), "utf8");
-  const panelHtmlSource = await readFile(new URL("../out/ui/setupPanelHtml.js", import.meta.url), "utf8");
-  const runtimeStateIndex = panelSource.indexOf("await this.postInitialRuntimeState()");
-  const readyIndex = panelSource.indexOf("this.markReady()");
-  assert.notEqual(runtimeStateIndex, -1);
-  assert.notEqual(readyIndex, -1);
-  assert.equal(runtimeStateIndex < readyIndex, true);
-  assert.equal(panelSource.includes("shouldPostInitialQuantizations"), true);
-  assert.equal(panelSource.includes("setupPanelHtml"), true);
-  assert.equal(panelHtmlSource.includes("automagicalSetupRunning"), true);
 });
 
-test("startup resume does not prepare Cursor or open the setup panel unless recovery is requested", async () => {
-  const extensionSource = await readFile(new URL("../out/extension.js", import.meta.url), "utf8");
-  assert.equal(extensionSource.includes("resumeAutomagicalSetupInBackground"), true);
-  assert.match(extensionSource, /controller\.resumeAutomagicalRuntime\(\)/);
-  assert.equal(extensionSource.includes("controller.resumeAutomagicalSetup()"), false);
-  assert.equal(extensionSource.includes("SetupPanel.resumeAutomagicalSetup"), false);
-});
+test("state validators reject stale persisted setup shapes", () => {
+  const copied = {
+    baseUrl: "http://127.0.0.1:41434/v1",
+    modelId: "local-motion-test",
+    apiKeyLabel: "local-motion",
+    copiedAt: "2026-06-16T00:00:00.000Z",
+    trigger: "prepareCursor",
+    endpointVerifiedAt: "2026-06-16T00:00:01.000Z"
+  };
+  const completion = {
+    baseUrl: "http://127.0.0.1:41434/v1",
+    modelId: "local-motion-test",
+    apiKeyLabel: "local-motion",
+    cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
+    endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
+    completedAt: "2026-06-16T00:00:02.000Z"
+  };
 
-test("startup resume setting describes quiet runtime restart", async () => {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  const description = packageJson.contributes.configuration.properties["localMotion.resumeAutomagicalSetupOnStartup"].description;
-  assert.match(description, /restart the installed local model/);
-  assert.match(description, /without downloading a new model/);
-  assert.match(description, /opening Cursor settings/);
-  assert.match(description, /replacing the clipboard/);
-  assert.equal(description.includes("prepare Cursor automatically"), false);
+  assert.equal(isLastCopiedCursorSetup(copied), true);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, trigger: "bad" }), false);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, baseUrl: "" }), false);
+  assert.equal(isLastCopiedCursorSetup(true), false);
+  assert.equal(isAutomagicalSetupCompletion(completion), true);
+  assert.equal(isAutomagicalSetupCompletion({ ...completion, endpointVerifiedAt: "" }), false);
+  assert.equal(isAutomagicalSetupCompletion(true), false);
 });
 
 function cursorSetupWorkflowHarness(options = {}) {

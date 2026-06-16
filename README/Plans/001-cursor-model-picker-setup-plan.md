@@ -383,7 +383,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 47 tests.
+- `npm test`: passed, 51 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -404,7 +404,8 @@ can select the Local Motion model through the native model picker.
   repository and issue tracker. `CHANGELOG.md`, `SUPPORT.md`, and a Marketplace
   gallery banner are included for the public listing. A manual
   `Publish VS Code Extension` GitHub Actions workflow is checked in and excluded
-  from the VSIX.
+  from the VSIX. A `CI` workflow is checked in to run install, typecheck, lint,
+  tests, and packaging on pull requests and pushes.
 - Automagical setup: setup UI now exposes one primary `Automagical Setup` action
   that reuses a size-valid installed model file when available; otherwise it
   tries the configured default model repository first, then built-in GGUF
@@ -529,13 +530,21 @@ can select the Local Motion model through the native model picker.
   regression tests `Cursor setup workflow verifies, copies, opens settings, and
   records completion` and `Cursor setup workflow does not copy or open settings
   when endpoint verification fails`.
+- Audit hardening: newly installed model state is now committed before the
+  Language Model provider refresh event fires, the unused side-effectful
+  `resumeAutomagicalSetup` controller method was deleted so startup resume has
+  only the runtime-only entry point, persisted Cursor setup state is validated
+  before use, and source-shape wiring tests moved out of the pure logic suite.
+  Guarded by regression tests `installed model state is committed before
+  provider refresh`, `startup resume does not prepare Cursor or expose a
+  side-effectful controller method`, and
+  `state validators reject stale persisted setup shapes`.
 - Marketplace publish: Not executed. No `VSCE_PAT` or Open VSX token is present
   in this environment, and the Marketplace publisher ID `local-motion` still
   needs authenticated ownership confirmation before `vsce publish`. The GitHub
   workflow expects a `VSCE_PAT` repository secret with Marketplace `Manage`
-  scope. Live GitHub check: PR #1 is open and mergeable, no workflow is listed
-  on `main` yet, and `gh secret list --repo mattmireles/local-motion` returned
-  no visible secrets.
+  scope. Live GitHub check: PR #1 is open and mergeable, and
+  `gh secret list --repo mattmireles/local-motion` returned no visible secrets.
 - Manual Cursor model-picker QA: Not testable in this non-interactive run. The
   machine has `llama-server` at `/Users/mm/.local/bin/llama-server`, but no
   existing Local Motion GGUF storage was found and Cursor CLI does not expose a
@@ -559,6 +568,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 ## Executable Memory
 
 - Regression test: `npm run check && npm run lint && npm test && npm run package`
+- Remote regression test: `CI` GitHub Actions workflow
 - Install proof: `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`
 - Local runtime proof: `npm run smoke:local-runtime`
 - Manual proof: Cursor `Cmd+L` can select the Local Motion model after assisted
@@ -597,6 +607,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 - [x] All tests passing.
 - [x] VSIX packaged and installed locally.
+- [x] CI workflow added for pull requests and pushes.
 - [x] Local runtime smoke proof completed.
 - [x] README updated with truthful Cursor feature coverage.
 - [ ] Manual Cursor model-picker QA completed.
