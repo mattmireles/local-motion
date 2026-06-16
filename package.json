@@ -29,6 +29,10 @@
     "Machine Learning",
     "Other"
   ],
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onCommand:localMotion.open",
     "onCommand:localMotion.stop",

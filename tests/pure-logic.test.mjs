@@ -14,6 +14,7 @@ import {
   quantizationFromFileName,
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
+import { canReuseInstalledModel } from "../out/models/installedModel.js";
 import {
   isAuthorizedBearer,
   LOCAL_MOTION_API_KEY,
@@ -103,6 +104,24 @@ test("does not select an incompatible quantization for automagical setup", () =>
   ]);
 
   assert.equal(selected, undefined);
+});
+
+test("reuses an installed model only when its file is present and size-valid", () => {
+  const installed = {
+    repoId: "example/model-GGUF",
+    fileName: "model-Q4_K_M.gguf",
+    revision: "main",
+    sizeBytes: 4,
+    modelPath: "/tmp/model-Q4_K_M.gguf",
+    modelId: "local-motion-example",
+    displayName: "Example",
+    contextTokens: 8192
+  };
+
+  assert.equal(canReuseInstalledModel(installed, 4), true);
+  assert.equal(canReuseInstalledModel(installed, 5), false);
+  assert.equal(canReuseInstalledModel(installed, undefined), false);
+  assert.equal(canReuseInstalledModel(undefined, 4), false);
 });
 
 test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {

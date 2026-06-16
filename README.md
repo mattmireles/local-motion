@@ -12,9 +12,10 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 - Starts `llama-server` on `127.0.0.1` with a dynamic port.
 - Registers the running model with the VS Code Language Model API.
 - Starts a local OpenAI-compatible proxy for Cursor.
-- Offers `Automagical Setup`: selects a compatible default quantization, installs
-  it, starts it, verifies the local endpoint, copies the Cursor setup block, and
-  opens Settings filtered toward Models.
+- Offers `Automagical Setup`: reuses an installed model when available, otherwise
+  selects a compatible default quantization, installs it, starts it, verifies the
+  local endpoint, copies the Cursor setup block, and opens Settings filtered
+  toward Models.
 
 ## Requirements
 

@@ -12,13 +12,14 @@ import {
 } from "../cursor/cursorIntegration";
 import { selectBestCompatibleQuantization } from "../models/compatibility";
 import { listQuantizations, searchModels } from "../models/huggingFace";
+import { canReuseInstalledModel } from "../models/installedModel";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
 import { LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
-import type { CandidateQuantization, InstalledModel } from "../types";
+import type { CandidateQuantization, InstalledModel, RuntimeSession } from "../types";
 import { formatBytes, modelDisplayName, safeId } from "../util/format";
 
 export const DEFAULT_MODEL_REPO = "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF";
@@ -106,11 +107,8 @@ export class LocalMotionController {
       contextTokens
     };
 
-    const llamaServerPath = await this.resolver.resolve({ allowInstall: true });
-    const session = await this.runtime.start(installed, llamaServerPath);
+    await this.startInstalledModel(installed);
     await this.state.setInstalledModel(installed);
-    this.provider.refresh();
-    await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
 
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
@@ -125,14 +123,19 @@ export class LocalMotionController {
 
   async automagicalSetup(onProgress: (progress: DownloadProgress) => void): Promise<Record<string, unknown> | undefined> {
     if (!this.runtime.status().running) {
-      const repoId = this.defaultRepo();
-      const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
-      if (!candidate) {
-        throw new Error(`No compatible GGUF quantization found in ${repoId} for this Mac.`);
-      }
-      const installed = await this.installRun(candidate, onProgress);
-      if (!installed) {
-        return undefined;
+      const installedModel = this.state.installedModel();
+      if (canReuseInstalledModel(installedModel, installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined)) {
+        await this.startInstalledModel(installedModel);
+      } else {
+        const repoId = this.defaultRepo();
+        const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
+        if (!candidate) {
+          throw new Error(`No compatible GGUF quantization found in ${repoId} for this Mac.`);
+        }
+        const installed = await this.installRun(candidate, onProgress);
+        if (!installed) {
+          return undefined;
+        }
       }
     }
 
@@ -256,6 +259,23 @@ export class LocalMotionController {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
     return listQuantizations(repoId, machine, contextTokens);
+  }
+
+  private async startInstalledModel(installed: InstalledModel): Promise<RuntimeSession> {
+    const llamaServerPath = await this.resolver.resolve({ allowInstall: true });
+    const session = await this.runtime.start(installed, llamaServerPath);
+    this.provider.refresh();
+    await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
+    return session;
+  }
+
+  private async modelFileSize(modelPath: string): Promise<number | undefined> {
+    try {
+      const stat = await fs.promises.stat(modelPath);
+      return stat.isFile() ? stat.size : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private currentCursorSetupViewModel(): CursorSetupViewModel {
