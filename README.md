@@ -10,7 +10,8 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 - Downloads model files with resumable streaming.
 - Finds or installs `llama-server` through Homebrew.
 - Starts `llama-server` on `127.0.0.1` with a dynamic port.
-- Registers the running model with the VS Code Language Model API.
+- Registers the running model with the VS Code Language Model API, with the
+  provider's manage action wired to `Automagical Setup`.
 - Starts a local OpenAI-compatible proxy for Cursor on a stable preferred
   localhost port.
 - Offers `Automagical Setup`: reuses an installed model when available, otherwise

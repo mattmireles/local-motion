@@ -120,7 +120,8 @@
     "languageModelChatProviders": [
       {
         "vendor": "local-motion",
-        "displayName": "Local Motion"
+        "displayName": "Local Motion",
+        "managementCommand": "localMotion.automagicalSetup"
       }
     ]
   },

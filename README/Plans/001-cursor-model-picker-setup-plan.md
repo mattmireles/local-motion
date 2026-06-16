@@ -383,7 +383,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 44 tests.
+- `npm test`: passed, 45 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -425,6 +425,11 @@ can select the Local Motion model through the native model picker.
   `manual install and run prepares Cursor automatically`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Native provider management: the contributed `local-motion` language model
+  provider now sets `managementCommand` to `localMotion.automagicalSetup`, so the
+  editor's native provider configuration affordance enters the same automagical
+  path instead of a separate setup surface. Guarded by regression test
+  `native language model provider config opens automagical setup`.
 - Provider setup guidance: if the VS Code Language Model provider is invoked
   before any model is installed, its error points to `Local Motion: Automagical
   Setup` instead of the older open-setup-first flow. Guarded by regression test
@@ -576,6 +581,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] Command palette exposes `Local Motion: Prepare Cursor` for one-command
   Cursor handoff when a local model is already running or a reusable installed
   model can be restarted.
+- [x] Native language-model provider management opens `Local Motion: Automagical
+  Setup`.
 
 ### Definition of Done
 

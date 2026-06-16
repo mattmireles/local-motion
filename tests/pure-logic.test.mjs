@@ -152,6 +152,13 @@ test("automagical setup settings describe fallback repositories", async () => {
   assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);
 });
 
+test("native language model provider config opens automagical setup", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const provider = packageJson.contributes.languageModelChatProviders.find((candidate) => candidate.vendor === "local-motion");
+  assert.equal(provider?.displayName, "Local Motion");
+  assert.equal(provider?.managementCommand, "localMotion.automagicalSetup");
+});
+
 test("reuses an installed model only when its file is present and size-valid", () => {
   const installed = {
     repoId: "example/model-GGUF",
