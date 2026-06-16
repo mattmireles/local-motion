@@ -11,7 +11,8 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 - Finds or installs `llama-server` through Homebrew.
 - Starts `llama-server` on `127.0.0.1` with a dynamic port.
 - Registers the running model with the VS Code Language Model API.
-- Starts a local OpenAI-compatible proxy for Cursor.
+- Starts a local OpenAI-compatible proxy for Cursor on a stable preferred
+  localhost port.
 - Offers `Automagical Setup`: reuses an installed model when available, otherwise
   selects a compatible default quantization, installs it, starts it, verifies the
   local endpoint, copies the Cursor setup block, and opens Settings filtered
@@ -26,6 +27,9 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
   `/opt/homebrew/bin`, or `/usr/local/bin`; Automagical Setup uses it to install
   `llama.cpp`.
 - Enough free disk and unified memory for the selected GGUF file.
+- Localhost port `41434` available for the Cursor-facing proxy, or set
+  `localMotion.proxyPort` to another port. If the preferred port is occupied,
+  Local Motion falls back to an ephemeral port and shows updated setup values.
 
 ## Setup
 
@@ -77,9 +81,10 @@ to every Cursor surface. Treat setup as proven only for the Cursor surface you
 manually test, such as `Cmd+L` chat. Do not assume Agent, Composer, Inline Edit,
 or Tab autocomplete use the local endpoint until verified in your Cursor build.
 
-If the Local Motion model stops or restarts on a new dynamic port, the setup
-panel marks previously copied Cursor values stale and offers `Copy Updated
-Setup`.
+Local Motion keeps Cursor's Base URL stable across restarts by preferring
+`http://127.0.0.1:41434/v1` for the local proxy. If that port is occupied and
+Local Motion falls back to a different port, the setup panel marks previously
+copied Cursor values stale and offers `Copy Updated Setup`.
 
 ## Privacy
 

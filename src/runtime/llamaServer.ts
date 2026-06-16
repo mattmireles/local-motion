@@ -126,7 +126,7 @@ export class LlamaServerManager {
           abortSignal: startAbort.signal
         });
         abortIfNeeded();
-        const proxyBaseUrl = await proxy.start();
+        const proxyBaseUrl = await proxy.start(configuredProxyPort());
         this.proxy = proxy;
         const session: RuntimeSession = {
           ...model,
@@ -184,4 +184,8 @@ export class LlamaServerManager {
     });
     await proxyStop;
   }
+}
+
+function configuredProxyPort(): number {
+  return vscode.workspace.getConfiguration("localMotion").get<number>("proxyPort", 41434);
 }

@@ -83,6 +83,13 @@
           "maximum": 8,
           "description": "Number of parallel requests to allow in llama-server."
         },
+        "localMotion.proxyPort": {
+          "type": "number",
+          "default": 41434,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Preferred localhost port for the Cursor-facing OpenAI proxy. Local Motion falls back to an ephemeral port if this port is already in use."
+        },
         "localMotion.defaultModelRepo": {
           "type": "string",
           "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",

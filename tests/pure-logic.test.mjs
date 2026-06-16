@@ -32,7 +32,9 @@ import {
   sanitizeExternalChatRequest,
   sanitizeStop
 } from "../out/runtime/openAiChat.js";
+import { OpenAiProxy } from "../out/runtime/openAiProxy.js";
 import { childFailureMessage } from "../out/runtime/llamaHealth.js";
+import { releasePortHolder, reserveLocalhostPort } from "../out/runtime/ports.js";
 import { isStartStale, parseContentLengthHeader } from "../out/runtime/runtimeGuards.js";
 import { filterForwardHeaders } from "../out/runtime/openAiProxy.js";
 
@@ -197,6 +199,40 @@ test("filters hop-by-hop headers from proxy health forwarding", () => {
   assert.deepEqual(filterForwardHeaders(headers), {
     "content-type": "application/json"
   });
+});
+
+test("OpenAI proxy uses the preferred Cursor port when it is available", async () => {
+  const holder = await reserveLocalhostPort();
+  const preferredPort = holder.port;
+  await releasePortHolder(holder);
+
+  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: "local-motion-test" });
+  try {
+    const baseUrl = await proxy.start(preferredPort);
+    assert.equal(baseUrl, `http://127.0.0.1:${preferredPort}/v1`);
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` }
+    });
+    assert.equal(response.status, 200);
+  } finally {
+    await proxy.stop();
+  }
+});
+
+test("OpenAI proxy falls back to a dynamic port when the preferred Cursor port is occupied", async () => {
+  const holder = await reserveLocalhostPort();
+  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: "local-motion-test" });
+  try {
+    const baseUrl = await proxy.start(holder.port);
+    assert.notEqual(baseUrl, `http://127.0.0.1:${holder.port}/v1`);
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` }
+    });
+    assert.equal(response.status, 200);
+  } finally {
+    await proxy.stop();
+    await releasePortHolder(holder);
+  }
 });
 
 test("requires the documented local bearer token", () => {

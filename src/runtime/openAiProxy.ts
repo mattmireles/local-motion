@@ -27,7 +27,7 @@ export class OpenAiProxy {
 
   constructor(private readonly options: ProxyOptions) {}
 
-  async start(): Promise<string> {
+  async start(preferredPort?: number): Promise<string> {
     this.server = http.createServer((request, response) => {
       void this.handle(request, response);
     });
@@ -35,16 +35,25 @@ export class OpenAiProxy {
       this.sockets.add(socket);
       socket.once("close", () => this.sockets.delete(socket));
     });
-    await new Promise<void>((resolve, reject) => {
-      this.server?.once("error", reject);
-      this.server?.listen(0, "127.0.0.1", () => resolve());
-    });
+    await this.listen(preferredPort);
     const address = this.server?.address();
     if (!address || typeof address === "string") {
       throw new Error("OpenAI proxy failed to bind a localhost port.");
     }
     this.port = address.port;
     return `http://127.0.0.1:${this.port}/v1`;
+  }
+
+  private async listen(preferredPort: number | undefined): Promise<void> {
+    try {
+      await listen(this.server, preferredPort ?? 0);
+    } catch (error) {
+      if (preferredPort !== undefined && isPortInUse(error)) {
+        await listen(this.server, 0);
+        return;
+      }
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -175,6 +184,17 @@ export class OpenAiProxy {
       error: { message: error instanceof Error ? error.message : String(error) }
     });
   }
+}
+
+async function listen(server: http.Server | undefined, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server?.once("error", reject);
+    server?.listen(port, "127.0.0.1", () => resolve());
+  });
+}
+
+function isPortInUse(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "EADDRINUSE";
 }
 
 export function filterForwardHeaders(headers: Headers): Record<string, string> {

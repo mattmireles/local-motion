@@ -81,8 +81,10 @@ turns the manual fallback into a polished assisted setup flow with verification.
   `RuntimeStatus`, not persisted installed-model state.
 - **Proxy auth:** Cursor must use `local-motion` as the local bearer token
   because the proxy rejects unauthenticated local requests.
-- **Dynamic port:** Any stopped/restarted Local Motion model may receive a new
-  Base URL and invalidate Cursor's saved override.
+- **Cursor proxy port:** The `llama-server` upstream may use a dynamic port, but
+  Cursor should see the stable preferred proxy URL from `localMotion.proxyPort`
+  whenever that port is available. If the preferred proxy port is occupied,
+  Local Motion falls back to an ephemeral port and marks copied setup stale.
 - **VSIX compatibility:** Packaging must keep Cursor `1.105.1` install support.
 - **Endpoint verification:** Local Motion readiness means the local proxy answers
   `GET ${baseUrl}/models` with `Authorization: Bearer local-motion`, HTTP 200,
@@ -108,8 +110,8 @@ turns the manual fallback into a polished assisted setup flow with verification.
   `LocalMotionController` owns model/search/install/runtime orchestration;
   `cursorIntegration` is a pure instruction generator.
 - **Current UX gap:** `Prepare Cursor` renders instructions, but does not copy
-  values, sequence the setup, verify the endpoint, or warn clearly about stale
-  dynamic ports.
+  values, sequence the setup, verify the endpoint, or keep Cursor's Base URL
+  stable across restarts.
 - **Current tests:** `npm test` covers quantization parsing, parameter parsing,
   chat request sanitization, bearer auth, and Cursor instruction generation.
 - **Current package:** `local-motion-0.0.1.vsix` installs into Cursor after the
@@ -379,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 32 tests.
+- `npm test`: passed, 34 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -440,6 +442,14 @@ can select the Local Motion model through the native model picker.
   setup panel every time; recovery opens setup only if resume fails and the user
   chooses that action. Guarded by regression test
   `startup resume does not open the setup panel unless recovery is requested`.
+- Stable Cursor proxy: Local Motion now prefers
+  `http://127.0.0.1:41434/v1` for the Cursor-facing OpenAI proxy so Cursor's
+  Base URL can survive editor restarts even when the upstream `llama-server`
+  port changes. If that preferred port is occupied, the proxy falls back to an
+  ephemeral port and existing stale-setup warnings still apply. Guarded by
+  regression tests
+  `OpenAI proxy uses the preferred Cursor port when it is available` and
+  `OpenAI proxy falls back to a dynamic port when the preferred Cursor port is occupied`.
 - Completion state: `localMotion.automagicalSetupCompleted` is written only
   when endpoint verification, setup-block copy, and Cursor settings opening all
   succeed. Guarded by regression test
@@ -507,7 +517,9 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 - [x] `Prepare Cursor` opens Cursor Models settings.
 - [x] Local endpoint verification succeeds before opening/copying assisted
   setup values; Cursor picker readiness is verified only by manual Cursor QA.
-- [x] Stale dynamic-port state is visible after stop/restart.
+- [x] Cursor proxy uses a stable preferred port when available, and stale
+  endpoint state remains visible when Local Motion must fall back to a different
+  port.
 - [x] VSIX remains installable in Cursor's VS Code `1.105.1` environment.
 - [x] `Automagical Setup` owns the default Local Motion path: reuse an installed
   model when possible; otherwise select compatible quantization, install/run
