@@ -37,14 +37,14 @@ guide grounded in current web research, not a chat-only summary.
    - the decision, plan, or implementation this guide must unblock
 3. Prefer updating an existing guide over creating a sibling duplicate.
 4. Write the prompt into `tmp/deep-research/<slug>-planning-prompt.md`.
-5. Run the helper if this repo has one; otherwise use available MCP/web
-   research tools and save the guide yourself:
+5. Run the helper via the **`gemini-interactions-api`** skill when this repo does
+   not ship a dedicated deep-research script. Save the guide yourself if no
+   helper is available:
 
 ```bash
-node scripts/gemini-deep-research.js \
-  --prompt-file tmp/deep-research/<slug>-planning-prompt.md \
-  --out README/Guides/<path>/<slug>-guide.md \
-  --id-out tmp/deep-research/<slug>.id
+# Prefer the gemini-interactions-api skill workflow instead of a missing script.
+# Write the prompt to tmp/deep-research/<slug>-planning-prompt.md, then use
+# the Interactions API to produce README/Guides/<path>/<slug>-guide.md.
 ```
 
 6. Review the generated guide before treating it as real:

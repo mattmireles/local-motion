@@ -44,6 +44,7 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
       }
     };
 
+    // Undocumented VS Code API: without this, the model may not appear in the picker.
     (info as vscode.LanguageModelChatInformation & { isUserSelectable?: boolean }).isUserSelectable = true;
     return [info];
   }
@@ -62,7 +63,13 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
 
     const llamaServerPath = await this.resolver.resolve({ allowInstall: false, token });
     const running = await this.runtime.start(installed, llamaServerPath, token);
-    await streamChatCompletion(running.baseUrl ?? "", model.id, toOpenAiMessages(messages), progress, token);
+    await streamChatCompletion(
+      running.upstreamBaseUrl ?? running.baseUrl ?? "",
+      model.id,
+      toOpenAiMessages(messages),
+      progress,
+      token
+    );
   }
 
   async provideTokenCount(

@@ -12,31 +12,41 @@ export function classifyCompatibility(
   const serverOverhead = machine.isAppleSilicon ? 1.25 * GIB : 2 * GIB;
   const requiredMemoryBytes = Math.ceil(estimatedModelBytes * 1.32 + contextOverhead + serverOverhead);
   const requiredDiskBytes = Math.ceil(estimatedModelBytes * 1.08 + 1 * GIB);
-  const reasons: string[] = [];
+  const blockingReasons: string[] = [];
+  const advisories: string[] = [];
 
   if (!machine.isMac) {
-    reasons.push("macOS is required for this first release.");
+    blockingReasons.push("macOS is required for this first release.");
   }
   if (!machine.isAppleSilicon) {
-    reasons.push("Apple Silicon is recommended for Metal acceleration.");
+    advisories.push("Apple Silicon is recommended for Metal acceleration.");
   }
-  if (requiredMemoryBytes > machine.recommendedModelMemoryBytes) {
-    reasons.push(
-      `Needs about ${toGb(requiredMemoryBytes)} GB runtime memory; conservative budget is ${toGb(
-        machine.recommendedModelMemoryBytes
-      )} GB.`
+
+  const memoryBudget = effectiveMemoryBudget(machine);
+  if (requiredMemoryBytes > memoryBudget) {
+    blockingReasons.push(
+      `Needs about ${toGb(requiredMemoryBytes)} GB runtime memory; available budget is ${toGb(memoryBudget)} GB.`
     );
   }
   if (requiredDiskBytes > machine.availableDiskBytes) {
-    reasons.push(`Needs about ${toGb(requiredDiskBytes)} GB free disk for download and install.`);
+    blockingReasons.push(`Needs about ${toGb(requiredDiskBytes)} GB free disk for download and install.`);
   }
 
   return {
-    status: reasons.length === 0 ? "compatible" : "not-compatible",
+    status: blockingReasons.length === 0 ? "compatible" : "not-compatible",
     requiredMemoryBytes,
     requiredDiskBytes,
-    reasons: reasons.length > 0 ? reasons : ["Fits the conservative memory and disk budget for this Mac."]
+    reasons:
+      blockingReasons.length > 0
+        ? blockingReasons
+        : advisories.length > 0
+          ? advisories
+          : ["Fits the conservative memory and disk budget for this Mac."]
   };
+}
+
+export function effectiveMemoryBudget(machine: MachineProfile): number {
+  return Math.min(machine.recommendedModelMemoryBytes, machine.availableMemoryBytes);
 }
 
 export function quantizationFromFileName(fileName: string): string {

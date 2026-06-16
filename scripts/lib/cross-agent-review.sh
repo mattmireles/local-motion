@@ -25,11 +25,8 @@ cross_agent_require_clis() {
 cross_agent_output_dir() {
   local repo_root="$1"
   local kind="$2"
-  local ts
-  ts="$(date -u +%Y%m%dT%H%M%SZ)"
-  local dir="${repo_root}/tmp/cross-agent-audits/${kind}-${ts}"
-  mkdir -p "${dir}"
-  printf '%s\n' "${dir}"
+  mkdir -p "${repo_root}/tmp/cross-agent-audits"
+  mktemp -d "${repo_root}/tmp/cross-agent-audits/${kind}-XXXXXX"
 }
 
 cross_agent_run_codex() {
@@ -109,9 +106,15 @@ cross_agent_run_pair() {
   local claude_ok=0
 
   cross_agent_run_codex "${repo_root}" "${prompt_file}" "${output_dir}" \
-    "${artifact_prefix}" || codex_ok=$?
+    "${artifact_prefix}" &
+  local codex_pid=$!
+
   cross_agent_run_claude "${repo_root}" "${prompt_file}" "${output_dir}" \
-    "${artifact_prefix}" || claude_ok=$?
+    "${artifact_prefix}" &
+  local claude_pid=$!
+
+  wait "${codex_pid}" || codex_ok=$?
+  wait "${claude_pid}" || claude_ok=$?
 
   if [[ "${codex_ok}" -ne 0 || "${claude_ok}" -ne 0 ]]; then
     echo "cross-agent review incomplete: codex_exit=${codex_ok} claude_exit=${claude_ok}" >&2

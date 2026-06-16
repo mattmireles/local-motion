@@ -17,6 +17,7 @@ export interface GgufFile {
   repoId: string;
   fileName: string;
   sizeBytes?: number;
+  sha256?: string;
   revision?: string;
   quantization: string;
   parameterCount?: number;
@@ -62,6 +63,7 @@ export interface RuntimeSession {
   displayName: string;
   contextTokens: number;
   baseUrl: string;
+  upstreamBaseUrl: string;
   port: number;
 }
 

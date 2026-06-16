@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -23,7 +24,7 @@ export async function downloadGguf(
   const targetPath = path.join(targetDir, path.basename(file.fileName));
   const partialPath = `${targetPath}.part`;
   if (await exists(targetPath)) {
-    await validateExistingFile(targetPath, file.sizeBytes);
+    await validateExistingFile(targetPath, file.sizeBytes, file.sha256);
     return targetPath;
   }
 
@@ -72,6 +73,9 @@ export async function downloadGguf(
         throw new Error(`Downloaded size mismatch: expected ${totalBytes} bytes, got ${stat.size} bytes.`);
       }
     }
+    if (file.sha256) {
+      await assertSha256(partialPath, file.sha256);
+    }
     await fs.promises.rename(partialPath, targetPath);
     return targetPath;
   } catch (error) {
@@ -101,15 +105,33 @@ async function statSize(targetPath: string): Promise<number | undefined> {
   }
 }
 
-async function validateExistingFile(targetPath: string, expectedSize: number | undefined): Promise<void> {
-  if (expectedSize === undefined) {
-    return;
+async function validateExistingFile(
+  targetPath: string,
+  expectedSize: number | undefined,
+  expectedSha256: string | undefined
+): Promise<void> {
+  if (expectedSize !== undefined) {
+    const stat = await fs.promises.stat(targetPath);
+    if (stat.size !== expectedSize) {
+      await fs.promises.rm(targetPath, { force: true });
+      throw new Error(
+        `Existing model file size mismatch: expected ${expectedSize} bytes, got ${stat.size} bytes. Removed ${targetPath}; retry the download.`
+      );
+    }
   }
-  const stat = await fs.promises.stat(targetPath);
-  if (stat.size !== expectedSize) {
+  if (expectedSha256) {
+    await assertSha256(targetPath, expectedSha256);
+  }
+}
+
+async function assertSha256(targetPath: string, expectedSha256: string): Promise<void> {
+  const hash = crypto.createHash("sha256");
+  for await (const chunk of fs.createReadStream(targetPath)) {
+    hash.update(chunk);
+  }
+  const actual = hash.digest("hex");
+  if (actual !== expectedSha256.toLowerCase()) {
     await fs.promises.rm(targetPath, { force: true });
-    throw new Error(
-      `Existing model file size mismatch: expected ${expectedSize} bytes, got ${stat.size} bytes. Removed ${targetPath}; retry the download.`
-    );
+    throw new Error(`Downloaded SHA-256 mismatch for ${targetPath}. Removed file; retry the download.`);
   }
 }

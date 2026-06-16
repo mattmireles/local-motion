@@ -1,6 +1,8 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
 import { classifyCompatibility, parameterCountFromText, quantizationFromFileName } from "./compatibility";
 
+const HF_TIMEOUT_MS = 30_000;
+
 interface HuggingFaceModel {
   id?: string;
   modelId?: string;
@@ -11,7 +13,7 @@ interface HuggingFaceModel {
   siblings?: Array<{
     rfilename?: string;
     size?: number;
-    lfs?: { size?: number };
+    lfs?: { size?: number; oid?: string };
   }>;
 }
 
@@ -22,7 +24,7 @@ export async function searchModels(query: string): Promise<ModelSearchResult[]> 
     sort: "downloads",
     direction: "-1"
   });
-  const response = await fetch(`https://huggingface.co/api/models?${params.toString()}`, {
+  const response = await fetchWithTimeout(`https://huggingface.co/api/models?${params.toString()}`, {
     headers: { accept: "application/json" }
   });
   if (!response.ok) {
@@ -56,6 +58,7 @@ export async function listQuantizations(
         repoId,
         fileName,
         sizeBytes: sibling.lfs?.size ?? sibling.size ?? (await readRemoteSize(url)),
+        sha256: parseSha256(sibling.lfs?.oid),
         revision,
         quantization: quantizationFromFileName(fileName),
         parameterCount: parameterCountFromText(`${repoId} ${fileName}`),
@@ -77,7 +80,7 @@ export async function listQuantizations(
 }
 
 async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {
-  const response = await fetch(`https://huggingface.co/api/models/${repoPath(repoId)}`, {
+  const response = await fetchWithTimeout(`https://huggingface.co/api/models/${repoPath(repoId)}`, {
     headers: { accept: "application/json" }
   });
   if (!response.ok) {
@@ -88,12 +91,26 @@ async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {
 
 async function readRemoteSize(url: string): Promise<number | undefined> {
   try {
-    const response = await fetch(url, { method: "HEAD" });
+    const response = await fetchWithTimeout(url, { method: "HEAD" });
     const size = Number(response.headers.get("content-length"));
     return response.ok && Number.isFinite(size) ? size : undefined;
   } catch {
     return undefined;
   }
+}
+
+function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(HF_TIMEOUT_MS)
+  });
+}
+
+function parseSha256(oid: string | undefined): string | undefined {
+  if (!oid) {
+    return undefined;
+  }
+  return oid.startsWith("sha256:") ? oid.slice("sha256:".length) : oid;
 }
 
 function downloadUrl(repoId: string, fileName: string, revision: string): string {

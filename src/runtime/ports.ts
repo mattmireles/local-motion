@@ -1,26 +1,28 @@
 import * as net from "node:net";
 
-export async function findFreePort(start = 49152, end = 65535): Promise<number> {
-  for (let port = start + Math.floor(Math.random() * 2048); port <= end; port += 1) {
-    if (await canBind(port)) {
-      return port;
-    }
-  }
-  for (let port = start; port <= end; port += 1) {
-    if (await canBind(port)) {
-      return port;
-    }
-  }
-  throw new Error("Could not find a free localhost port.");
+export interface PortHolder {
+  server: net.Server;
+  port: number;
 }
 
-function canBind(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
+/** Binds an ephemeral localhost port and keeps the socket open until released. */
+export async function reserveLocalhostPort(): Promise<PortHolder> {
+  return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.once("error", () => resolve(false));
-    server.once("listening", () => {
-      server.close(() => resolve(true));
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        reject(new Error("Could not reserve a localhost port."));
+        return;
+      }
+      resolve({ server, port: address.port });
     });
-    server.listen(port, "127.0.0.1");
+  });
+}
+
+export async function releasePortHolder(holder: PortHolder): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    holder.server.close((error) => (error ? reject(error) : resolve()));
   });
 }

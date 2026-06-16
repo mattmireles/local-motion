@@ -20,9 +20,9 @@ cross-agent audit → fix → repeat both gates** until **internal and external
 reviewers all agree on A / A / A**, then **one final `git-commit`** for the
 accumulated fixes.
 
-No new helper scripts. Part B reuses the **Codex + `claude -p` execution
-pattern** from **`create-plan`** step 8, but writes the audit prompt inline
-because `scripts/run-cross-agent-plan-review.sh` is intentionally plan-specific.
+No new plan-specific helper scripts. Part B reuses the shared
+`scripts/run-cross-agent-audit.sh` runner and the Codex + `claude -p` execution
+pattern from **`create-plan`**.
 
 ## Use When
 

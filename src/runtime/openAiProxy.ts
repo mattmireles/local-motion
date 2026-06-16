@@ -1,11 +1,23 @@
 import * as http from "node:http";
-import { findFreePort } from "./ports";
 import { isAuthorizedBearer, LOCAL_MOTION_API_KEY, sanitizeExternalChatRequest } from "./openAiChat";
 
 interface ProxyOptions {
   upstreamBaseUrl: string;
   modelId: string;
 }
+
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade"
+]);
+
+const BODY_READ_TIMEOUT_MS = 60_000;
 
 export class OpenAiProxy {
   private server: http.Server | undefined;
@@ -16,7 +28,6 @@ export class OpenAiProxy {
   constructor(private readonly options: ProxyOptions) {}
 
   async start(): Promise<string> {
-    this.port = await findFreePort();
     this.server = http.createServer((request, response) => {
       void this.handle(request, response);
     });
@@ -26,8 +37,13 @@ export class OpenAiProxy {
     });
     await new Promise<void>((resolve, reject) => {
       this.server?.once("error", reject);
-      this.server?.listen(this.port, "127.0.0.1", () => resolve());
+      this.server?.listen(0, "127.0.0.1", () => resolve());
     });
+    const address = this.server?.address();
+    if (!address || typeof address === "string") {
+      throw new Error("OpenAI proxy failed to bind a localhost port.");
+    }
+    this.port = address.port;
     return `http://127.0.0.1:${this.port}/v1`;
   }
 
@@ -78,18 +94,18 @@ export class OpenAiProxy {
       }
       this.writeJson(response, 404, { error: { message: "Not found" } });
     } catch (error) {
-      this.writeJson(response, 500, { error: { message: error instanceof Error ? error.message : String(error) } });
+      this.writeError(response, error);
     }
   }
 
   private async forwardHealth(response: http.ServerResponse): Promise<void> {
     const upstream = await fetch(this.options.upstreamBaseUrl.replace(/\/v1$/, "/health"));
-    response.writeHead(upstream.status, Object.fromEntries(upstream.headers.entries()));
+    response.writeHead(upstream.status, filterForwardHeaders(upstream.headers));
     response.end(await upstream.text());
   }
 
   private async forwardChat(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
-    const raw = await readBody(request, 8 * 1024 * 1024);
+    const raw = await readBody(request, 8 * 1024 * 1024, BODY_READ_TIMEOUT_MS);
     const body = sanitizeExternalChatRequest(JSON.parse(raw || "{}"), this.options.modelId);
     const controller = new AbortController();
     this.abortControllers.add(controller);
@@ -128,6 +144,14 @@ export class OpenAiProxy {
         }
         response.write(Buffer.from(value));
       }
+    } catch (error) {
+      if (response.headersSent) {
+        if (!response.writableEnded) {
+          response.destroy();
+        }
+        return;
+      }
+      throw error;
     } finally {
       this.abortControllers.delete(controller);
       request.off("close", abortIfOpen);
@@ -139,18 +163,52 @@ export class OpenAiProxy {
     response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify(body));
   }
+
+  private writeError(response: http.ServerResponse, error: unknown): void {
+    if (response.headersSent) {
+      if (!response.writableEnded) {
+        response.destroy();
+      }
+      return;
+    }
+    this.writeJson(response, 500, {
+      error: { message: error instanceof Error ? error.message : String(error) }
+    });
+  }
 }
 
-async function readBody(request: http.IncomingMessage, maxBytes: number): Promise<string> {
+export function filterForwardHeaders(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [name, value] of headers.entries()) {
+    if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+      result[name] = value;
+    }
+  }
+  return result;
+}
+
+async function readBody(
+  request: http.IncomingMessage,
+  maxBytes: number,
+  timeoutMs: number
+): Promise<string> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-    if (totalBytes > maxBytes) {
-      throw new Error("Request body is too large.");
+  const timeout = setTimeout(() => {
+    request.destroy(new Error("Request body read timed out."));
+  }, timeoutMs);
+
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.byteLength;
+      if (totalBytes > maxBytes) {
+        throw new Error("Request body is too large.");
+      }
+      chunks.push(buffer);
     }
-    chunks.push(buffer);
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    clearTimeout(timeout);
   }
-  return Buffer.concat(chunks).toString("utf8");
 }

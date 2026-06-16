@@ -37,8 +37,18 @@ export function sanitizeExternalChatRequest(input: unknown, fallbackModelId: str
     temperature: numberOrDefault(source.temperature, 0.2),
     top_p: numberOrDefault(source.top_p, 0.95),
     max_tokens: numberOrDefault(source.max_tokens, 2048),
-    stop: source.stop
+    stop: sanitizeStop(source.stop)
   };
+}
+
+export function sanitizeStop(value: unknown): string | string[] | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value;
+  }
+  return undefined;
 }
 
 export function isAuthorizedBearer(value: string | string[] | undefined): boolean {

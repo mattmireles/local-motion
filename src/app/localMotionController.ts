@@ -88,8 +88,8 @@ export class LocalMotionController {
     };
 
     const llamaServerPath = await this.resolver.resolve({ allowInstall: true });
-    const session = await this.runtime.start(installed, llamaServerPath);
     await this.state.setInstalledModel(installed);
+    const session = await this.runtime.start(installed, llamaServerPath);
     this.provider.refresh();
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
 

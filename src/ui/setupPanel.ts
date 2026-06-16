@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import type { CandidateQuantization } from "../types";
@@ -97,7 +98,7 @@ export class SetupPanel {
   }
 
   private html(): string {
-    const nonce = String(Date.now());
+    const nonce = crypto.randomBytes(16).toString("hex");
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
