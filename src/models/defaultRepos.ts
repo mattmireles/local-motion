@@ -1,9 +1,9 @@
-export const DEFAULT_MODEL_REPO = "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF";
+export const DEFAULT_MODEL_REPO = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF";
 
 export const AUTOMAGICAL_MODEL_REPOS = [
   DEFAULT_MODEL_REPO,
+  "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
   "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-  "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
   "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
 ];
 

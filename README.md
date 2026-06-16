@@ -112,6 +112,16 @@ npm test
 npm run package
 ```
 
+Optional local runtime smoke proof:
+
+```bash
+npm run smoke:local-runtime
+```
+
+This downloads the default compatible GGUF when it is not already cached, starts
+`llama-server`, verifies the Cursor-facing proxy, and sends one local chat
+completion.
+
 Open this folder in VS Code or Cursor, run the Extension Development Host, and
 execute `Local Motion: Open Setup`.
 

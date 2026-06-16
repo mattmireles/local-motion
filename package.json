@@ -97,7 +97,7 @@
         },
         "localMotion.defaultModelRepo": {
           "type": "string",
-          "default": "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
+          "default": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
           "description": "Default Hugging Face GGUF repository shown in setup and tried first by Automagical Setup before built-in fallback repositories."
         },
         "localMotion.openSetupOnStartup": {
@@ -130,6 +130,7 @@
     "check": "tsc -p ./ --noEmit",
     "lint": "eslint src/**/*.ts",
     "test": "npm run compile && node --test tests/*.test.mjs",
+    "smoke:local-runtime": "npm run compile && node scripts/smoke-local-runtime.mjs",
     "package": "npm run compile && vsce package --no-dependencies",
     "vscode:prepublish": "npm run compile"
   },

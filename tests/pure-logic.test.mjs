@@ -137,13 +137,16 @@ test("automagical setup tries configured repo before built-in fallback repos", (
     automagicalModelRepos(` ${DEFAULT_MODEL_REPO} `).filter((repoId) => repoId === DEFAULT_MODEL_REPO).length,
     1
   );
+  assert.equal(DEFAULT_MODEL_REPO, "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF");
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), true);
+  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"), true);
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), true);
 });
 
 test("automagical setup settings describe fallback repositories", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const properties = packageJson.contributes.configuration.properties;
+  assert.equal(properties["localMotion.defaultModelRepo"].default, DEFAULT_MODEL_REPO);
   assert.match(properties["localMotion.defaultModelRepo"].description, /tried first/);
   assert.match(properties["localMotion.defaultModelRepo"].description, /fallback repositories/);
   assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);

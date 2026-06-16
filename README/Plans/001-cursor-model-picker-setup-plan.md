@@ -366,6 +366,7 @@ confirms a stop/start cycle produces a stale warning.
 - [x] Run `npm audit --audit-level=moderate`.
 - [x] Run `npm run package`.
 - [x] Install the VSIX with `cursor --install-extension`.
+- [x] Run `npm run smoke:local-runtime`.
 - [ ] Manual QA in Cursor:
   - start default model or a small test GGUF
   - verify endpoint
@@ -389,6 +390,12 @@ can select the Local Motion model through the native model picker.
   `/Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`.
 - `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`:
   passed.
+- `npm run smoke:local-runtime`: passed. It selected
+  `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF`
+  `qwen2.5-coder-1.5b-instruct-q2_k.gguf`, downloaded it to
+  `tmp/local-runtime-smoke`, started `llama-server`, verified
+  `GET /v1/models` through `http://127.0.0.1:41434/v1`, and completed one local
+  chat completion through the Cursor-facing proxy.
 - Hardcore audit fix loop: fixed endpoint verification timeout, transient
   webview action state resets, runtime copy-key validation, copied-vs-verified
   setup wording, and package compile-before-VSIX reproducibility.
@@ -400,10 +407,13 @@ can select the Local Motion model through the native model picker.
   from the VSIX.
 - Automagical setup: setup UI now exposes one primary `Automagical Setup` action
   that reuses a size-valid installed model file when available; otherwise it
-  tries the configured default model repository first, then built-in smaller GGUF
+  tries the configured default model repository first, then built-in GGUF
   fallback repositories, selects the lowest-memory compatible quantization,
-  installs/runs it, then prepares Cursor. The selector, fallback repository
-  ordering, and installed-model reuse predicate are covered by regression tests.
+  installs/runs it, then prepares Cursor. The default repository is now
+  `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` so first-run setup starts from a
+  materially smaller coding model than the previous multi-GB default. The
+  selector, fallback repository ordering, manifest default, and installed-model
+  reuse predicate are covered by regression tests.
 - Dependency setup: when `allowInstall` is true and `llama-server` is missing,
   Local Motion now installs `llama.cpp` through Homebrew under progress without
   a second confirmation prompt. The user's explicit `Automagical Setup` or
@@ -436,9 +446,10 @@ can select the Local Motion model through the native model picker.
   `opens setup onboarding only for first startup without an installed model`.
 - First-start automagical setup: by default, the first startup with no installed
   model opens the setup panel and starts `Automagical Setup` once. This may
-  install `llama.cpp` and download the default compatible GGUF model. The attempt
-  is marked before it starts so failures do not silently retry on every editor
-  launch, and users can disable it with
+  install `llama.cpp` and download the first compatible GGUF model from the
+  default or fallback repositories. The attempt is marked before it starts so
+  failures do not silently retry on every editor launch, and users can disable
+  it with
   `localMotion.runAutomagicalSetupOnFirstStartup`. Guarded by regression test
   `runs first startup automagical setup only once before any model is installed`.
 - Host-started error surfacing: automagical setup started by activation or the
@@ -537,6 +548,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 - Regression test: `npm run check && npm run lint && npm test && npm run package`
 - Install proof: `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`
+- Local runtime proof: `npm run smoke:local-runtime`
 - Manual proof: Cursor `Cmd+L` can select the Local Motion model after assisted
   setup and reach the local proxy.
 
@@ -569,6 +581,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 - [x] All tests passing.
 - [x] VSIX packaged and installed locally.
+- [x] Local runtime smoke proof completed.
 - [x] README updated with truthful Cursor feature coverage.
 - [ ] Manual Cursor model-picker QA completed.
 - [x] No new dependency added unless a later phase explicitly justifies it.
