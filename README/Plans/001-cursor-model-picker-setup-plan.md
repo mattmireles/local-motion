@@ -402,6 +402,10 @@ can select the Local Motion model through the native model picker.
   covered by regression tests.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Command-palette setup progress: the command now runs through
+  `SetupPanel.runAutomagicalSetup`, so the command-palette path and setup-panel
+  button share one progress/completion pipeline instead of running the controller
+  directly with no webview progress updates.
 - Architecture hardening: controller/webview setup payloads now use
   `src/setupProtocol.ts` discriminated TypeScript types instead of loose
   `Record<string, unknown>` responses, and automagical setup shares the

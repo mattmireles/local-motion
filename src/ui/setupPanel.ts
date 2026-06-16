@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
-import type { SetupRequest, SetupResponse } from "../setupProtocol";
+import type { AutomagicalSetupCompleteResponse, SetupRequest, SetupResponse } from "../setupProtocol";
 import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
@@ -11,11 +11,11 @@ export class SetupPanel {
   static show(
     controller: LocalMotionController,
     output: vscode.OutputChannel
-  ): void {
+  ): SetupPanel {
     if (SetupPanel.current) {
       SetupPanel.current.panel.reveal(vscode.ViewColumn.One);
       void SetupPanel.current.postInitialState();
-      return;
+      return SetupPanel.current;
     }
 
     const panel = vscode.window.createWebviewPanel("localMotionSetup", "Local Motion", vscode.ViewColumn.One, {
@@ -24,6 +24,14 @@ export class SetupPanel {
       localResourceRoots: []
     });
     SetupPanel.current = new SetupPanel(panel, controller, output);
+    return SetupPanel.current;
+  }
+
+  static async runAutomagicalSetup(
+    controller: LocalMotionController,
+    output: vscode.OutputChannel
+  ): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    return SetupPanel.show(controller, output).automagicalSetup();
   }
 
   private constructor(
@@ -102,7 +110,7 @@ export class SetupPanel {
     }
   }
 
-  private async automagicalSetup(): Promise<void> {
+  private async automagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
     await this.post({ type: "automagicalSetupStarted" });
     const payload = await this.controller.automagicalSetup((progress) => {
       void this.post({ type: "installProgress", progress });
@@ -110,6 +118,7 @@ export class SetupPanel {
     if (payload) {
       await this.post(payload);
     }
+    return payload;
   }
 
   private async post(payload: SetupResponse): Promise<void> {

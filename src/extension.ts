@@ -29,8 +29,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.automagicalSetup", async () => {
       try {
-        SetupPanel.show(controller, output);
-        const result = await controller.automagicalSetup(() => undefined);
+        const result = await SetupPanel.runAutomagicalSetup(controller, output);
         if (result) {
           await vscode.window.showInformationMessage("Local Motion automagical setup is ready for Cursor.");
         }
