@@ -381,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 34 tests.
+- `npm test`: passed, 35 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -444,6 +444,8 @@ can select the Local Motion model through the native model picker.
   Cursor setup becomes stale and the user chooses that action. Guarded by
   regression test
   `startup resume does not prepare Cursor or open the setup panel unless recovery is requested`.
+  The extension setting copy matches that quiet-runtime contract. Guarded by
+  regression test `startup resume setting describes quiet runtime restart`.
 - Stable Cursor proxy: Local Motion now prefers
   `http://127.0.0.1:41434/v1` for the Cursor-facing OpenAI proxy so Cursor's
   Base URL can survive editor restarts even when the upstream `llama-server`

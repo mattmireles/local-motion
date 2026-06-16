@@ -108,7 +108,7 @@
         "localMotion.resumeAutomagicalSetupOnStartup": {
           "type": "boolean",
           "default": true,
-          "description": "After Automagical Setup succeeds, restart the installed local model and prepare Cursor automatically on future startups without downloading a new model."
+          "description": "After Automagical Setup succeeds, restart the installed local model automatically on future startups without downloading a new model, opening setup, opening Cursor settings, or replacing the clipboard."
         }
       }
     },

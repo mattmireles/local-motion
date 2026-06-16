@@ -505,3 +505,13 @@ test("startup resume does not prepare Cursor or open the setup panel unless reco
   assert.equal(extensionSource.includes("controller.resumeAutomagicalSetup()"), false);
   assert.equal(extensionSource.includes("SetupPanel.resumeAutomagicalSetup"), false);
 });
+
+test("startup resume setting describes quiet runtime restart", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const description = packageJson.contributes.configuration.properties["localMotion.resumeAutomagicalSetupOnStartup"].description;
+  assert.match(description, /restart the installed local model/);
+  assert.match(description, /without downloading a new model/);
+  assert.match(description, /opening Cursor settings/);
+  assert.match(description, /replacing the clipboard/);
+  assert.equal(description.includes("prepare Cursor automatically"), false);
+});
