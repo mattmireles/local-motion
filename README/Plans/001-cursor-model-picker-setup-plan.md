@@ -175,15 +175,32 @@ changing UX.
 
 **Tasks:**
 
-- [ ] Run `cursor --version` and record the Cursor/VS Code version in this plan
+- [x] Run `cursor --version` and record the Cursor/VS Code version in this plan
   or the PR description.
-- [ ] Run `npm run check`, `npm run lint`, `npm test`, and `npm run package`.
-- [ ] Confirm `cursor --install-extension local-motion-0.0.1.vsix` still works.
-- [ ] Add a short README note that Cursor custom OpenAI base URL support is
+- [x] Run `npm run check`, `npm run lint`, `npm test`, and `npm run package`.
+- [x] Confirm `cursor --install-extension local-motion-0.0.1.vsix` still works.
+- [x] Add a short README note that Cursor custom OpenAI base URL support is
   global and may not apply to Agent/Composer surfaces.
 
 **Verification:** Commands pass, VSIX installs into Cursor, and the README
 truthfully distinguishes Local Motion setup from Cursor feature coverage.
+
+**Phase 0 evidence:**
+
+- `cursor --version`: `3.7.36`, commit
+  `776d1f9d76df50a4e0aeca61819a88e7c1b861e0`, `arm64`.
+- `npm run check`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 11 tests.
+- `npm run package`: passed after tightening `.vscodeignore` so the VSIX ships
+  runtime artifacts instead of repo agent config, plans, scripts, and temp
+  files.
+- `cursor --install-extension /Users/mm/Documents/GitHub/local-motion/local-motion-0.0.1.vsix`:
+  passed.
+- Phase audit: `scripts/run-cross-agent-phase-audit.sh` produced usable Codex
+  findings but the wrapper did not finish cleanly and the Claude artifact was
+  empty, so the external reviewer path is recorded as partially failed; the
+  findings were fixed in this plan update.
 
 ---
 
@@ -486,7 +503,7 @@ exposes a stable custom-model API, create a separate plan before adding writes.
 
 ## Progress Tracker
 
-- [ ] Phase 0 complete
+- [x] Phase 0 complete
 - [ ] Phase 1 complete
 - [ ] Phase 2 complete
 - [ ] Phase 3 complete

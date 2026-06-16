@@ -1,5 +1,14 @@
 .vscode/**
 .vscode-test/**
+.agents/**
+.claude/**
+.cursor/**
+.serena/**
+README/**
+scripts/**
+tmp/**
+AGENTS.md
+CLAUDE.md
 .gitignore
 src/**
 tests/**

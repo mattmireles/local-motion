@@ -14,6 +14,15 @@ The intended path is:
 
 See [Local Native LLM Extensions for VS Code and Cursor on macOS](README/Guides/vs-code-local-ai-hugging-face-guide.md) for the full sidecar architecture field guide (VS Code LM API, GGUF downloads, `llama-server`, Cursor integration patterns, and debugging).
 
+## Cursor Coverage
+
+Local Motion prepares Cursor's custom OpenAI-compatible model settings by showing
+the active local Base URL, the required `local-motion` API key, and the model ID.
+Cursor's OpenAI Base URL override is global in Cursor settings and may not apply
+to every Cursor surface. Treat the setup as proven for the specific Cursor
+surface you manually test, such as `Cmd+L` chat, and do not assume Agent,
+Composer, Inline Edit, or Tab autocomplete use the local endpoint until verified.
+
 ## Development
 
 ```bash
