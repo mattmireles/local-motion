@@ -39,6 +39,10 @@ them to VS Code and Cursor through local OpenAI-compatible endpoints.
 The setup panel also exposes the same `Automagical Setup` action through
 `Local Motion: Open Setup`.
 
+When a local model is already running, `Local Motion: Prepare Cursor` runs the
+Cursor handoff directly from the command palette: it verifies the endpoint,
+copies the setup block, and opens Cursor Models settings.
+
 First-start Automagical Setup may install `llama.cpp` through Homebrew and
 download the default compatible GGUF model. Disable
 `localMotion.runAutomagicalSetupOnFirstStartup` to make first startup open the

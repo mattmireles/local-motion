@@ -381,7 +381,7 @@ can select the Local Motion model through the native model picker.
 
 - `npm run check`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 37 tests.
+- `npm test`: passed, 38 tests.
 - `npm audit --audit-level=moderate`: passed, 0 vulnerabilities.
 - `npm run package`: passed, compiling from `src/**` through
   `vscode:prepublish` before `vsce package` and producing
@@ -409,6 +409,11 @@ can select the Local Motion model through the native model picker.
   `automagical dependency install has no second confirmation prompt`.
 - Command-palette setup: `Local Motion: Automagical Setup` now runs the same
   path directly, so the user no longer has to open the setup panel first.
+- Command-palette Cursor handoff: `Local Motion: Prepare Cursor` runs the same
+  endpoint verification, setup-block copy, and Cursor Models settings action
+  directly when a model is already running, so users do not need to open setup
+  just to refresh Cursor values. Guarded by regression test
+  `prepare Cursor command is registered and reuses assisted setup action`.
 - Retry setup: `Local Motion: Retry Automagical Setup` is a command-palette
   alias for the same automagical path, so users can recover explicitly after a
   cancelled or failed first-start install/download. Guarded by regression test
@@ -537,6 +542,8 @@ exposes a stable custom-model API, create a separate plan before adding writes.
   model, verify endpoint, copy Cursor setup, and open Cursor Models settings.
 - [x] Command palette exposes `Local Motion: Automagical Setup` as the shortest
   default setup path.
+- [x] Command palette exposes `Local Motion: Prepare Cursor` for one-command
+  Cursor handoff when a local model is already running.
 
 ### Definition of Done
 

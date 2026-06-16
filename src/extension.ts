@@ -43,6 +43,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("localMotion.prepareCursor", async () => {
+      await prepareCursorCommand(controller, output);
+    })
+  );
+  context.subscriptions.push(
     vscode.commands.registerCommand("localMotion.stop", async () => {
       await runtime?.stop();
       provider.refresh();
@@ -68,6 +73,17 @@ async function runAutomagicalSetupCommand(controller: LocalMotionController, out
   } catch {
     // SetupPanel reports command-started automagical errors into the webview.
   }
+}
+
+async function prepareCursorCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
+  const result = await controller.prepareCursor();
+  output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
+  if (result.verification.ok && result.copy.ok && result.settings.ok) {
+    await vscode.window.showInformationMessage("Local Motion Cursor setup block copied and Cursor Models settings opened.");
+    return;
+  }
+
+  await vscode.window.showWarningMessage([result.verification.message, result.copy.message, result.settings.message].join(" "));
 }
 
 async function maybeOpenSetupOnboarding(
