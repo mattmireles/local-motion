@@ -73,6 +73,14 @@ export interface RuntimeStatus {
   port?: number;
   modelId?: string;
   message: string;
+  /**
+   * True once the local OpenAI-compatible proxy has served a real inbound
+   * chat completion for this run. This is the only honest proof that a client
+   * (Cursor) is actually using the local model — endpoint verification and the
+   * setup-block copy do not establish it. Resets to falsy on every model
+   * (re)start because the proxy is recreated per run.
+   */
+  clientObserved?: boolean;
 }
 
 export interface LastCopiedCursorSetup {

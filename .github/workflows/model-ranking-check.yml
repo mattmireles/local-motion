@@ -1,0 +1,32 @@
+name: Model ranking check
+
+# Periodically re-checks the local-coding-model ranking against Local Motion's
+# committed curated ladder (src/models/defaultRepos.ts). On drift the job fails
+# so a maintainer is notified; they run `npm run models:refresh` locally, verify
+# with `npm test`, and commit. The defaults are never auto-mutated from the
+# open internet — see scripts/refresh-model-ranking.mjs and
+# README/Notes/model-selection.md.
+
+on:
+  schedule:
+    - cron: "0 14 * * 1" # Mondays 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ranking:
+    name: Re-check coder model ladder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Re-check the curated ladder against the live ranking
+        run: npm run models:check

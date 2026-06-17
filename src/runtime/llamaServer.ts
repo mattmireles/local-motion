@@ -29,7 +29,8 @@ export class LlamaServerManager {
       baseUrl: this.session.baseUrl,
       port: this.session.port,
       modelId: this.session.modelId,
-      message: `${this.session.displayName} is running.`
+      message: `${this.session.displayName} is running.`,
+      clientObserved: this.proxy?.hasServedClientRequest() ?? false
     };
   }
 
@@ -121,7 +122,13 @@ export class LlamaServerManager {
         this.output.appendLine(`llama-server failed to spawn: ${error.message}`);
       });
 
-      const proxy = new OpenAiProxy({ upstreamBaseUrl, modelId: model.modelId });
+      // The first inbound client request pushes a fresh status to the UI so
+      // the connected state can flip the moment Cursor actually hits the proxy.
+      const proxy = new OpenAiProxy({
+        upstreamBaseUrl,
+        modelId: model.modelId,
+        onClientRequest: () => this.onStatusChanged()
+      });
       try {
         abortIfNeeded();
         await waitForHealth(port, 120_000, {

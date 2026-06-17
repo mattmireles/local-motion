@@ -4,6 +4,12 @@ import { isAuthorizedBearer, LOCAL_MOTION_API_KEY, sanitizeExternalChatRequest }
 interface ProxyOptions {
   upstreamBaseUrl: string;
   modelId: string;
+  /**
+   * Fired exactly once, when the proxy serves its first real inbound chat
+   * completion. The owner uses it to push a fresh status to the UI so the
+   * "Cursor is using your local model" state can appear the moment it is true.
+   */
+  onClientRequest?: () => void;
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -24,8 +30,18 @@ export class OpenAiProxy {
   private port: number | undefined;
   private readonly abortControllers = new Set<AbortController>();
   private readonly sockets = new Set<import("node:net").Socket>();
+  // Flips true on the first authorized chat completion this proxy serves.
+  // Only chat completions count: /v1/models is also polled by Local Motion's
+  // own endpoint verification and by Cursor's model-list refresh, neither of
+  // which proves the model is actually in use.
+  private clientRequestServed = false;
 
   constructor(private readonly options: ProxyOptions) {}
+
+  /** Whether a client has issued a real inbound chat completion this run. */
+  hasServedClientRequest(): boolean {
+    return this.clientRequestServed;
+  }
 
   async start(preferredPort?: number): Promise<string> {
     this.server = http.createServer((request, response) => {
@@ -98,6 +114,9 @@ export class OpenAiProxy {
         return;
       }
       if (request.method === "POST" && request.url === "/v1/chat/completions") {
+        // Authorization has already passed above, so this is a genuine client
+        // running the local model — the one honest "in use" signal.
+        this.noteClientRequest();
         await this.forwardChat(request, response);
         return;
       }
@@ -166,6 +185,14 @@ export class OpenAiProxy {
       request.off("aborted", abortIfOpen);
       response.off("close", abortIfOpen);
     }
+  }
+
+  private noteClientRequest(): void {
+    if (this.clientRequestServed) {
+      return;
+    }
+    this.clientRequestServed = true;
+    this.options.onClientRequest?.();
   }
 
   private writeJson(response: http.ServerResponse, status: number, body: unknown): void {

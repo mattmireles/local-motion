@@ -55,6 +55,23 @@ export function selectBestCompatibleQuantization(candidates: CandidateQuantizati
     .sort(compareQuantizationPreference)[0];
 }
 
+/**
+ * Quality floor for automagical model selection, on the
+ * {@link quantizationQualityScore} scale. 40 is plain 4-bit (Q4); below that
+ * (Q3/Q2/IQ3/IQ2) the quality loss outweighs a bigger model, so the ladder
+ * should fall through to a smaller model that fits at a healthier quant.
+ * Manual installs from Advanced are not subject to this floor.
+ */
+const AUTOMAGICAL_QUALITY_FLOOR = 40;
+
+/**
+ * True when a quantization is good enough to pick automatically (4-bit or
+ * better). Used to skip a large model that only fits when crushed below 4-bit.
+ */
+export function meetsAutomagicalQualityFloor(quantization: string): boolean {
+  return quantizationQualityScore(quantization) >= AUTOMAGICAL_QUALITY_FLOOR;
+}
+
 export function compareQuantizationPreference(a: CandidateQuantization, b: CandidateQuantization): number {
   if (a.compatibility.status !== b.compatibility.status) {
     return a.compatibility.status === "compatible" ? -1 : 1;
@@ -80,6 +97,16 @@ export function quantizationFromFileName(fileName: string): string {
   const normalized = fileName.toUpperCase();
   const match = normalized.match(/(?:^|[-_.])(IQ\d_[A-Z0-9]+|Q\d(?:_[A-Z0-9]+)+|Q\d|F16|BF16|F32)(?:[-_.]|$)/);
   return match?.[1] ?? "Unknown";
+}
+
+/**
+ * True for multi-part GGUF shard files such as `model-00001-of-00002.gguf`.
+ * Local Motion only supports single-file GGUF quantizations, so shard parts are
+ * excluded from candidate lists — a lone part would otherwise look like a
+ * usable but broken single-file model.
+ */
+export function isShardedGgufFileName(fileName: string): boolean {
+  return /-\d{5}-of-\d{5}\.gguf$/i.test(fileName);
 }
 
 export function parameterCountFromText(text: string): number | undefined {

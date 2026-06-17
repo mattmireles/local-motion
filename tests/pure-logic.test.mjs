@@ -14,6 +14,8 @@ import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
 import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
   effectiveMemoryBudget,
+  isShardedGgufFileName,
+  meetsAutomagicalQualityFloor,
   parameterCountFromText,
   quantizationFromFileName,
   selectBestCompatibleQuantization
@@ -133,31 +135,70 @@ test("does not select an incompatible quantization for automagical setup", () =>
   assert.equal(selected, undefined);
 });
 
-test("automagical setup tries configured repo before built-in fallback repos", () => {
+test("automagical setup tries the configured repo before the ladder", () => {
   assert.deepEqual(
     automagicalModelRepos("custom/model-GGUF").slice(0, 2),
     ["custom/model-GGUF", DEFAULT_MODEL_REPO]
   );
   assert.deepEqual(
-    automagicalModelRepos("https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF").slice(0, 2),
-    [DEFAULT_MODEL_REPO, "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"]
+    automagicalModelRepos(`https://huggingface.co/${DEFAULT_MODEL_REPO}`).slice(0, 2),
+    [DEFAULT_MODEL_REPO, AUTOMAGICAL_MODEL_REPOS[1]]
   );
   assert.equal(
     automagicalModelRepos(` ${DEFAULT_MODEL_REPO} `).filter((repoId) => repoId === DEFAULT_MODEL_REPO).length,
     1
   );
-  assert.equal(DEFAULT_MODEL_REPO, "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF");
+});
+
+test("curated ladder is a biggest-first coder ladder from allowlisted publishers", () => {
+  // Structural invariants only: the exact repo ids are maintained from the live
+  // ranking by scripts/refresh-model-ranking.mjs, so pinning them here would
+  // break on every refresh. See README/Notes/model-selection.md.
+  const ALLOWED_PUBLISHERS = new Set([
+    "unsloth", "lmstudio-community", "bartowski", "ggml-org", "ggerganov", "Qwen", "google", "mlx-community"
+  ]);
+  const paramBillions = (repoId) => {
+    const match = repoId.match(/(\d+(?:\.\d+)?)\s*B\b/i);
+    return match ? Number(match[1]) : 0;
+  };
+  const sizes = AUTOMAGICAL_MODEL_REPOS.map(paramBillions);
+
   assert.equal(AUTOMAGICAL_MODEL_REPOS[0], DEFAULT_MODEL_REPO);
-  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), true);
-  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), true);
+  assert.ok(AUTOMAGICAL_MODEL_REPOS.length >= 4, "ladder should span several size tiers");
+  for (let i = 1; i < sizes.length; i += 1) {
+    assert.ok(sizes[i] <= sizes[i - 1], `ladder must be biggest-first near ${AUTOMAGICAL_MODEL_REPOS[i]}`);
+  }
+  assert.ok(sizes[0] >= 20, `aggressive default should be a large model, got ${DEFAULT_MODEL_REPO}`);
+  assert.ok(sizes[sizes.length - 1] <= 2, "ladder should bottom out on a small model");
+  for (const repoId of AUTOMAGICAL_MODEL_REPOS) {
+    assert.ok(repoId.includes("/"), repoId);
+    assert.ok(ALLOWED_PUBLISHERS.has(repoId.split("/")[0]), `non-allowlisted publisher: ${repoId}`);
+    assert.ok(/coder|code/i.test(repoId), `not a coder repo: ${repoId}`);
+  }
+  // The stale non-coder fallback is gone.
+  assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), false);
 });
 
 test("normalizes Hugging Face model URLs to repo ids", () => {
   assert.equal(
-    normalizeHuggingFaceRepoId("https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"),
-    "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"
+    normalizeHuggingFaceRepoId(`https://huggingface.co/${DEFAULT_MODEL_REPO}`),
+    DEFAULT_MODEL_REPO
   );
-  assert.equal(normalizeHuggingFaceRepoId(" yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF/ "), DEFAULT_MODEL_REPO);
+  assert.equal(normalizeHuggingFaceRepoId(` ${DEFAULT_MODEL_REPO}/ `), DEFAULT_MODEL_REPO);
+});
+
+test("automagical quality floor accepts 4-bit and better, rejects 3-bit and below", () => {
+  for (const quant of ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q6_K", "Q8_0", "F16"]) {
+    assert.equal(meetsAutomagicalQualityFloor(quant), true, quant);
+  }
+  for (const quant of ["Q3_K_L", "Q3_K_M", "Q2_K", "IQ3_XS", "IQ2_XS"]) {
+    assert.equal(meetsAutomagicalQualityFloor(quant), false, quant);
+  }
+});
+
+test("sharded GGUF part files are detected so only single-file quants are offered", () => {
+  assert.equal(isShardedGgufFileName("Qwen3-Coder-30B-A3B-Instruct-BF16-00001-of-00002.gguf"), true);
+  assert.equal(isShardedGgufFileName("Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"), false);
 });
 
 test("setup diagnostics distinguish ready setup from required action", () => {
@@ -314,6 +355,60 @@ test("OpenAI proxy falls back to a dynamic port when the preferred Cursor port i
   } finally {
     await proxy.stop();
     await releasePortHolder(holder);
+  }
+});
+
+test("OpenAI proxy flags only the first real inbound chat request", async () => {
+  let notifications = 0;
+  const proxy = new OpenAiProxy({
+    upstreamBaseUrl: "http://127.0.0.1:1/v1",
+    modelId: "local-motion-test",
+    onClientRequest: () => {
+      notifications += 1;
+    }
+  });
+  try {
+    const baseUrl = await proxy.start();
+    const authorized = { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` };
+    assert.equal(proxy.hasServedClientRequest(), false);
+
+    // Listing models is Local Motion's own verification path and Cursor's
+    // model-list refresh. It must never be mistaken for the model being in use.
+    const models = await fetch(`${baseUrl}/models`, { headers: authorized });
+    assert.equal(models.status, 200);
+    assert.equal(proxy.hasServedClientRequest(), false);
+    assert.equal(notifications, 0);
+
+    // An unauthorized chat attempt is rejected before it can count.
+    const unauthorized = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    });
+    assert.equal(unauthorized.status, 401);
+    assert.equal(proxy.hasServedClientRequest(), false);
+    assert.equal(notifications, 0);
+
+    // The first authorized chat request flips the flag and notifies once, even
+    // though the upstream is unreachable in this test (the request is real).
+    await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authorized },
+      body: JSON.stringify({ messages: [] })
+    });
+    assert.equal(proxy.hasServedClientRequest(), true);
+    assert.equal(notifications, 1);
+
+    // Later requests keep the flag set but never notify again.
+    await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authorized },
+      body: JSON.stringify({ messages: [] })
+    });
+    assert.equal(proxy.hasServedClientRequest(), true);
+    assert.equal(notifications, 1);
+  } finally {
+    await proxy.stop();
   }
 });
 

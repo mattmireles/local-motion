@@ -51,11 +51,18 @@ is stopped, the command starts it first; then it verifies the endpoint, copies
 the setup block, and opens Cursor Models settings.
 
 `Turn On Local Agent` may install `llama.cpp` through Homebrew and download the
-best compatible GGUF quantization from the configured default repository,
-`yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF`, before trying built-in
-fallback repositories. Set `localMotion.runAutomagicalSetupOnFirstStartup` to
-`true` only if you want that install/download to start automatically on first
+best compatible GGUF quantization for this Mac. Local Motion ships a
+biggest-first coder ladder and picks the most capable model that fits at 4-bit
+or better: a 30B mixture-of-experts coder (Qwen3-Coder-30B-A3B) on capable Macs,
+falling through to smaller Qwen coders on machines with less unified memory.
+Override the first choice with
+`localMotion.defaultModelRepo`. Set `localMotion.runAutomagicalSetupOnFirstStartup`
+to `true` only if you want that install/download to start automatically on first
 startup.
+
+The ladder is maintained from a live ranking; see
+[README/Notes/model-selection.md](README/Notes/model-selection.md) and
+`npm run models:check` / `npm run models:refresh`.
 
 If setup fails or is cancelled, run `Local Motion: Repair Local Agent`.
 

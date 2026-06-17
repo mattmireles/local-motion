@@ -1,6 +1,6 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
 import { parseContentLengthHeader } from "../runtime/runtimeGuards";
-import { classifyCompatibility, compareQuantizationPreference, parameterCountFromText, quantizationFromFileName } from "./compatibility";
+import { classifyCompatibility, compareQuantizationPreference, isShardedGgufFileName, parameterCountFromText, quantizationFromFileName } from "./compatibility";
 
 const HF_TIMEOUT_MS = 30_000;
 
@@ -50,7 +50,10 @@ export async function listQuantizations(
 ): Promise<CandidateQuantization[]> {
   const model = await fetchModelInfo(repoId);
   const files = await Promise.all((model.siblings ?? [])
-    .filter((sibling) => sibling.rfilename?.toLowerCase().endsWith(".gguf"))
+    .filter((sibling) => {
+      const fileName = sibling.rfilename ?? "";
+      return fileName.toLowerCase().endsWith(".gguf") && !isShardedGgufFileName(fileName);
+    })
     .map(async (sibling): Promise<GgufFile> => {
       const fileName = sibling.rfilename ?? "";
       const revision = model.sha ?? "main";

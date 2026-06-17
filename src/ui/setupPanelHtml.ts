@@ -659,6 +659,8 @@ export function setupPanelHtml(nonce: string): string {
       const busy = state.automagicalSetupRunning;
       const errored = Boolean(state.errorMessage);
       const current = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current';
+      // The honest connected signal: a real inbound request has hit the proxy.
+      const inUse = Boolean(runtime.clientObserved);
       const phase = (errored && !running) ? 'error' : busy ? 'starting' : running ? 'on' : 'off';
 
       // Brand status dot: off / busy / on.
@@ -692,7 +694,7 @@ export function setupPanelHtml(nonce: string): string {
       if (phase === 'on') {
         // Settle motion plays only on the transition into ON, never on every
         // in-state update (a Copy click must not re-fade the whole surface).
-        renderOn(current, renderedPhase !== 'on');
+        renderOn(current, inUse, renderedPhase !== 'on');
         renderedPhase = phase;
         return;
       }
@@ -735,7 +737,7 @@ export function setupPanelHtml(nonce: string): string {
       els.primary.disabled = true;
     }
 
-    function renderOn(current, entering) {
+    function renderOn(current, inUse, entering) {
       if (entering) {
         els.stage.classList.remove('settle');
         // Force reflow so the settle animation replays only on a fresh ON entry.
@@ -744,7 +746,11 @@ export function setupPanelHtml(nonce: string): string {
       }
 
       els.headline.textContent = 'Local agent is on';
-      els.subline.textContent = 'Cursor can use your local model.';
+      // "is using" is earned only by a real inbound request; otherwise the
+      // honest claim is the softer "can use".
+      els.subline.textContent = inUse
+        ? 'Cursor is using your local model.'
+        : 'Cursor can use your local model.';
       els.progress.classList.add('hidden');
 
       // A clean symmetric on/off toggle, never a destructive-sounding morph.
@@ -770,7 +776,13 @@ export function setupPanelHtml(nonce: string): string {
         (state.settings && state.settings.ok === false) ||
         (state.copyResults.setupBlock && state.copyResults.setupBlock.ok === false);
 
-      if (current && !handoffFailed) {
+      if (inUse) {
+        // Proven: a real inbound request reached the local proxy. The subline
+        // already states it plainly, so drop every nudge — no connect beat, no
+        // "select it in the menu" hint, nothing left to do.
+        els.connect.classList.add('hidden');
+        els.connected.style.display = 'none';
+      } else if (current && !handoffFailed) {
         // The local endpoint is verified, but Cursor's own model list is not
         // observable from here. State what is true and keep the one-time add
         // as a quiet fallback rather than claiming Cursor is already using it.

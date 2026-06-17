@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
-import { selectBestCompatibleQuantization } from "../models/compatibility";
+import { meetsAutomagicalQualityFloor, selectBestCompatibleQuantization } from "../models/compatibility";
 import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
@@ -276,18 +276,31 @@ export class LocalMotionController {
 
   private async automagicalCandidate(): Promise<CandidateQuantization> {
     const attempts: string[] = [];
+    // The repos are ordered largest -> smallest, so the first one that fits at
+    // a healthy (>= 4-bit) quant is the most capable model this Mac can run.
+    let fallbackBelowFloor: CandidateQuantization | undefined;
     for (const repoId of this.automagicalRepos()) {
       try {
         const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
-        if (candidate) {
+        if (!candidate) {
+          attempts.push(`${repoId}: no compatible quantization`);
+          continue;
+        }
+        if (meetsAutomagicalQualityFloor(candidate.quantization)) {
           return candidate;
         }
-        attempts.push(`${repoId}: no compatible quantization`);
+        // This (larger) model only fits when crushed below 4-bit; prefer a
+        // smaller model at a healthier quant, but remember it as a last resort.
+        fallbackBelowFloor ??= candidate;
+        attempts.push(`${repoId}: only ${candidate.quantization} fits, below the quality floor`);
       } catch (error) {
         attempts.push(`${repoId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
+    if (fallbackBelowFloor) {
+      return fallbackBelowFloor;
+    }
     throw new Error(`No compatible GGUF quantization found for this Mac. Tried ${attempts.join("; ")}.`);
   }
 

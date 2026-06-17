@@ -5,7 +5,11 @@ import { test } from "node:test";
 test("automagical setup settings describe fallback repositories", async () => {
   const packageJson = await readPackageJson();
   const properties = packageJson.contributes.configuration.properties;
-  assert.equal(properties["localMotion.defaultModelRepo"].default, "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF");
+  // Structural, not exact: the default repo is maintained from the live ranking
+  // by scripts/refresh-model-ranking.mjs (see README/Notes/model-selection.md).
+  const defaultRepo = properties["localMotion.defaultModelRepo"].default;
+  assert.match(defaultRepo, /^[^/]+\/.+-GGUF$/i);
+  assert.match(defaultRepo, /coder/i);
   assert.match(properties["localMotion.defaultModelRepo"].description, /tried first/);
   assert.match(properties["localMotion.defaultModelRepo"].description, /fallback repositories/);
   assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);
@@ -220,6 +224,45 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.match(description, /opening Cursor settings/);
   assert.match(description, /replacing the clipboard/);
   assert.equal(description.includes("prepare Cursor automatically"), false);
+});
+
+test("runtime status surfaces the first real Cursor request", async () => {
+  const proxySource = await readText("../out/runtime/openAiProxy.js");
+  const runtimeSource = await readText("../out/runtime/llamaServer.js");
+  const typesSource = await readText("../src/types.ts");
+
+  // The proxy records, exposes, and notifies on the first inbound chat request.
+  assert.match(proxySource, /hasServedClientRequest/);
+  assert.match(proxySource, /onClientRequest/);
+
+  // noteClientRequest is both defined and called (at least two references), and
+  // the call lands in the chat-completions branch, which follows /v1/models in
+  // handle(). The behavioral proof that /v1/models does not count is in
+  // pure-logic; here we just confirm the flag is wired to chat completions.
+  assert.equal(proxySource.split("noteClientRequest").length - 1 >= 2, true);
+  assert.equal(proxySource.indexOf("noteClientRequest()") > proxySource.indexOf("/v1/models"), true);
+
+  // The manager threads the flag through RuntimeStatus and re-pushes on use.
+  assert.match(runtimeSource, /clientObserved/);
+  assert.match(runtimeSource, /hasServedClientRequest/);
+  assert.match(runtimeSource, /onClientRequest/);
+  assert.match(typesSource, /clientObserved\?: boolean/);
+});
+
+test("setup ON state confirms a real Cursor request without re-nagging", async () => {
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+
+  // The earned, confident line appears only when a real request was observed.
+  assert.match(panelSource, /Cursor is using your local model\./);
+  assert.match(panelSource, /runtime\.clientObserved/);
+
+  // The inUse branch runs before the freshness branch and suppresses the
+  // connect beat plus the model-menu nudge (nothing left to do once in use).
+  const inUseBranch = panelSource.indexOf("if (inUse) {");
+  const currentBranch = panelSource.indexOf("} else if (current && !handoffFailed) {");
+  assert.notEqual(inUseBranch, -1);
+  assert.notEqual(currentBranch, -1);
+  assert.equal(inUseBranch < currentBranch, true);
 });
 
 async function readPackageJson() {
