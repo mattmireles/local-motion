@@ -76,19 +76,42 @@ test("local agent switch commands and status bar are registered", async () => {
   assert.match(extensionSource, /localMotion\.freeMemory/);
 });
 
-test("setup first screen is a local agent appliance before advanced details", async () => {
+test("setup first screen is a single on/off switch before one advanced disclosure", async () => {
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
-  const heroIndex = panelSource.indexOf('class="hero"');
-  const modelDetailsIndex = panelSource.indexOf("<summary>Advanced model controls</summary>");
-  const activityLogIndex = panelSource.indexOf("<summary>Activity log</summary>");
-  assert.notEqual(heroIndex, -1);
-  assert.notEqual(modelDetailsIndex, -1);
-  assert.notEqual(activityLogIndex, -1);
-  assert.equal(heroIndex < modelDetailsIndex, true);
-  assert.equal(heroIndex < activityLogIndex, true);
+
+  // The live switch and the connect beat appear before the single Advanced disclosure.
+  const primaryIndex = panelSource.indexOf('id="primary"');
+  const connectIndex = panelSource.indexOf('id="connect"');
+  const advancedIndex = panelSource.indexOf("<summary>Advanced</summary>");
+  assert.notEqual(primaryIndex, -1);
+  assert.notEqual(connectIndex, -1);
+  assert.notEqual(advancedIndex, -1);
+  assert.equal(primaryIndex < advancedIndex, true);
+  assert.equal(connectIndex < advancedIndex, true);
+
+  // The old four-triangle wizard layout is gone: exactly one disclosure now.
+  assert.equal(panelSource.includes("Advanced model controls"), false);
+  assert.equal(panelSource.includes("Cursor connection details"), false);
+  assert.equal(panelSource.includes("Mac and memory details"), false);
+  assert.equal(panelSource.includes('class="hero"'), false);
   assert.equal(panelSource.includes("header-actions"), false);
-  assert.match(panelSource, /document\.getElementById\('memoryAction'\)\.addEventListener\('click', \(\) => \{\s+vscode\.postMessage\(\{ command: 'stop' \}\);/);
-  assert.match(panelSource, /running \? \(current \? 'Free Memory' : 'Connect Cursor'\) : 'Turn On Local Agent'/);
+
+  // The primary control never morphs into Connect, and there is no second
+  // memory button anywhere (both were audit P0/P1 hazards).
+  assert.equal(panelSource.includes("'Connect Cursor'"), false);
+  assert.equal(panelSource.includes("memoryAction"), false);
+
+  // The primary toggle binds to runtime on/off only: stop when running, else turn on.
+  assert.match(
+    panelSource,
+    /els\.primary\.addEventListener\('click'[\s\S]*?state\.runtime && state\.runtime\.running[\s\S]*?command: 'stop'[\s\S]*?command: 'automagicalSetup'/
+  );
+  assert.match(panelSource, /els\.primary\.textContent = 'Turn On Local Agent'/);
+  assert.match(panelSource, /els\.primary\.textContent = 'Turn Off Local Agent'/);
+
+  // The connect beat is one copy action against the full setup block, not a
+  // four-field copy table.
+  assert.match(panelSource, /command: 'copyCursorValue', key: 'setupBlock'/);
 });
 
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {

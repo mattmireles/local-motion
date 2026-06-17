@@ -17,7 +17,6 @@ import type {
   AutomagicalSetupCompleteResponse,
   CursorCopyResult,
   CursorEndpointVerification,
-  CursorSettingsOpened,
   CursorSetupPreparedResponse,
   InstalledResponse,
   QuantizationsResponse,
@@ -201,10 +200,6 @@ export class LocalMotionController {
 
   async verifyCursorEndpoint(): Promise<CursorEndpointVerification> {
     return this.cursorSetup.verifyCursorEndpoint();
-  }
-
-  async openCursorSettings(): Promise<CursorSettingsOpened> {
-    return this.cursorSetup.openCursorSettings();
   }
 
   async diagnoseSetup(): Promise<SetupDiagnosticSummary> {

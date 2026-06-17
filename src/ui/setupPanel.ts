@@ -175,12 +175,6 @@ class SetupWebviewSession {
           }
           await this.post(await this.controller.copyCursorValue(message.key));
           break;
-        case "verifyCursorEndpoint":
-          await this.post(await this.controller.verifyCursorEndpoint());
-          break;
-        case "openCursorSettings":
-          await this.post(await this.controller.openCursorSettings());
-          break;
         default:
           throw new Error("Unknown setup command.");
       }

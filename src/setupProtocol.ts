@@ -10,9 +10,7 @@ export type SetupRequest =
   | { command: "automagicalSetup" }
   | { command: "stop" }
   | { command: "prepareCursor" }
-  | { command: "copyCursorValue"; key?: CursorSetupValueKey }
-  | { command: "verifyCursorEndpoint" }
-  | { command: "openCursorSettings" };
+  | { command: "copyCursorValue"; key?: CursorSetupValueKey };
 
 export interface CursorActionResult {
   ok: boolean;
@@ -105,8 +103,6 @@ export type SetupResponse =
   | AutomagicalSetupCompleteResponse
   | CursorSetupPreparedResponse
   | CursorCopyResult
-  | CursorEndpointVerification
-  | CursorSettingsOpened
   | { type: "installProgress"; progress: DownloadProgress }
   | { type: "automagicalSetupStarted" }
   | { type: "error"; message: string };
