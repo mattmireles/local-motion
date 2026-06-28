@@ -122,23 +122,37 @@ test("setup surface shows downloaded model storage before advanced controls", as
   const protocolSource = await readText("../src/setupProtocol.ts");
   const controllerSource = await readText("../src/app/localMotionController.ts");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const storageSource = await readText("../src/ui/setupPanelStorage.ts");
   const panelHostSource = await readText("../src/ui/setupPanel.ts");
 
   assert.match(protocolSource, /downloadedModels: DownloadedModelEntry\[\]/);
   assert.match(protocolSource, /downloadedModelsSizeBytes: number/);
+  assert.match(protocolSource, /SetupInstalledModelView/);
+  assert.equal(protocolSource.includes("InstalledModel,"), false);
+  assert.equal(protocolSource.includes("installed?: InstalledModel"), false);
+  assert.equal(protocolSource.includes("installed: InstalledModel"), false);
   assert.match(protocolSource, /deleteDownloadedModel/);
   assert.match(controllerSource, /listDownloadedModels/);
   assert.match(controllerSource, /deleteDownloadedModel\(this\.modelsRoot\(\), id\)/);
+  assert.match(controllerSource, /This will turn off the local agent first/);
   assert.match(panelHostSource, /case "deleteDownloadedModel"/);
+  assert.match(panelHostSource, /Wait for setup to finish before deleting downloaded models/);
+  assert.match(panelHostSource, /postInitialRuntimeState\(\)\.catch/);
 
-  const storageIndex = panelSource.indexOf('id="storageSummary"');
+  const storageIndex = panelSource.indexOf("setupPanelStorageMarkup()");
   const advancedIndex = panelSource.indexOf("<summary>Advanced</summary>");
   assert.notEqual(storageIndex, -1);
   assert.notEqual(advancedIndex, -1);
   assert.equal(storageIndex < advancedIndex, true);
-  assert.match(panelSource, /id="manageStorage"/);
-  assert.match(panelSource, /id="storageList"/);
-  assert.match(panelSource, /command: 'deleteDownloadedModel'/);
+  assert.match(storageSource, /id="manageStorage"/);
+  assert.match(storageSource, /aria-expanded="false"/);
+  assert.match(storageSource, /aria-controls="storagePanel"/);
+  assert.match(storageSource, /aria-label="Delete /);
+  assert.match(storageSource, /state\.setupOperationRunning \? ' disabled' : ''/);
+  assert.match(panelSource, /setupOperationRunning: false/);
+  assert.match(panelSource, /state\.setupOperationRunning = true/);
+  assert.match(storageSource, /command: 'deleteDownloadedModel'/);
+  assert.match(panelSource, /setupPanelStorageScript\(\)/);
 });
 
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {

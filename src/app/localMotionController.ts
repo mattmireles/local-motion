@@ -23,6 +23,7 @@ import type {
   QuantizationsResponse,
   RuntimeResponse,
   SearchResultsResponse,
+  SetupInstalledModelView,
   SetupStoragePayload,
   SetupStateResponse
 } from "../setupProtocol";
@@ -78,7 +79,7 @@ export class LocalMotionController {
         storageRoot: machine.storageRoot,
         appleSilicon: machine.isAppleSilicon
       },
-      installed: this.state.installedModel(),
+      installed: this.optionalInstalledModelView(this.state.installedModel()),
       ...storage,
       runtime,
       cursorSetupViewModel: cursorSetup.viewModel,
@@ -118,7 +119,7 @@ export class LocalMotionController {
     const cursorSetup = this.cursorSetupPayload(runtime);
     return {
       type: "installed",
-      installed,
+      installed: this.installedModelView(installed),
       runtime,
       ...await this.storagePayload(),
       cursorSetupViewModel: cursorSetup.viewModel,
@@ -166,7 +167,7 @@ export class LocalMotionController {
     const cursorSetup = this.cursorSetup.payload(runtime);
     return {
       type: "automagicalSetupComplete",
-      installed: this.state.installedModel(),
+      installed: this.optionalInstalledModelView(this.state.installedModel()),
       runtime,
       ...await this.storagePayload(),
       cursorSetupViewModel: cursorSetup.cursorSetupViewModel,
@@ -190,8 +191,9 @@ export class LocalMotionController {
       throw new Error("Downloaded model was not found.");
     }
 
+    const runningNotice = model.active ? " This will turn off the local agent first." : "";
     const answer = await vscode.window.showWarningMessage(
-      `Delete ${model.fileName} and free ${formatBytes(model.sizeBytes)}?`,
+      `Delete ${model.fileName} and free ${formatBytes(model.sizeBytes)}?${runningNotice}`,
       { modal: true },
       "Delete"
     );
@@ -421,5 +423,13 @@ export class LocalMotionController {
       downloadedModels: downloaded.models,
       downloadedModelsSizeBytes: downloaded.totalSizeBytes
     };
+  }
+
+  private installedModelView(installed: InstalledModel): SetupInstalledModelView {
+    return { displayName: installed.displayName };
+  }
+
+  private optionalInstalledModelView(installed: InstalledModel | undefined): SetupInstalledModelView | undefined {
+    return installed ? this.installedModelView(installed) : undefined;
   }
 }

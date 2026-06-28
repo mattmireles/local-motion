@@ -1,3 +1,5 @@
+import { setupPanelStorageMarkup, setupPanelStorageScript, setupPanelStorageStyles } from "./setupPanelStorage";
+
 export function setupPanelHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -188,59 +190,7 @@ export function setupPanelHtml(nonce: string): string {
       font-size: 12px;
       line-height: 1.4;
     }
-    .storage-summary {
-      margin-top: 16px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--faint);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .storage-summary.hidden { display: none; }
-    .storage-panel {
-      margin-top: 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-      background: var(--panel);
-    }
-    .storage-panel.hidden { display: none; }
-    .storage-panel h2 {
-      font-size: 12px;
-      margin: 0 0 10px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      color: var(--faint);
-    }
-    .storage-list {
-      display: grid;
-      gap: 8px;
-    }
-    .storage-item {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      border-top: 1px solid var(--line);
-      padding-top: 10px;
-    }
-    .storage-item:first-child {
-      border-top: none;
-      padding-top: 0;
-    }
-    .storage-name {
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
-    .storage-meta {
-      margin-top: 4px;
-      color: var(--faint);
-      font-size: 12px;
-      line-height: 1.4;
-    }
+    ${setupPanelStorageStyles()}
     .connected-line {
       margin-top: 16px;
       color: var(--muted);
@@ -488,15 +438,7 @@ export function setupPanelHtml(nonce: string): string {
 
     <p id="metaLine" class="meta-line" style="display:none"></p>
 
-    <div id="storageSummary" class="storage-summary hidden">
-      <span id="storageText"></span>
-      <button id="manageStorage" class="btn link">Manage</button>
-    </div>
-
-    <section id="storagePanel" class="storage-panel hidden">
-      <h2>Downloaded Models</h2>
-      <div id="storageList" class="storage-list"></div>
-    </section>
+    ${setupPanelStorageMarkup()}
 
     <details class="advanced">
       <summary>Advanced</summary>
@@ -545,6 +487,7 @@ export function setupPanelHtml(nonce: string): string {
       settings: undefined,
       copyResults: {},
       automagicalSetupRunning: false,
+      setupOperationRunning: false,
       progressMessage: '',
       progressPercent: undefined,
       errorMessage: ''
@@ -615,6 +558,8 @@ export function setupPanelHtml(nonce: string): string {
       vscode.postMessage({ command: 'search', query: els.repo.value });
     });
     els.install.addEventListener('click', () => {
+      state.setupOperationRunning = true;
+      render();
       vscode.postMessage({ command: 'installRun', candidate: state.selected });
     });
 
@@ -626,6 +571,7 @@ export function setupPanelHtml(nonce: string): string {
         state.runtime = message.runtime;
         state.machine = message.machine;
         updateDownloadedStorage(message);
+        state.setupOperationRunning = false;
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -637,6 +583,7 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === 'searchResults') renderSearchResults(message.results);
       if (message.type === 'quantizations') renderQuantizations(message.quantizations);
       if (message.type === 'installProgress') {
+        state.setupOperationRunning = true;
         state.errorMessage = '';
         const percent = message.progress && message.progress.percent;
         const bytes = message.progress
@@ -658,6 +605,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'automagicalSetupStarted') {
         state.automagicalSetupRunning = true;
+        state.setupOperationRunning = true;
         state.errorMessage = '';
         state.progressPercent = undefined;
         state.progressMessage = 'Choosing a model that fits this Mac…';
@@ -677,6 +625,7 @@ export function setupPanelHtml(nonce: string): string {
         state.settings = message.cursor && message.cursor.settings;
         if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
         state.automagicalSetupRunning = false;
+        state.setupOperationRunning = false;
         state.progressMessage = '';
         state.progressPercent = undefined;
         render();
@@ -698,6 +647,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'automagicalSetupComplete') {
         state.automagicalSetupRunning = false;
+        state.setupOperationRunning = false;
         state.errorMessage = '';
         state.progressMessage = '';
         state.progressPercent = undefined;
@@ -733,6 +683,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'error') {
         state.automagicalSetupRunning = false;
+        state.setupOperationRunning = false;
         state.progressMessage = '';
         state.progressPercent = undefined;
         state.errorMessage = message.message || 'Something went wrong.';
@@ -935,55 +886,7 @@ export function setupPanelHtml(nonce: string): string {
       ].map(([label, value]) => '<div class="metric"><span>' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>').join('');
     }
 
-    function updateDownloadedStorage(message) {
-      if (!Array.isArray(message.downloadedModels)) return;
-      state.downloadedModels = message.downloadedModels;
-      state.downloadedModelsSizeBytes = message.downloadedModelsSizeBytes || 0;
-    }
-
-    function renderStorage() {
-      const models = state.downloadedModels || [];
-      if (!models.length) {
-        state.storageOpen = false;
-        els.storageSummary.classList.add('hidden');
-        els.storagePanel.classList.add('hidden');
-        els.storageList.innerHTML = '';
-        return;
-      }
-
-      els.storageSummary.classList.remove('hidden');
-      els.storageText.textContent = formatBytes(state.downloadedModelsSizeBytes) + ' downloaded in ' + models.length + ' model' + (models.length === 1 ? '' : 's');
-      els.manageStorage.textContent = state.storageOpen ? 'Hide' : 'Manage';
-
-      if (!state.storageOpen) {
-        els.storagePanel.classList.add('hidden');
-        return;
-      }
-
-      els.storagePanel.classList.remove('hidden');
-      els.storageList.innerHTML = models.map((model, index) => {
-        const labels = [
-          model.active ? 'Running' : '',
-          !model.active && model.installed ? 'Installed' : '',
-          model.partial ? 'Partial' : ''
-        ].filter(Boolean).join(' · ');
-        return '<div class="storage-item">' +
-          '<div>' +
-            '<div class="storage-name">' + esc(model.fileName) + '</div>' +
-            '<div class="storage-meta">' + esc(formatBytes(model.sizeBytes)) + (labels ? ' · ' + esc(labels) : '') + '</div>' +
-          '</div>' +
-          '<button class="btn danger" data-index="' + index + '">Delete</button>' +
-        '</div>';
-      }).join('');
-
-      for (const button of els.storageList.querySelectorAll('button[data-index]')) {
-        button.addEventListener('click', () => {
-          const model = models[Number(button.dataset.index)];
-          if (!model) return;
-          vscode.postMessage({ command: 'deleteDownloadedModel', id: model.id });
-        });
-      }
-    }
+    ${setupPanelStorageScript()}
 
     function renderSearchResults(results) {
       els.searchResults.innerHTML = results.map(result =>

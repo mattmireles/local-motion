@@ -97,6 +97,42 @@ test("downloaded model ids cannot escape Local Motion model storage", async () =
   }
 });
 
+test("delete rejects symlinked parent directories inside model storage", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
+  const modelsRoot = path.join(root, "models");
+  const outside = path.join(root, "outside");
+  await fs.mkdir(modelsRoot, { recursive: true });
+  await fs.mkdir(outside, { recursive: true });
+  await fs.writeFile(path.join(outside, "stolen.gguf"), "outside");
+  await fs.symlink(outside, path.join(modelsRoot, "linked-model"));
+
+  try {
+    await assert.rejects(
+      () => deleteDownloadedModel(modelsRoot, "linked-model/stolen.gguf"),
+      /symlinked directories/
+    );
+    assert.equal(await fs.readFile(path.join(outside, "stolen.gguf"), "utf8"), "outside");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("downloaded model entries do not expose absolute model paths to the webview", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
+  const modelsRoot = path.join(root, "models");
+  const target = path.join(modelsRoot, "example-alpha-main", "alpha.gguf");
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, "alpha");
+
+  try {
+    const result = await listDownloadedModels(modelsRoot);
+    assert.equal("modelPath" in result.models[0], false);
+    assert.equal("displayName" in result.models[0], false);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 function installedModel(modelPath) {
   return {
     repoId: "example/model-GGUF",

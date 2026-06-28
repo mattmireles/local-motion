@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { isAutomagicalSetupCompletion, isLastCopiedCursorSetup } from "./stateValidation";
 import type { AutomagicalSetupCompletion, InstalledModel, LastCopiedCursorSetup } from "./types";
@@ -20,7 +21,7 @@ export class LocalMotionState {
 
   async clearInstalledModelIfPath(modelPath: string): Promise<InstalledModel | undefined> {
     const installed = this.installedModel();
-    if (installed?.modelPath !== modelPath) {
+    if (!installed || path.resolve(installed.modelPath) !== path.resolve(modelPath)) {
       return undefined;
     }
     await this.context.globalState.update(INSTALLED_MODEL_KEY, undefined);

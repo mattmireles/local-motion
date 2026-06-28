@@ -1,6 +1,6 @@
 import type { CursorSetupFreshness, CursorSetupValueKey, CursorSetupViewModel } from "./cursor/cursorIntegration";
 import type { DownloadProgress } from "./runtime/downloader";
-import type { CandidateQuantization, DownloadedModelEntry, InstalledModel, ModelSearchResult, RuntimeStatus } from "./types";
+import type { CandidateQuantization, DownloadedModelEntry, ModelSearchResult, RuntimeStatus } from "./types";
 
 export type SetupRequest =
   | { command: "ready" }
@@ -62,11 +62,15 @@ export interface SetupMachineView {
   appleSilicon: boolean;
 }
 
+export interface SetupInstalledModelView {
+  displayName: string;
+}
+
 export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "state";
   defaultRepo: string;
   machine: SetupMachineView;
-  installed?: InstalledModel;
+  installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;
 }
 
@@ -83,7 +87,7 @@ export interface QuantizationsResponse {
 
 export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "installed";
-  installed: InstalledModel;
+  installed: SetupInstalledModelView;
   runtime: RuntimeStatus;
   cursor?: CursorSetupPreparedResponse;
 }
@@ -95,7 +99,7 @@ export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload
 
 export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "automagicalSetupComplete";
-  installed?: InstalledModel;
+  installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;
   cursor: CursorSetupPreparedResponse;
 }

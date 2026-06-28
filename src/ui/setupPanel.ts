@@ -167,6 +167,9 @@ class SetupWebviewSession {
           await this.post(await this.controller.stop());
           break;
         case "deleteDownloadedModel":
+          if (this.setupOperationActive) {
+            throw new Error("Wait for setup to finish before deleting downloaded models.");
+          }
           if (!message.id) {
             throw new Error("No downloaded model was selected.");
           }
@@ -210,11 +213,18 @@ class SetupWebviewSession {
   }
 
   private async installRun(candidate: CandidateQuantization): Promise<void> {
-    const payload = await this.controller.installRun(candidate, (progress) => {
-      void this.post({ type: "installProgress", progress });
-    });
-    if (payload) {
-      await this.post(payload);
+    this.setupOperationActive = true;
+    try {
+      const payload = await this.controller.installRun(candidate, (progress) => {
+        void this.post({ type: "installProgress", progress });
+      });
+      if (payload) {
+        await this.post(payload);
+      } else {
+        await this.postInitialRuntimeState();
+      }
+    } finally {
+      this.setupOperationActive = false;
     }
   }
 
@@ -247,6 +257,7 @@ class SetupWebviewSession {
   private async reportError(error: unknown): Promise<void> {
     const messageText = error instanceof Error ? error.message : String(error);
     this.output.appendLine(messageText);
+    await this.postInitialRuntimeState().catch(() => undefined);
     await this.post({ type: "error", message: messageText });
     void vscode.window.showErrorMessage(messageText);
   }

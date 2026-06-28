@@ -5,6 +5,7 @@
 .cursor/**
 .github/**
 .serena/**
+.playwright-mcp/**
 README/**
 scripts/**
 tmp/**

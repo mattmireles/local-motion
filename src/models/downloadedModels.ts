@@ -24,8 +24,6 @@ export async function listDownloadedModels(
     return {
       id: toModelId(modelsRoot, modelPath),
       fileName,
-      displayName: modelDisplayNameFromPath(modelPath),
-      modelPath,
       sizeBytes: stat.size,
       partial: /\.gguf\.part$/i.test(fileName),
       active: activePath === resolvedPath,
@@ -40,7 +38,7 @@ export async function listDownloadedModels(
     if (a.installed !== b.installed) {
       return a.installed ? -1 : 1;
     }
-    return a.displayName.localeCompare(b.displayName);
+    return a.id.localeCompare(b.id);
   });
 
   return {
@@ -51,6 +49,7 @@ export async function listDownloadedModels(
 
 export async function deleteDownloadedModel(modelsRoot: string, id: string): Promise<string> {
   const modelPath = resolveDownloadedModelId(modelsRoot, id);
+  await assertRealPathInsideModelsRoot(modelsRoot, modelPath);
   await fs.promises.unlink(modelPath);
   await removeParentIfEmpty(modelsRoot, path.dirname(modelPath));
   return modelPath;
@@ -70,6 +69,27 @@ export function resolveDownloadedModelId(modelsRoot: string, id: string): string
     throw new Error("Downloaded model id must point to a GGUF file.");
   }
   return modelPath;
+}
+
+async function assertRealPathInsideModelsRoot(modelsRoot: string, modelPath: string): Promise<void> {
+  const root = await fs.promises.realpath(modelsRoot);
+  const relativeParent = path.relative(path.resolve(modelsRoot), path.dirname(modelPath));
+  let current = root;
+  for (const part of relativeParent.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    const stat = await fs.promises.lstat(current);
+    if (stat.isSymbolicLink()) {
+      throw new Error("Downloaded model path must not include symlinked directories.");
+    }
+    if (!stat.isDirectory()) {
+      throw new Error("Downloaded model parent path is not a directory.");
+    }
+  }
+
+  const realParent = await fs.promises.realpath(path.dirname(modelPath));
+  if (realParent !== root && !realParent.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Downloaded model path must stay inside Local Motion model storage.");
+  }
 }
 
 async function listModelFiles(modelsRoot: string): Promise<string[]> {
@@ -103,12 +123,6 @@ async function walk(directory: string, found: string[]): Promise<void> {
 
 function toModelId(modelsRoot: string, modelPath: string): string {
   return path.relative(path.resolve(modelsRoot), path.resolve(modelPath));
-}
-
-function modelDisplayNameFromPath(modelPath: string): string {
-  const fileName = path.basename(modelPath).replace(/\.part$/i, "");
-  const parent = path.basename(path.dirname(modelPath));
-  return `${parent} ${fileName.replace(/\.gguf$/i, "")}`;
 }
 
 async function removeParentIfEmpty(modelsRoot: string, directory: string): Promise<void> {

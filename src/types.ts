@@ -56,8 +56,6 @@ export interface InstalledModel {
 export interface DownloadedModelEntry {
   id: string;
   fileName: string;
-  displayName: string;
-  modelPath: string;
   sizeBytes: number;
   partial: boolean;
   active: boolean;
