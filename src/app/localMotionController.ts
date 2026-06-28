@@ -289,6 +289,9 @@ export class LocalMotionController {
         const controller = new AbortController();
         token.onCancellationRequested(() => controller.abort());
         let lastPercent = 0;
+        const downloadConcurrency = vscode.workspace
+          .getConfiguration("localMotion")
+          .get<number>("downloadConcurrency", 16);
         return downloadGguf(
           candidate,
           this.modelsRoot(),
@@ -301,7 +304,8 @@ export class LocalMotionController {
             lastPercent = percent;
             onProgress(downloadProgress, displayName);
           },
-          controller.signal
+          controller.signal,
+          { concurrency: downloadConcurrency }
         );
       }
     );

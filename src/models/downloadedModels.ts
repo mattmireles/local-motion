@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DownloadedModelEntry, InstalledModel, RuntimeSession } from "../types";
+import { manifestPathForPartial, readManifestDownloadedBytes } from "../runtime/downloadManifest";
 
 export interface DownloadedModelsSummary {
   models: DownloadedModelEntry[];
@@ -21,11 +22,13 @@ export async function listDownloadedModels(
     const stat = await fs.promises.stat(modelPath);
     const fileName = path.basename(modelPath);
     const resolvedPath = path.resolve(modelPath);
+    const partial = /\.gguf\.part$/i.test(fileName);
+    const manifestBytes = partial ? await readManifestDownloadedBytes(modelPath) : undefined;
     return {
       id: toModelId(modelsRoot, modelPath),
       fileName,
-      sizeBytes: stat.size,
-      partial: /\.gguf\.part$/i.test(fileName),
+      sizeBytes: partial ? (manifestBytes ?? 0) : stat.size,
+      partial,
       active: activePath === resolvedPath,
       installed: installedPath === resolvedPath
     };
@@ -51,6 +54,9 @@ export async function deleteDownloadedModel(modelsRoot: string, id: string): Pro
   const modelPath = resolveDownloadedModelId(modelsRoot, id);
   await assertRealPathInsideModelsRoot(modelsRoot, modelPath);
   await fs.promises.unlink(modelPath);
+  if (/\.gguf\.part$/i.test(path.basename(modelPath))) {
+    await fs.promises.rm(manifestPathForPartial(modelPath), { force: true });
+  }
   await removeParentIfEmpty(modelsRoot, path.dirname(modelPath));
   return modelPath;
 }

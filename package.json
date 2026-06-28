@@ -117,6 +117,13 @@
           "maximum": 8,
           "description": "Number of parallel requests to allow in llama-server."
         },
+        "localMotion.downloadConcurrency": {
+          "type": "number",
+          "default": 16,
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Number of concurrent HTTP range requests to use when downloading large GGUF model files."
+        },
         "localMotion.proxyPort": {
           "type": "number",
           "default": 41434,

@@ -26,7 +26,7 @@ test("lists downloaded GGUF models and totals their storage use", async () => {
       active: { ...installedModel(first), baseUrl: "http://127.0.0.1:1/v1", upstreamBaseUrl: "http://127.0.0.1:2/v1", port: 1 }
     });
 
-    assert.equal(result.totalSizeBytes, 12);
+    assert.equal(result.totalSizeBytes, 5);
     assert.deepEqual(result.models.map((model) => model.fileName), ["alpha.gguf", "beta.gguf.part"]);
     assert.equal(result.models[0].active, true);
     assert.equal(result.models[0].installed, true);
@@ -128,6 +128,45 @@ test("downloaded model entries do not expose absolute model paths to the webview
     const result = await listDownloadedModels(modelsRoot);
     assert.equal("modelPath" in result.models[0], false);
     assert.equal("displayName" in result.models[0], false);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("partial downloads use manifest progress instead of sparse file size", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
+  const modelsRoot = path.join(root, "models");
+  const partialPath = path.join(modelsRoot, "example-beta-main", "beta.gguf.part");
+  await fs.mkdir(path.dirname(partialPath), { recursive: true });
+  await fs.writeFile(partialPath, "partial");
+  await fs.writeFile(`${partialPath}.json`, JSON.stringify({
+    version: 1,
+    totalBytes: 100,
+    chunkSizeBytes: 25,
+    completedChunks: [0]
+  }));
+
+  try {
+    const result = await listDownloadedModels(modelsRoot);
+    assert.equal(result.models[0].sizeBytes, 25);
+    assert.equal(result.models[0].partial, true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("delete removes the parallel download manifest with a partial file", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
+  const modelsRoot = path.join(root, "models");
+  const partialPath = path.join(modelsRoot, "example-beta-main", "beta.gguf.part");
+  await fs.mkdir(path.dirname(partialPath), { recursive: true });
+  await fs.writeFile(partialPath, "partial");
+  await fs.writeFile(`${partialPath}.json`, "{\"version\":1}");
+
+  try {
+    await deleteDownloadedModel(modelsRoot, "example-beta-main/beta.gguf.part");
+    await assert.rejects(fs.access(partialPath));
+    await assert.rejects(fs.access(`${partialPath}.json`));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

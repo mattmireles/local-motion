@@ -2,8 +2,24 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { GgufFile } from "../types";
+import {
+  computeContiguousPrefixBytes,
+  computeManifestDownloadedBytes,
+  createManifestFromPartial,
+  loadManifest,
+  manifestMatchesDownload,
+  manifestPathForPartial,
+  saveManifest,
+  type DownloadManifest
+} from "./downloadManifest";
 import { parseContentLengthHeader } from "./runtimeGuards";
 import { safeId } from "../util/format";
+
+export {
+  computeManifestDownloadedBytes,
+  manifestPathForPartial,
+  readManifestDownloadedBytes
+} from "./downloadManifest";
 
 const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 const SLOW_CHECK_INTERVAL_MS = 15_000;
@@ -11,6 +27,17 @@ const READ_IDLE_TIMEOUT_MS = 30_000;
 const SLOW_GRACE_BYTES = 8 * 1024 * 1024;
 const MIN_BYTES_PER_SECOND = 2 * 1024 * 1024;
 const MAX_SEGMENT_ATTEMPTS = 4;
+const DEFAULT_CONCURRENCY = 16;
+const MAX_CONCURRENCY = 32;
+const DEFAULT_CHUNK_SIZE_BYTES = 64 * 1024 * 1024;
+const PARALLEL_MIN_BYTES = 16 * 1024 * 1024;
+const CHUNK_RETRY_BACKOFF_MS = 500;
+
+export interface DownloadOptions {
+  concurrency?: number;
+  chunkSizeBytes?: number;
+  parallelMinBytes?: number;
+}
 
 export interface DownloadProgress {
   downloadedBytes: number;
@@ -24,7 +51,8 @@ export async function downloadGguf(
   file: GgufFile,
   modelsRoot: string,
   onProgress: (progress: DownloadProgress) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: DownloadOptions = {}
 ): Promise<string> {
   const targetDir = path.join(modelsRoot, safeId(`${file.repoId}-${file.revision ?? "unknown-revision"}`));
   await fs.promises.mkdir(targetDir, { recursive: true });
@@ -39,31 +67,127 @@ export async function downloadGguf(
   const initialBytes = (await statSize(partialPath)) ?? 0;
   if (file.sizeBytes !== undefined && initialBytes > file.sizeBytes) {
     await fs.promises.rm(partialPath, { force: true });
+    await fs.promises.rm(manifestPathForPartial(partialPath), { force: true });
   }
 
-  let downloadedBytes = await statSize(partialPath) ?? 0;
-  let totalBytes = file.sizeBytes;
+  const concurrency = clampConcurrency(options.concurrency ?? DEFAULT_CONCURRENCY);
+  const chunkSizeBytes = options.chunkSizeBytes ?? DEFAULT_CHUNK_SIZE_BYTES;
+  const parallelMinBytes = options.parallelMinBytes ?? PARALLEL_MIN_BYTES;
+  const startedWithPartial = ((await statSize(partialPath)) ?? 0) > 0;
+
+  const canParallelize = file.sizeBytes !== undefined &&
+    file.sizeBytes >= parallelMinBytes &&
+    concurrency > 1;
+  const probe = canParallelize
+    ? await probeRangeSupport(file.downloadUrl, signal, file.sizeBytes)
+    : { supported: false, totalBytes: file.sizeBytes };
+  const totalBytes = reconcileTotalBytes(probe.totalBytes, file.sizeBytes);
+  const useParallel = canParallelize && probe.supported && totalBytes !== undefined;
+
+  if (useParallel && totalBytes !== undefined) {
+    const manifestPath = manifestPathForPartial(partialPath);
+    try {
+      await downloadParallel({
+        url: file.downloadUrl,
+        partialPath,
+        totalBytes,
+        chunkSizeBytes,
+        concurrency,
+        signal,
+        startedWithPartial,
+        requireChunkProof: Boolean(file.sha256),
+        onProgress
+      });
+    } catch (error) {
+      if (signal.aborted || !isParallelFallbackError(error)) {
+        throw error;
+      }
+      const manifest = await loadManifest(manifestPath);
+      if (manifest) {
+        await prepareSequentialFallback(partialPath, manifest);
+      }
+      await downloadSequential({
+        file,
+        partialPath,
+        totalBytes,
+        startedWithPartial,
+        signal,
+        onProgress
+      });
+    }
+  } else {
+    await downloadSequential({
+      file,
+      partialPath,
+      totalBytes: file.sizeBytes,
+      startedWithPartial,
+      signal,
+      onProgress
+    });
+  }
+
+  const expectedSize = totalBytes ?? file.sizeBytes;
+  if (expectedSize !== undefined) {
+    const stat = await fs.promises.stat(partialPath);
+    if (stat.size !== expectedSize) {
+      throw new Error(`Downloaded size mismatch: expected ${expectedSize} bytes, got ${stat.size} bytes.`);
+    }
+  }
+  if (file.sha256) {
+    await assertSha256(partialPath, file.sha256);
+  }
+  await fs.promises.rm(manifestPathForPartial(partialPath), { force: true });
+  await fs.promises.rename(partialPath, targetPath);
+  return targetPath;
+}
+
+function reconcileTotalBytes(probeTotalBytes: number | undefined, catalogBytes: number | undefined): number | undefined {
+  if (probeTotalBytes === undefined) {
+    return catalogBytes;
+  }
+  if (catalogBytes === undefined) {
+    return probeTotalBytes;
+  }
+  if (probeTotalBytes !== catalogBytes) {
+    throw new Error(
+      `Download size mismatch: server reported ${probeTotalBytes} bytes, catalog metadata says ${catalogBytes} bytes.`
+    );
+  }
+  return catalogBytes;
+}
+
+interface SequentialDownloadOptions {
+  file: GgufFile;
+  partialPath: string;
+  totalBytes?: number;
+  startedWithPartial: boolean;
+  signal: AbortSignal;
+  onProgress: (progress: DownloadProgress) => void;
+}
+
+async function downloadSequential(options: SequentialDownloadOptions): Promise<void> {
+  let downloadedBytes = (await statSize(options.partialPath)) ?? 0;
+  let totalBytes = options.totalBytes;
   let segmentFailures = 0;
   let retrySlowStreams = true;
-  const startedWithPartial = downloadedBytes > 0;
 
   while (totalBytes === undefined || downloadedBytes < totalBytes) {
     const segmentStart = downloadedBytes;
 
     try {
       const result = await downloadSegment({
-        url: file.downloadUrl,
-        partialPath,
+        url: options.file.downloadUrl,
+        partialPath: options.partialPath,
         start: segmentStart,
         knownTotalBytes: totalBytes,
         retrySlowStreams,
-        signal,
+        signal: options.signal,
         onProgress: (progress) => {
           downloadedBytes = progress.downloadedBytes;
           totalBytes = progress.totalBytes;
-          onProgress({
+          options.onProgress({
             ...progress,
-            resumed: startedWithPartial || progress.resumed
+            resumed: options.startedWithPartial || progress.resumed
           });
         }
       });
@@ -74,8 +198,8 @@ export async function downloadGguf(
       }
       segmentFailures = 0;
     } catch (error) {
-      if (signal.aborted || !isRetryableSegmentError(error) || segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
-        if (!signal.aborted && error instanceof SlowDownloadError && segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
+      if (options.signal.aborted || !isRetryableSegmentError(error) || segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
+        if (!options.signal.aborted && error instanceof SlowDownloadError && segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
           retrySlowStreams = false;
           segmentFailures = 0;
           continue;
@@ -85,18 +209,263 @@ export async function downloadGguf(
       segmentFailures += 1;
     }
   }
+}
 
-  if (totalBytes !== undefined) {
-    const stat = await fs.promises.stat(partialPath);
-    if (stat.size !== totalBytes) {
-      throw new Error(`Downloaded size mismatch: expected ${totalBytes} bytes, got ${stat.size} bytes.`);
+interface ParallelDownloadOptions {
+  url: string;
+  partialPath: string;
+  totalBytes: number;
+  chunkSizeBytes: number;
+  concurrency: number;
+  signal: AbortSignal;
+  startedWithPartial: boolean;
+  requireChunkProof: boolean;
+  onProgress: (progress: DownloadProgress) => void;
+}
+
+async function downloadParallel(options: ParallelDownloadOptions): Promise<void> {
+  const manifestPath = manifestPathForPartial(options.partialPath);
+  const statBeforeTruncate = (await statSize(options.partialPath)) ?? 0;
+  let manifest = await loadManifest(manifestPath);
+  if (
+    !manifest ||
+    !manifestMatchesDownload(manifest, options.totalBytes, options.chunkSizeBytes) ||
+    (!options.requireChunkProof && manifest.completedChunks.length > 0 && statBeforeTruncate >= options.totalBytes)
+  ) {
+    manifest = createManifestFromPartial({
+      partialPath: options.partialPath,
+      totalBytes: options.totalBytes,
+      chunkSizeBytes: options.chunkSizeBytes,
+      statSize: statBeforeTruncate
+    });
+    await saveManifest(manifestPath, manifest);
+  }
+
+  await ensureFile(options.partialPath);
+  await fs.promises.truncate(options.partialPath, options.totalBytes);
+
+  const chunkCount = Math.ceil(options.totalBytes / options.chunkSizeBytes);
+  const completed = new Set(manifest.completedChunks);
+  const pending = [];
+  for (let index = 0; index < chunkCount; index += 1) {
+    if (!completed.has(index)) {
+      pending.push(index);
     }
   }
-  if (file.sha256) {
-    await assertSha256(partialPath, file.sha256);
+
+  const poolAbort = new AbortController();
+  const poolSignal = mergeAbortSignals(options.signal, poolAbort.signal);
+  const activeChunkBytes = new Map<number, number>();
+  let lastProgressBytes = computeManifestDownloadedBytes(manifest);
+  let lastProgressTime = Date.now();
+  let manifestWriteChain = Promise.resolve();
+
+  const reportProgress = () => {
+    const activeBytes = [...activeChunkBytes.values()].reduce((sum, value) => sum + value, 0);
+    const downloadedBytes = computeManifestDownloadedBytes(manifest) + activeBytes;
+    const now = Date.now();
+    const elapsed = (now - lastProgressTime) / 1000;
+    const bytesPerSecond = elapsed > 0 ? (downloadedBytes - lastProgressBytes) / elapsed : undefined;
+    if (elapsed >= 1) {
+      lastProgressBytes = downloadedBytes;
+      lastProgressTime = now;
+    }
+    options.onProgress({
+      downloadedBytes,
+      totalBytes: options.totalBytes,
+      percent: Math.min(100, (downloadedBytes / options.totalBytes) * 100),
+      resumed: options.startedWithPartial,
+      bytesPerSecond
+    });
+  };
+
+  const queueManifestSave = () => {
+    manifestWriteChain = manifestWriteChain.then(() => saveManifest(manifestPath, manifest));
+    return manifestWriteChain;
+  };
+
+  reportProgress();
+
+  let nextIndex = 0;
+  const inFlight = new Map<number, Promise<void>>();
+
+  const startChunk = (chunkIndex: number) => {
+    const task = downloadChunkWithRetries({
+      url: options.url,
+      partialPath: options.partialPath,
+      totalBytes: options.totalBytes,
+      chunkSizeBytes: options.chunkSizeBytes,
+      chunkIndex,
+      signal: poolSignal,
+      onChunkProgress: (writtenBytes) => {
+        activeChunkBytes.set(chunkIndex, writtenBytes);
+        reportProgress();
+      }
+    }).then(async () => {
+      activeChunkBytes.delete(chunkIndex);
+      if (!manifest.completedChunks.includes(chunkIndex)) {
+        manifest.completedChunks.push(chunkIndex);
+        manifest.completedChunks.sort((a, b) => a - b);
+        await queueManifestSave();
+      }
+      reportProgress();
+    }).finally(() => {
+      inFlight.delete(chunkIndex);
+    });
+    inFlight.set(chunkIndex, task);
+  };
+
+  try {
+    while (nextIndex < pending.length || inFlight.size > 0) {
+      if (options.signal.aborted) {
+        throw new DOMException("This operation was aborted", "AbortError");
+      }
+      while (nextIndex < pending.length && inFlight.size < options.concurrency) {
+        startChunk(pending[nextIndex]!);
+        nextIndex += 1;
+      }
+      if (inFlight.size === 0) {
+        break;
+      }
+      await Promise.race(inFlight.values());
+    }
+    await Promise.all(inFlight.values());
+    await manifestWriteChain;
+  } catch (error) {
+    poolAbort.abort();
+    await Promise.allSettled([...inFlight.values(), manifestWriteChain]);
+    throw error;
   }
-  await fs.promises.rename(partialPath, targetPath);
-  return targetPath;
+}
+
+interface ChunkDownloadOptions {
+  url: string;
+  partialPath: string;
+  totalBytes: number;
+  chunkSizeBytes: number;
+  chunkIndex: number;
+  signal: AbortSignal;
+  onChunkProgress: (writtenBytes: number) => void;
+}
+
+async function downloadChunkWithRetries(options: ChunkDownloadOptions): Promise<void> {
+  let attempts = 0;
+  while (attempts < MAX_SEGMENT_ATTEMPTS) {
+    try {
+      await downloadChunk(options);
+      return;
+    } catch (error) {
+      if (options.signal.aborted) {
+        throw error;
+      }
+      attempts += 1;
+      if (attempts >= MAX_SEGMENT_ATTEMPTS || !isRetryableSegmentError(error)) {
+        throw error;
+      }
+      await sleep(CHUNK_RETRY_BACKOFF_MS * attempts);
+    }
+  }
+}
+
+async function downloadChunk(options: ChunkDownloadOptions): Promise<void> {
+  const start = options.chunkIndex * options.chunkSizeBytes;
+  const end = Math.min(start + options.chunkSizeBytes, options.totalBytes) - 1;
+  const expectedBytes = end - start + 1;
+
+  const response = await fetch(options.url, {
+    headers: { range: `bytes=${start}-${end}` },
+    signal: mergeAbortSignals(options.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS))
+  });
+  if (response.status === 429 || response.status >= 500) {
+    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+  }
+  if (!response.ok || !response.body) {
+    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+  }
+
+  const contentRange = parseContentRange(response.headers.get("content-range"));
+  if (response.status !== 206) {
+    throw new Error("Parallel download requires HTTP 206 Partial Content responses.");
+  }
+  validateContentRange(contentRange, start);
+  if (contentRange && contentRange.end !== end) {
+    throw new Error(`Download response returned an unexpected byte range: ${contentRange.start}-${contentRange.end}.`);
+  }
+
+  const reader = response.body.getReader();
+  const file = await fs.promises.open(options.partialPath, "r+");
+  let written = 0;
+  let completed = false;
+
+  try {
+    while (true) {
+      const { done, value } = await readWithIdleTimeout(reader);
+      if (done) {
+        completed = true;
+        break;
+      }
+      if (value.byteLength === 0) {
+        continue;
+      }
+      await file.write(value, 0, value.byteLength, start + written);
+      written += value.byteLength;
+      options.onChunkProgress(written);
+    }
+    await file.sync();
+  } finally {
+    if (!completed) {
+      await reader.cancel().catch(() => undefined);
+    }
+    reader.releaseLock();
+    await file.close();
+  }
+
+  if (written !== expectedBytes) {
+    throw new Error(
+      `Downloaded segment size mismatch: expected ${expectedBytes} bytes, got ${written} bytes.`
+    );
+  }
+}
+
+async function probeRangeSupport(
+  url: string,
+  signal: AbortSignal,
+  knownTotalBytes?: number
+): Promise<{ supported: boolean; totalBytes?: number }> {
+  try {
+    const response = await fetch(url, {
+      headers: { range: "bytes=0-0" },
+      signal: mergeAbortSignals(signal, AbortSignal.timeout(30_000))
+    });
+    if (response.status !== 206) {
+      return { supported: false, totalBytes: knownTotalBytes };
+    }
+    const contentRange = parseContentRange(response.headers.get("content-range"));
+    if (!contentRange?.total) {
+      return { supported: false, totalBytes: knownTotalBytes };
+    }
+    return { supported: true, totalBytes: contentRange.total };
+  } catch {
+    return { supported: false, totalBytes: knownTotalBytes };
+  }
+}
+
+async function prepareSequentialFallback(partialPath: string, manifest: DownloadManifest): Promise<void> {
+  const resumeBytes = computeContiguousPrefixBytes(manifest);
+  await fs.promises.truncate(partialPath, resumeBytes);
+  await fs.promises.rm(manifestPathForPartial(partialPath), { force: true });
+}
+
+function clampConcurrency(value: number): number {
+  return Math.max(1, Math.min(MAX_CONCURRENCY, Math.floor(value)));
+}
+
+function isParallelFallbackError(error: unknown): boolean {
+  if (!(error instanceof Error) || /aborted/i.test(error.message)) {
+    return false;
+  }
+  return /Parallel download requires HTTP 206|Download failed: 429|Download failed: 5/i.test(error.message) ||
+    /terminated|ECONNRESET|ETIMEDOUT|EPIPE|socket|network/i.test(error.message);
 }
 
 interface DownloadSegmentOptions {
@@ -277,7 +646,7 @@ function isRetryableSegmentError(error: unknown): boolean {
     (error instanceof Error && (
       error.name === "AbortError" ||
       error.name === "TimeoutError" ||
-      /Downloaded segment size mismatch|unexpected byte range|valid Content-Range/i.test(error.message) ||
+      /Downloaded segment size mismatch|unexpected byte range|valid Content-Range|429|5\d\d/i.test(error.message) ||
       /terminated|ECONNRESET|ETIMEDOUT|EPIPE|socket|network/i.test(error.message)
     ));
 }
@@ -368,4 +737,8 @@ function mergeAbortSignals(userSignal: AbortSignal, timeoutSignal: AbortSignal):
 function formatBytesPerSecond(bytesPerSecond: number): string {
   const mib = bytesPerSecond / 1024 / 1024;
   return `${mib.toFixed(2)} MiB/s`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
