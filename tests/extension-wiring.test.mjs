@@ -118,6 +118,29 @@ test("setup first screen is a single on/off switch before one advanced disclosur
   assert.match(panelSource, /command: 'copyCursorValue', key: 'setupBlock'/);
 });
 
+test("setup surface shows downloaded model storage before advanced controls", async () => {
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
+
+  assert.match(protocolSource, /downloadedModels: DownloadedModelEntry\[\]/);
+  assert.match(protocolSource, /downloadedModelsSizeBytes: number/);
+  assert.match(protocolSource, /deleteDownloadedModel/);
+  assert.match(controllerSource, /listDownloadedModels/);
+  assert.match(controllerSource, /deleteDownloadedModel\(this\.modelsRoot\(\), id\)/);
+  assert.match(panelHostSource, /case "deleteDownloadedModel"/);
+
+  const storageIndex = panelSource.indexOf('id="storageSummary"');
+  const advancedIndex = panelSource.indexOf("<summary>Advanced</summary>");
+  assert.notEqual(storageIndex, -1);
+  assert.notEqual(advancedIndex, -1);
+  assert.equal(storageIndex < advancedIndex, true);
+  assert.match(panelSource, /id="manageStorage"/);
+  assert.match(panelSource, /id="storageList"/);
+  assert.match(panelSource, /command: 'deleteDownloadedModel'/);
+});
+
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");

@@ -6,6 +6,7 @@ import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { meetsAutomagicalQualityFloor, selectBestCompatibleQuantization } from "../models/compatibility";
 import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
+import { deleteDownloadedModel, listDownloadedModels } from "../models/downloadedModels";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
 import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
@@ -22,6 +23,7 @@ import type {
   QuantizationsResponse,
   RuntimeResponse,
   SearchResultsResponse,
+  SetupStoragePayload,
   SetupStateResponse
 } from "../setupProtocol";
 import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
@@ -61,6 +63,7 @@ export class LocalMotionController {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
+    const storage = await this.storagePayload();
 
     return {
       type: "state",
@@ -76,6 +79,7 @@ export class LocalMotionController {
         appleSilicon: machine.isAppleSilicon
       },
       installed: this.state.installedModel(),
+      ...storage,
       runtime,
       cursorSetupViewModel: cursorSetup.viewModel,
       cursorSetupFreshness: cursorSetup.freshness
@@ -116,6 +120,7 @@ export class LocalMotionController {
       type: "installed",
       installed,
       runtime,
+      ...await this.storagePayload(),
       cursorSetupViewModel: cursorSetup.viewModel,
       cursorSetupFreshness: cursorSetup.freshness,
       cursor
@@ -152,7 +157,7 @@ export class LocalMotionController {
 
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
-    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
+    return { type: "runtime", runtime, ...await this.storagePayload(), cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
@@ -163,6 +168,7 @@ export class LocalMotionController {
       type: "automagicalSetupComplete",
       installed: this.state.installedModel(),
       runtime,
+      ...await this.storagePayload(),
       cursorSetupViewModel: cursorSetup.cursorSetupViewModel,
       cursorSetupFreshness: cursorSetup.cursorSetupFreshness,
       cursor
@@ -174,7 +180,36 @@ export class LocalMotionController {
     this.provider.refresh();
     const runtime = this.runtime.status();
     const cursorSetup = this.cursorSetupPayload(runtime);
-    return { type: "runtime", runtime, cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
+    return { type: "runtime", runtime, ...await this.storagePayload(), cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
+  }
+
+  async deleteDownloadedModel(id: string): Promise<SetupStateResponse | undefined> {
+    const downloaded = await this.downloadedModels();
+    const model = downloaded.models.find((candidate) => candidate.id === id);
+    if (!model) {
+      throw new Error("Downloaded model was not found.");
+    }
+
+    const answer = await vscode.window.showWarningMessage(
+      `Delete ${model.fileName} and free ${formatBytes(model.sizeBytes)}?`,
+      { modal: true },
+      "Delete"
+    );
+    if (answer !== "Delete") {
+      return undefined;
+    }
+
+    if (model.active) {
+      await this.runtime.stop();
+    }
+
+    const deletedPath = await deleteDownloadedModel(this.modelsRoot(), id);
+    const clearedInstalled = await this.state.clearInstalledModelIfPath(deletedPath);
+    if (clearedInstalled) {
+      await this.state.clearAutomagicalSetupCompletionIfModel(clearedInstalled.modelId);
+    }
+    this.provider.refresh();
+    return this.initialState();
   }
 
   async prepareCursor(): Promise<CursorSetupPreparedResponse> {
@@ -239,7 +274,6 @@ export class LocalMotionController {
     candidate: CandidateQuantization,
     onProgress: (progress: DownloadProgress) => void
   ): Promise<string> {
-    const modelsRoot = path.join(this.context.globalStorageUri.fsPath, "models");
     return vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -252,7 +286,7 @@ export class LocalMotionController {
         let lastPercent = 0;
         return downloadGguf(
           candidate,
-          modelsRoot,
+          this.modelsRoot(),
           (downloadProgress) => {
             const percent = downloadProgress.percent ?? 0;
             progress.report({
@@ -367,6 +401,25 @@ export class LocalMotionController {
     return {
       viewModel: payload.cursorSetupViewModel,
       freshness: payload.cursorSetupFreshness
+    };
+  }
+
+  private modelsRoot(): string {
+    return path.join(this.context.globalStorageUri.fsPath, "models");
+  }
+
+  private async downloadedModels(): ReturnType<typeof listDownloadedModels> {
+    return listDownloadedModels(this.modelsRoot(), {
+      installed: this.state.installedModel(),
+      active: this.runtime.activeSession()
+    });
+  }
+
+  private async storagePayload(): Promise<SetupStoragePayload> {
+    const downloaded = await this.downloadedModels();
+    return {
+      downloadedModels: downloaded.models,
+      downloadedModelsSizeBytes: downloaded.totalSizeBytes
     };
   }
 }

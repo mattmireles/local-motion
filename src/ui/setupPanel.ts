@@ -166,6 +166,17 @@ class SetupWebviewSession {
         case "stop":
           await this.post(await this.controller.stop());
           break;
+        case "deleteDownloadedModel":
+          if (!message.id) {
+            throw new Error("No downloaded model was selected.");
+          }
+          {
+            const payload = await this.controller.deleteDownloadedModel(message.id);
+            if (payload) {
+              await this.post(payload);
+            }
+          }
+          break;
         case "prepareCursor":
           await this.post(await this.controller.prepareCursor());
           break;

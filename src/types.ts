@@ -53,6 +53,17 @@ export interface InstalledModel {
   contextTokens: number;
 }
 
+export interface DownloadedModelEntry {
+  id: string;
+  fileName: string;
+  displayName: string;
+  modelPath: string;
+  sizeBytes: number;
+  partial: boolean;
+  active: boolean;
+  installed: boolean;
+}
+
 export interface RuntimeSession {
   repoId: string;
   fileName: string;

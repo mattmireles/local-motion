@@ -18,6 +18,15 @@ export class LocalMotionState {
     await this.context.globalState.update(INSTALLED_MODEL_KEY, model);
   }
 
+  async clearInstalledModelIfPath(modelPath: string): Promise<InstalledModel | undefined> {
+    const installed = this.installedModel();
+    if (installed?.modelPath !== modelPath) {
+      return undefined;
+    }
+    await this.context.globalState.update(INSTALLED_MODEL_KEY, undefined);
+    return installed;
+  }
+
   lastCopiedCursorSetup(): LastCopiedCursorSetup | undefined {
     const setup = this.context.globalState.get<unknown>(LAST_COPIED_CURSOR_SETUP_KEY);
     return isLastCopiedCursorSetup(setup) ? setup : undefined;
@@ -42,5 +51,12 @@ export class LocalMotionState {
 
   async markAutomagicalSetupCompleted(completion: AutomagicalSetupCompletion): Promise<void> {
     await this.context.globalState.update(AUTOMAGICAL_SETUP_COMPLETED_KEY, completion);
+  }
+
+  async clearAutomagicalSetupCompletionIfModel(modelId: string): Promise<void> {
+    if (this.automagicalSetupCompletion()?.modelId !== modelId) {
+      return;
+    }
+    await this.context.globalState.update(AUTOMAGICAL_SETUP_COMPLETED_KEY, undefined);
   }
 }

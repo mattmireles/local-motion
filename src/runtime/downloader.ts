@@ -1,18 +1,23 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { pipeline } from "node:stream/promises";
 import type { GgufFile } from "../types";
 import { parseContentLengthHeader } from "./runtimeGuards";
 import { safeId } from "../util/format";
 
 const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+const SLOW_CHECK_INTERVAL_MS = 15_000;
+const READ_IDLE_TIMEOUT_MS = 30_000;
+const SLOW_GRACE_BYTES = 8 * 1024 * 1024;
+const MIN_BYTES_PER_SECOND = 2 * 1024 * 1024;
+const MAX_SEGMENT_ATTEMPTS = 4;
 
 export interface DownloadProgress {
   downloadedBytes: number;
   totalBytes?: number;
   percent?: number;
   resumed: boolean;
+  bytesPerSecond?: number;
 }
 
 export async function downloadGguf(
@@ -31,66 +36,273 @@ export async function downloadGguf(
     return targetPath;
   }
 
-  const existingBytes = (await statSize(partialPath)) ?? 0;
-  const headers: Record<string, string> = {};
-  if (existingBytes > 0) {
-    headers.range = `bytes=${existingBytes}-`;
+  const initialBytes = (await statSize(partialPath)) ?? 0;
+  if (file.sizeBytes !== undefined && initialBytes > file.sizeBytes) {
+    await fs.promises.rm(partialPath, { force: true });
   }
 
-  const response = await fetch(file.downloadUrl, {
+  let downloadedBytes = await statSize(partialPath) ?? 0;
+  let totalBytes = file.sizeBytes;
+  let segmentFailures = 0;
+  let retrySlowStreams = true;
+  const startedWithPartial = downloadedBytes > 0;
+
+  while (totalBytes === undefined || downloadedBytes < totalBytes) {
+    const segmentStart = downloadedBytes;
+
+    try {
+      const result = await downloadSegment({
+        url: file.downloadUrl,
+        partialPath,
+        start: segmentStart,
+        knownTotalBytes: totalBytes,
+        retrySlowStreams,
+        signal,
+        onProgress: (progress) => {
+          downloadedBytes = progress.downloadedBytes;
+          totalBytes = progress.totalBytes;
+          onProgress({
+            ...progress,
+            resumed: startedWithPartial || progress.resumed
+          });
+        }
+      });
+      downloadedBytes = result.downloadedBytes;
+      totalBytes = result.totalBytes;
+      if (result.complete && totalBytes === undefined) {
+        break;
+      }
+      segmentFailures = 0;
+    } catch (error) {
+      if (signal.aborted || !isRetryableSegmentError(error) || segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
+        if (error instanceof SlowDownloadError && segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
+          retrySlowStreams = false;
+          segmentFailures = 0;
+          continue;
+        }
+        throw error;
+      }
+      segmentFailures += 1;
+    }
+  }
+
+  if (totalBytes !== undefined) {
+    const stat = await fs.promises.stat(partialPath);
+    if (stat.size !== totalBytes) {
+      throw new Error(`Downloaded size mismatch: expected ${totalBytes} bytes, got ${stat.size} bytes.`);
+    }
+  }
+  if (file.sha256) {
+    await assertSha256(partialPath, file.sha256);
+  }
+  await fs.promises.rename(partialPath, targetPath);
+  return targetPath;
+}
+
+interface DownloadSegmentOptions {
+  url: string;
+  partialPath: string;
+  start: number;
+  knownTotalBytes?: number;
+  retrySlowStreams: boolean;
+  signal: AbortSignal;
+  onProgress: (progress: DownloadProgress) => void;
+}
+
+interface DownloadSegmentResult {
+  downloadedBytes: number;
+  totalBytes?: number;
+  complete: boolean;
+}
+
+class SlowDownloadError extends Error {
+  constructor(bytesPerSecond: number) {
+    super(`Download stream too slow: ${formatBytesPerSecond(bytesPerSecond)}. Retrying with a fresh connection.`);
+  }
+}
+
+class IdleDownloadError extends Error {
+  constructor() {
+    super("Download stream stopped sending bytes. Retrying with a fresh connection.");
+  }
+}
+
+async function downloadSegment(options: DownloadSegmentOptions): Promise<DownloadSegmentResult> {
+  await ensureFile(options.partialPath);
+  await fs.promises.truncate(options.partialPath, options.start);
+  const headers: Record<string, string> = {};
+  if (options.start > 0) {
+    headers.range = `bytes=${options.start}-`;
+  }
+
+  const response = await fetch(options.url, {
     headers,
-    signal: mergeAbortSignals(signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS))
+    signal: mergeAbortSignals(options.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS))
   });
   if (!response.ok && response.status !== 206) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }
-  if (existingBytes > 0 && response.status !== 206) {
-    await fs.promises.rm(partialPath, { force: true });
+  if (!response.body) {
+    throw new Error("Download response did not include a body.");
   }
 
-  const resumed = existingBytes > 0 && response.status === 206;
   const contentLength = parseContentLengthHeader(response.headers.get("content-length"));
-  const totalBytes =
-    file.sizeBytes ?? (contentLength !== undefined ? contentLength + (resumed ? existingBytes : 0) : undefined);
-  let downloadedBytes = resumed ? existingBytes : 0;
+  const contentRange = parseContentRange(response.headers.get("content-range"));
+  if (response.status === 206) {
+    validateContentRange(contentRange, options.start);
+  }
+  const responseStart = response.status === 206 ? options.start : 0;
+  if (responseStart !== options.start) {
+    await fs.promises.truncate(options.partialPath, responseStart);
+  }
+  const totalBytes = options.knownTotalBytes ?? inferTotalBytes({
+    contentLength,
+    start: responseStart,
+    contentRange
+  });
+  let downloadedBytes = responseStart;
+  let lastCheckBytes = responseStart;
+  let lastCheckTime = Date.now();
+  const reader = response.body.getReader();
+  const file = await fs.promises.open(options.partialPath, "r+");
+  let completed = false;
 
-  const writeStream = fs.createWriteStream(partialPath, { flags: resumed ? "a" : "w" });
-  const progressStream = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      downloadedBytes += chunk.byteLength;
-      onProgress({
+  try {
+    while (true) {
+      const { done, value } = await readWithIdleTimeout(reader);
+      if (done) {
+        completed = true;
+        break;
+      }
+      if (value.byteLength === 0) {
+        continue;
+      }
+
+      await file.write(value, 0, value.byteLength, downloadedBytes);
+      downloadedBytes += value.byteLength;
+      const now = Date.now();
+      const intervalMs = now - lastCheckTime;
+      const intervalBytes = downloadedBytes - lastCheckBytes;
+      const bytesPerSecond = intervalMs > 0 ? intervalBytes / (intervalMs / 1000) : undefined;
+
+      options.onProgress({
         downloadedBytes,
         totalBytes,
         percent: totalBytes ? Math.min(100, (downloadedBytes / totalBytes) * 100) : undefined,
-        resumed
+        resumed: responseStart > 0,
+        bytesPerSecond
       });
-      controller.enqueue(chunk);
-    }
-  });
 
-  try {
-    if (!response.body) {
-      throw new Error("Download response did not include a body.");
-    }
-    await pipeline(response.body.pipeThrough(progressStream), writeStream);
-    if (totalBytes !== undefined) {
-      const stat = await fs.promises.stat(partialPath);
-      if (stat.size !== totalBytes) {
-        throw new Error(`Downloaded size mismatch: expected ${totalBytes} bytes, got ${stat.size} bytes.`);
+      if (intervalMs >= SLOW_CHECK_INTERVAL_MS) {
+        if (
+          options.retrySlowStreams &&
+          downloadedBytes >= SLOW_GRACE_BYTES &&
+          intervalBytes / (intervalMs / 1000) < MIN_BYTES_PER_SECOND
+        ) {
+          throw new SlowDownloadError(intervalBytes / (intervalMs / 1000));
+        }
+        lastCheckBytes = downloadedBytes;
+        lastCheckTime = now;
       }
     }
-    if (file.sha256) {
-      await assertSha256(partialPath, file.sha256);
+  } finally {
+    if (!completed) {
+      await reader.cancel().catch(() => undefined);
     }
-    await fs.promises.rename(partialPath, targetPath);
-    return targetPath;
-  } catch (error) {
-    writeStream.destroy();
-    if (signal.aborted) {
-      await fs.promises.rm(partialPath, { force: true });
-    }
-    throw error;
+    await file.close();
+    reader.releaseLock();
   }
+
+  const expectedSegmentBytes = contentLength ?? (
+    contentRange === undefined ? undefined : contentRange.end - contentRange.start + 1
+  );
+  if (expectedSegmentBytes !== undefined && downloadedBytes - responseStart !== expectedSegmentBytes) {
+    throw new Error(
+      `Downloaded segment size mismatch: expected ${expectedSegmentBytes} bytes, got ${downloadedBytes - responseStart} bytes.`
+    );
+  }
+  return {
+    downloadedBytes,
+    totalBytes,
+    complete: totalBytes === undefined || downloadedBytes >= totalBytes
+  };
+}
+
+function inferTotalBytes(input: {
+  contentLength?: number;
+  start: number;
+  contentRange: ContentRange | undefined;
+}): number | undefined {
+  if (input.contentRange?.total !== undefined) {
+    return input.contentRange.total;
+  }
+  if (input.contentLength === undefined) {
+    return undefined;
+  }
+  return input.start + input.contentLength;
+}
+
+interface ContentRange {
+  start: number;
+  end: number;
+  total?: number;
+}
+
+function parseContentRange(value: string | null): ContentRange | undefined {
+  const match = value?.match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i);
+  if (!match) {
+    return undefined;
+  }
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const total = match[3] === "*" ? undefined : Number(match[3]);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || (total !== undefined && !Number.isFinite(total))) {
+    return undefined;
+  }
+  return { start, end, total };
+}
+
+function validateContentRange(range: ContentRange | undefined, start: number): void {
+  if (!range) {
+    throw new Error("Download response did not include a valid Content-Range header.");
+  }
+  if (range.start !== start || range.end < range.start) {
+    throw new Error(`Download response returned an unexpected byte range: ${range.start}-${range.end}.`);
+  }
+}
+
+function isRetryableSegmentError(error: unknown): boolean {
+  return error instanceof SlowDownloadError ||
+    error instanceof IdleDownloadError ||
+    (error instanceof Error && (
+      error.name === "AbortError" ||
+      error.name === "TimeoutError" ||
+      /Downloaded segment size mismatch|unexpected byte range|valid Content-Range/i.test(error.message) ||
+      /terminated|ECONNRESET|ETIMEDOUT|EPIPE|socket|network/i.test(error.message)
+    ));
+}
+
+async function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+        timeout = setTimeout(() => reject(new IdleDownloadError()), READ_IDLE_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+async function ensureFile(targetPath: string): Promise<void> {
+  const file = await fs.promises.open(targetPath, "a");
+  await file.close();
 }
 
 async function exists(targetPath: string): Promise<boolean> {
@@ -151,4 +363,9 @@ function mergeAbortSignals(userSignal: AbortSignal, timeoutSignal: AbortSignal):
   userSignal.addEventListener("abort", abort, { once: true });
   timeoutSignal.addEventListener("abort", abort, { once: true });
   return controller.signal;
+}
+
+function formatBytesPerSecond(bytesPerSecond: number): string {
+  const mib = bytesPerSecond / 1024 / 1024;
+  return `${mib.toFixed(2)} MiB/s`;
 }

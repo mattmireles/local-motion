@@ -170,10 +170,73 @@ export function setupPanelHtml(nonce: string): string {
       font-size: 12px;
     }
     .btn.link:hover { text-decoration: underline; }
+    .btn.danger {
+      min-height: 28px;
+      padding: 0 10px;
+      background: transparent;
+      color: var(--bad);
+      border: 1px solid color-mix(in srgb, var(--bad) 42%, transparent);
+    }
+    .btn.danger:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--bad) 10%, transparent);
+    }
 
     /* One quiet metadata line under the ON state. */
     .meta-line {
       margin-top: 16px;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .storage-summary {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .storage-summary.hidden { display: none; }
+    .storage-panel {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--panel);
+    }
+    .storage-panel.hidden { display: none; }
+    .storage-panel h2 {
+      font-size: 12px;
+      margin: 0 0 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+    .storage-list {
+      display: grid;
+      gap: 8px;
+    }
+    .storage-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+    .storage-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+    .storage-name {
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .storage-meta {
+      margin-top: 4px;
       color: var(--faint);
       font-size: 12px;
       line-height: 1.4;
@@ -425,6 +488,16 @@ export function setupPanelHtml(nonce: string): string {
 
     <p id="metaLine" class="meta-line" style="display:none"></p>
 
+    <div id="storageSummary" class="storage-summary hidden">
+      <span id="storageText"></span>
+      <button id="manageStorage" class="btn link">Manage</button>
+    </div>
+
+    <section id="storagePanel" class="storage-panel hidden">
+      <h2>Downloaded Models</h2>
+      <div id="storageList" class="storage-list"></div>
+    </section>
+
     <details class="advanced">
       <summary>Advanced</summary>
       <div class="advanced-body">
@@ -463,6 +536,9 @@ export function setupPanelHtml(nonce: string): string {
       installed: undefined,
       runtime: undefined,
       machine: undefined,
+      downloadedModels: [],
+      downloadedModelsSizeBytes: 0,
+      storageOpen: false,
       cursorSetupViewModel: undefined,
       cursorSetupFreshness: undefined,
       verification: undefined,
@@ -491,6 +567,11 @@ export function setupPanelHtml(nonce: string): string {
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
       metaLine: document.getElementById('metaLine'),
+      storageSummary: document.getElementById('storageSummary'),
+      storageText: document.getElementById('storageText'),
+      manageStorage: document.getElementById('manageStorage'),
+      storagePanel: document.getElementById('storagePanel'),
+      storageList: document.getElementById('storageList'),
       repo: document.getElementById('repo'),
       load: document.getElementById('load'),
       search: document.getElementById('search'),
@@ -522,6 +603,10 @@ export function setupPanelHtml(nonce: string): string {
     els.connectedFallback.addEventListener('click', () => {
       vscode.postMessage({ command: 'prepareCursor' });
     });
+    els.manageStorage.addEventListener('click', () => {
+      state.storageOpen = !state.storageOpen;
+      renderStorage();
+    });
 
     els.load.addEventListener('click', () => {
       vscode.postMessage({ command: 'quantizations', repoId: els.repo.value });
@@ -540,6 +625,7 @@ export function setupPanelHtml(nonce: string): string {
         state.installed = message.installed;
         state.runtime = message.runtime;
         state.machine = message.machine;
+        updateDownloadedStorage(message);
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -553,13 +639,19 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === 'installProgress') {
         state.errorMessage = '';
         const percent = message.progress && message.progress.percent;
+        const bytes = message.progress
+          ? formatBytes(message.progress.downloadedBytes) + ' / ' + formatBytes(message.progress.totalBytes)
+          : '';
+        const rate = message.progress && typeof message.progress.bytesPerSecond === 'number' && isFinite(message.progress.bytesPerSecond)
+          ? ' at ' + formatRate(message.progress.bytesPerSecond)
+          : '';
         if (typeof percent === 'number' && isFinite(percent)) {
           state.progressPercent = Math.round(percent);
-          state.progressMessage = 'Downloading ' + state.progressPercent + '%';
+          state.progressMessage = 'Downloading ' + state.progressPercent + '% · ' + bytes + rate;
         } else {
           // Unknown total size: stay indeterminate rather than show a stuck 0%.
           state.progressPercent = undefined;
-          state.progressMessage = 'Downloading…';
+          state.progressMessage = 'Downloading…' + (bytes ? ' ' + bytes : '') + rate;
         }
         render();
         setStatus(state.progressMessage);
@@ -576,6 +668,7 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === 'installed') {
         state.installed = message.installed;
         state.runtime = message.runtime;
+        updateDownloadedStorage(message);
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -593,6 +686,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === 'runtime') {
         state.runtime = message.runtime;
+        updateDownloadedStorage(message);
         state.errorMessage = '';
         state.progressMessage = '';
         state.progressPercent = undefined;
@@ -609,6 +703,7 @@ export function setupPanelHtml(nonce: string): string {
         state.progressPercent = undefined;
         state.installed = message.installed;
         state.runtime = message.runtime;
+        updateDownloadedStorage(message);
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
@@ -662,6 +757,7 @@ export function setupPanelHtml(nonce: string): string {
       // The honest connected signal: a real inbound request has hit the proxy.
       const inUse = Boolean(runtime.clientObserved);
       const phase = (errored && !running) ? 'error' : busy ? 'starting' : running ? 'on' : 'off';
+      renderStorage();
 
       // Brand status dot: off / busy / on.
       els.brandDot.className = 'dot ' + (running ? 'on' : busy ? 'busy' : 'off');
@@ -839,6 +935,56 @@ export function setupPanelHtml(nonce: string): string {
       ].map(([label, value]) => '<div class="metric"><span>' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>').join('');
     }
 
+    function updateDownloadedStorage(message) {
+      if (!Array.isArray(message.downloadedModels)) return;
+      state.downloadedModels = message.downloadedModels;
+      state.downloadedModelsSizeBytes = message.downloadedModelsSizeBytes || 0;
+    }
+
+    function renderStorage() {
+      const models = state.downloadedModels || [];
+      if (!models.length) {
+        state.storageOpen = false;
+        els.storageSummary.classList.add('hidden');
+        els.storagePanel.classList.add('hidden');
+        els.storageList.innerHTML = '';
+        return;
+      }
+
+      els.storageSummary.classList.remove('hidden');
+      els.storageText.textContent = formatBytes(state.downloadedModelsSizeBytes) + ' downloaded in ' + models.length + ' model' + (models.length === 1 ? '' : 's');
+      els.manageStorage.textContent = state.storageOpen ? 'Hide' : 'Manage';
+
+      if (!state.storageOpen) {
+        els.storagePanel.classList.add('hidden');
+        return;
+      }
+
+      els.storagePanel.classList.remove('hidden');
+      els.storageList.innerHTML = models.map((model, index) => {
+        const labels = [
+          model.active ? 'Running' : '',
+          !model.active && model.installed ? 'Installed' : '',
+          model.partial ? 'Partial' : ''
+        ].filter(Boolean).join(' · ');
+        return '<div class="storage-item">' +
+          '<div>' +
+            '<div class="storage-name">' + esc(model.fileName) + '</div>' +
+            '<div class="storage-meta">' + esc(formatBytes(model.sizeBytes)) + (labels ? ' · ' + esc(labels) : '') + '</div>' +
+          '</div>' +
+          '<button class="btn danger" data-index="' + index + '">Delete</button>' +
+        '</div>';
+      }).join('');
+
+      for (const button of els.storageList.querySelectorAll('button[data-index]')) {
+        button.addEventListener('click', () => {
+          const model = models[Number(button.dataset.index)];
+          if (!model) return;
+          vscode.postMessage({ command: 'deleteDownloadedModel', id: model.id });
+        });
+      }
+    }
+
     function renderSearchResults(results) {
       els.searchResults.innerHTML = results.map(result =>
         '<button class="item" data-repo="' + esc(result.repoId) + '"><strong>' + esc(result.repoId) + '</strong><span class="meta">' +
@@ -910,6 +1056,10 @@ export function setupPanelHtml(nonce: string): string {
         unit++;
       }
       return value.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
+    }
+
+    function formatRate(bytesPerSecond) {
+      return formatBytes(bytesPerSecond) + '/s';
     }
 
     function esc(value) {

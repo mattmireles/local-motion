@@ -1,6 +1,6 @@
 import type { CursorSetupFreshness, CursorSetupValueKey, CursorSetupViewModel } from "./cursor/cursorIntegration";
 import type { DownloadProgress } from "./runtime/downloader";
-import type { CandidateQuantization, InstalledModel, ModelSearchResult, RuntimeStatus } from "./types";
+import type { CandidateQuantization, DownloadedModelEntry, InstalledModel, ModelSearchResult, RuntimeStatus } from "./types";
 
 export type SetupRequest =
   | { command: "ready" }
@@ -9,6 +9,7 @@ export type SetupRequest =
   | { command: "installRun"; candidate?: CandidateQuantization }
   | { command: "automagicalSetup" }
   | { command: "stop" }
+  | { command: "deleteDownloadedModel"; id?: string }
   | { command: "prepareCursor" }
   | { command: "copyCursorValue"; key?: CursorSetupValueKey };
 
@@ -45,6 +46,11 @@ export interface CursorSetupPayload {
   cursorSetupFreshness: CursorSetupFreshness;
 }
 
+export interface SetupStoragePayload {
+  downloadedModels: DownloadedModelEntry[];
+  downloadedModelsSizeBytes: number;
+}
+
 export interface SetupMachineView {
   cpu: string;
   arch: string;
@@ -56,7 +62,7 @@ export interface SetupMachineView {
   appleSilicon: boolean;
 }
 
-export interface SetupStateResponse extends CursorSetupPayload {
+export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "state";
   defaultRepo: string;
   machine: SetupMachineView;
@@ -75,19 +81,19 @@ export interface QuantizationsResponse {
   quantizations: CandidateQuantization[];
 }
 
-export interface InstalledResponse extends CursorSetupPayload {
+export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "installed";
   installed: InstalledModel;
   runtime: RuntimeStatus;
   cursor?: CursorSetupPreparedResponse;
 }
 
-export interface RuntimeResponse extends CursorSetupPayload {
+export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "runtime";
   runtime: RuntimeStatus;
 }
 
-export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload {
+export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, SetupStoragePayload {
   type: "automagicalSetupComplete";
   installed?: InstalledModel;
   runtime: RuntimeStatus;
