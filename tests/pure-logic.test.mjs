@@ -66,7 +66,7 @@ test("extracts parameter count from model text", () => {
   assert.equal(parameterCountFromText("no-size-here"), undefined);
 });
 
-test("uses available memory for compatibility budget", () => {
+test("uses stable model budget for compatibility selection", () => {
   assert.equal(
     effectiveMemoryBudget({
       platform: "darwin",
@@ -80,7 +80,7 @@ test("uses available memory for compatibility budget", () => {
       storageRoot: "/tmp",
       availableDiskBytes: 100 * 1024 ** 3
     }),
-    8 * 1024 ** 3
+    24 * 1024 ** 3
   );
 });
 

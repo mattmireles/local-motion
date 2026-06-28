@@ -215,8 +215,10 @@ class SetupWebviewSession {
   private async installRun(candidate: CandidateQuantization): Promise<void> {
     this.setupOperationActive = true;
     try {
-      const payload = await this.controller.installRun(candidate, (progress) => {
-        void this.post({ type: "installProgress", progress });
+      const payload = await this.controller.installRun(candidate, (progress, modelName) => {
+        void this.post({ type: "installProgress", progress, modelName });
+      }, (modelName, requiredMemory, availableMemory) => {
+        void this.post({ type: "installModelSelected", modelName, requiredMemory, availableMemory });
       });
       if (payload) {
         await this.post(payload);
@@ -233,8 +235,10 @@ class SetupWebviewSession {
     try {
       await this.waitUntilReady();
       await this.post({ type: "automagicalSetupStarted" });
-      const payload = await this.controller.automagicalSetup((progress) => {
-        void this.post({ type: "installProgress", progress });
+      const payload = await this.controller.automagicalSetup((progress, modelName) => {
+        void this.post({ type: "installProgress", progress, modelName });
+      }, (modelName, requiredMemory, availableMemory) => {
+        void this.post({ type: "installModelSelected", modelName, requiredMemory, availableMemory });
       });
       if (payload) {
         await this.post(payload);

@@ -113,6 +113,7 @@ export type SetupResponse =
   | AutomagicalSetupCompleteResponse
   | CursorSetupPreparedResponse
   | CursorCopyResult
-  | { type: "installProgress"; progress: DownloadProgress }
+  | { type: "installProgress"; progress: DownloadProgress; modelName?: string }
+  | { type: "installModelSelected"; modelName: string; requiredMemory: string; availableMemory: string }
   | { type: "automagicalSetupStarted" }
   | { type: "error"; message: string };

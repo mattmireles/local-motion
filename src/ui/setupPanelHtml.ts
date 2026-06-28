@@ -488,6 +488,7 @@ export function setupPanelHtml(nonce: string): string {
       copyResults: {},
       automagicalSetupRunning: false,
       setupOperationRunning: false,
+      selectedModelName: '',
       progressMessage: '',
       progressPercent: undefined,
       errorMessage: ''
@@ -585,6 +586,7 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === 'installProgress') {
         state.setupOperationRunning = true;
         state.errorMessage = '';
+        if (message.modelName) state.selectedModelName = message.modelName;
         const percent = message.progress && message.progress.percent;
         const bytes = message.progress
           ? formatBytes(message.progress.downloadedBytes) + ' / ' + formatBytes(message.progress.totalBytes)
@@ -594,12 +596,18 @@ export function setupPanelHtml(nonce: string): string {
           : '';
         if (typeof percent === 'number' && isFinite(percent)) {
           state.progressPercent = Math.round(percent);
-          state.progressMessage = 'Downloading ' + state.progressPercent + '% · ' + bytes + rate;
+          state.progressMessage = 'Downloading ' + modelProgressName() + ' · ' + state.progressPercent + '% · ' + bytes + rate;
         } else {
           // Unknown total size: stay indeterminate rather than show a stuck 0%.
           state.progressPercent = undefined;
-          state.progressMessage = 'Downloading…' + (bytes ? ' ' + bytes : '') + rate;
+          state.progressMessage = 'Downloading ' + modelProgressName() + '…' + (bytes ? ' ' + bytes : '') + rate;
         }
+        render();
+        setStatus(state.progressMessage);
+      }
+      if (message.type === 'installModelSelected') {
+        state.selectedModelName = message.modelName;
+        state.progressMessage = 'Selected ' + message.modelName + '. Needs about ' + message.requiredMemory + ' runtime memory; ' + message.availableMemory + ' available now.';
         render();
         setStatus(state.progressMessage);
       }
@@ -608,7 +616,8 @@ export function setupPanelHtml(nonce: string): string {
         state.setupOperationRunning = true;
         state.errorMessage = '';
         state.progressPercent = undefined;
-        state.progressMessage = 'Choosing a model that fits this Mac…';
+        state.selectedModelName = '';
+        state.progressMessage = 'Choosing the recommended model for this Mac…';
         els.install.disabled = true;
         render();
         setStatus('Selecting a compatible model, starting it, and preparing Cursor.');
@@ -628,6 +637,7 @@ export function setupPanelHtml(nonce: string): string {
         state.setupOperationRunning = false;
         state.progressMessage = '';
         state.progressPercent = undefined;
+        state.selectedModelName = '';
         render();
         setStatus(message.cursor
           ? [state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' ')
@@ -639,6 +649,7 @@ export function setupPanelHtml(nonce: string): string {
         state.errorMessage = '';
         state.progressMessage = '';
         state.progressPercent = undefined;
+        state.selectedModelName = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
@@ -651,6 +662,7 @@ export function setupPanelHtml(nonce: string): string {
         state.errorMessage = '';
         state.progressMessage = '';
         state.progressPercent = undefined;
+        state.selectedModelName = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
         updateDownloadedStorage(message);
@@ -879,7 +891,7 @@ export function setupPanelHtml(nonce: string): string {
         ['CPU', machine.cpu],
         ['Architecture', machine.arch + (machine.appleSilicon ? ' Apple Silicon' : '')],
         ['Memory', machine.memory + ' total'],
-        ['Budget', machine.budget],
+        ['Model budget', machine.budget],
         ['Available RAM', machine.availableMemory],
         ['Free disk', machine.disk],
         ['Storage', machine.storageRoot]
@@ -906,10 +918,11 @@ export function setupPanelHtml(nonce: string): string {
       els.install.disabled = true;
       els.quantizations.innerHTML = items.map((item, index) => {
         const ok = item.compatibility.status === 'compatible';
+        const name = candidateDisplayName(item);
         return '<button class="item" data-index="' + index + '">' +
-          '<strong>' + esc(item.quantization) + ' ' + esc(item.fileName) + '</strong>' +
+          '<strong>' + esc(name) + '</strong>' +
           '<span class="status ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'Compatible' : 'Not compatible') + '</span>' +
-          '<span class="meta">' + esc(formatBytes(item.sizeBytes)) + ' file, ' + esc(formatBytes(item.compatibility.requiredMemoryBytes)) + ' runtime memory</span>' +
+          '<span class="meta">' + esc(item.quantization) + ' · ' + esc(formatBytes(item.sizeBytes)) + ' file · ' + esc(formatBytes(item.compatibility.requiredMemoryBytes)) + ' runtime memory</span>' +
           '<span class="meta">' + esc(item.compatibility.reasons.join(' ')) + '</span>' +
           '</button>';
       }).join('');
@@ -929,6 +942,16 @@ export function setupPanelHtml(nonce: string): string {
         return;
       }
       setStatus(items.length ? 'Compatible quantization selected. Turn on the local agent or install manually.' : 'No GGUF files found in this repository.');
+    }
+
+    function candidateDisplayName(item) {
+      const repoName = String(item.repoId || '').split('/').pop() || String(item.repoId || '');
+      const fileName = String(item.fileName || '').replace(/\\.gguf$/i, '');
+      return (repoName && fileName) ? repoName + ' ' + fileName : (fileName || repoName || String(item.quantization || 'Model'));
+    }
+
+    function modelProgressName() {
+      return state.selectedModelName || 'model';
     }
 
     function resetCursorActionStateIfEndpointChanged(nextViewModel) {

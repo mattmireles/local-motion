@@ -151,6 +151,10 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(storageSource, /state\.setupOperationRunning \? ' disabled' : ''/);
   assert.match(panelSource, /setupOperationRunning: false/);
   assert.match(panelSource, /state\.setupOperationRunning = true/);
+  assert.match(panelSource, /installModelSelected/);
+  assert.match(panelSource, /selectedModelName/);
+  assert.match(panelSource, /Downloading ' \+ modelProgressName\(\)/);
+  assert.match(panelSource, /Model budget/);
   assert.match(storageSource, /command: 'deleteDownloadedModel'/);
   assert.match(panelSource, /setupPanelStorageScript\(\)/);
 });
@@ -222,6 +226,29 @@ test("installed model state is committed before provider refresh", async () => {
   assert.notEqual(setStateIndex, -1);
   assert.notEqual(refreshIndex, -1);
   assert.equal(setStateIndex < refreshIndex, true);
+});
+
+test("model download is never gated on current free memory; only loading checks RAM", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+
+  // The pre-download memory gate is gone. A multi-GB download takes a long
+  // time and however much RAM happens to be free right now is irrelevant until
+  // the model is actually loaded — so it must not block the download.
+  assert.equal(controllerSource.includes("assertReadyToStartCandidate"), false);
+
+  // There is exactly one runtime-memory gate, and it lives on the load path.
+  const gateCalls = controllerSource.match(/this\.assertCurrentMemoryReady\(/g) ?? [];
+  assert.equal(gateCalls.length, 1);
+  assert.match(controllerSource, /assertReadyToStartInstalledModel\(installed\)/);
+
+  // In installAndStart, the download runs first; the memory gate only fires
+  // afterwards, inside startInstalledModel.
+  const installStart = controllerSource.indexOf("private async installAndStart");
+  const downloadIndex = controllerSource.indexOf("this.download(candidate", installStart);
+  const startIndex = controllerSource.indexOf("this.startInstalledModel(installed", installStart);
+  assert.notEqual(downloadIndex, -1);
+  assert.notEqual(startIndex, -1);
+  assert.equal(downloadIndex < startIndex, true);
 });
 
 test("startup resume does not prepare Cursor or expose a side-effectful controller method", async () => {

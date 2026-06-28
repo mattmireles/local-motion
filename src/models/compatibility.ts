@@ -46,7 +46,7 @@ export function classifyCompatibility(
 }
 
 export function effectiveMemoryBudget(machine: MachineProfile): number {
-  return Math.min(machine.recommendedModelMemoryBytes, machine.availableMemoryBytes);
+  return machine.recommendedModelMemoryBytes;
 }
 
 export function selectBestCompatibleQuantization(candidates: CandidateQuantization[]): CandidateQuantization | undefined {

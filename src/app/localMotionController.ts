@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
-import { meetsAutomagicalQualityFloor, selectBestCompatibleQuantization } from "../models/compatibility";
+import { classifyCompatibility, meetsAutomagicalQualityFloor, parameterCountFromText, quantizationFromFileName, selectBestCompatibleQuantization } from "../models/compatibility";
 import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
 import { deleteDownloadedModel, listDownloadedModels } from "../models/downloadedModels";
 import { listQuantizations, searchModels } from "../models/huggingFace";
@@ -99,7 +99,8 @@ export class LocalMotionController {
 
   async installRun(
     candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress) => void
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<InstalledResponse | undefined> {
     if (candidate.compatibility.status !== "compatible") {
       const answer = await vscode.window.showWarningMessage(
@@ -112,7 +113,7 @@ export class LocalMotionController {
       }
     }
 
-    const installed = await this.installAndStart(candidate, onProgress);
+    const installed = await this.installAndStart(candidate, onProgress, onModelSelected);
     const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
 
     const runtime = this.runtime.status();
@@ -129,7 +130,8 @@ export class LocalMotionController {
   }
 
   async automagicalSetup(
-    onProgress: (progress: DownloadProgress) => void
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
@@ -138,7 +140,7 @@ export class LocalMotionController {
           allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
         });
       } else {
-        await this.installAndStart(await this.automagicalCandidate(), onProgress);
+        await this.installAndStart(await this.automagicalCandidate(), onProgress, onModelSelected);
       }
     }
 
@@ -274,12 +276,13 @@ export class LocalMotionController {
 
   private async download(
     candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress) => void
+    onProgress: (progress: DownloadProgress, modelName?: string) => void
   ): Promise<string> {
+    const displayName = modelDisplayName(candidate.repoId, candidate.fileName);
     return vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Downloading ${candidate.quantization}`,
+        title: `Downloading ${displayName}`,
         cancellable: true
       },
       async (progress, token) => {
@@ -296,7 +299,7 @@ export class LocalMotionController {
               message: `${formatBytes(downloadProgress.downloadedBytes)} / ${formatBytes(downloadProgress.totalBytes)}`
             });
             lastPercent = percent;
-            onProgress(downloadProgress);
+            onProgress(downloadProgress, displayName);
           },
           controller.signal
         );
@@ -342,8 +345,22 @@ export class LocalMotionController {
 
   private async installAndStart(
     candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress) => void
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
   ): Promise<InstalledModel> {
+    const displayName = modelDisplayName(candidate.repoId, candidate.fileName);
+    // Report the memory picture for the UI, but do NOT gate the download on it.
+    // A multi-GB download takes a long time and current free RAM is irrelevant
+    // until the model is actually loaded. The real memory gate lives in
+    // startInstalledModel(), which re-checks at load time — so a tight machine
+    // still gets the (already-downloaded) model and only has to close apps and
+    // turn it on again, with no second download.
+    const machine = await profileMachine(this.context.globalStorageUri.fsPath);
+    onModelSelected(
+      displayName,
+      formatBytes(candidate.compatibility.requiredMemoryBytes),
+      formatBytes(machine.availableMemoryBytes)
+    );
     const modelPath = await this.download(candidate, onProgress);
     const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
     const installed: InstalledModel = {
@@ -353,7 +370,7 @@ export class LocalMotionController {
       sizeBytes: candidate.sizeBytes,
       modelPath,
       modelId: `local-motion-${safeId(`${candidate.repoId}-${candidate.quantization}`)}`,
-      displayName: modelDisplayName(candidate.repoId, candidate.fileName),
+      displayName,
       contextTokens
     };
 
@@ -369,6 +386,7 @@ export class LocalMotionController {
     installed: InstalledModel,
     options: { allowInstall: boolean }
   ): Promise<RuntimeSession> {
+    await this.assertReadyToStartInstalledModel(installed);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
     const session = await this.runtime.start(installed, llamaServerPath);
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
@@ -393,6 +411,29 @@ export class LocalMotionController {
     return reusable
       ? installedModel
       : undefined;
+  }
+
+  private async assertReadyToStartInstalledModel(installed: InstalledModel): Promise<void> {
+    const machine = await profileMachine(this.context.globalStorageUri.fsPath);
+    const compatibility = classifyCompatibility({
+      repoId: installed.repoId,
+      fileName: installed.fileName,
+      sizeBytes: installed.sizeBytes,
+      revision: installed.revision,
+      quantization: quantizationFromFileName(installed.fileName),
+      parameterCount: parameterCountFromText(`${installed.repoId} ${installed.fileName}`),
+      downloadUrl: ""
+    }, machine, installed.contextTokens);
+    this.assertCurrentMemoryReady(installed.displayName, compatibility.requiredMemoryBytes, machine.availableMemoryBytes);
+  }
+
+  private assertCurrentMemoryReady(modelName: string, requiredMemoryBytes: number, availableMemoryBytes: number): void {
+    if (requiredMemoryBytes <= availableMemoryBytes) {
+      return;
+    }
+    throw new Error(
+      `${modelName} needs about ${formatBytes(requiredMemoryBytes)} of memory to run, but only ${formatBytes(availableMemoryBytes)} is free right now. Close some apps and turn it on again, or choose a smaller size in Advanced.`
+    );
   }
 
   private cursorSetupPayload(runtime: ReturnType<LlamaServerManager["status"]>): {
