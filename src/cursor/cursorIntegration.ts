@@ -48,9 +48,9 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
 
   const setupBlock = [
     "Local Motion Cursor setup",
+    `Model name: ${modelId}`,
     `OpenAI API Key: ${LOCAL_MOTION_API_KEY}`,
-    `Override OpenAI Base URL: ${baseUrl}`,
-    `Add Custom Model: ${modelId}`
+    `Override OpenAI Base URL: ${baseUrl}`
   ].join("\n");
 
   return {
@@ -63,12 +63,12 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     "Open Cursor Settings.",
     "Go to Models.",
     "Click Add Custom Model.",
-    `Set Base URL to ${baseUrl}.`,
+    `Set Model name to ${modelId}.`,
     `Set API Key to ${LOCAL_MOTION_API_KEY}.`,
-    `Set the custom model name to ${modelId}.`,
-    "Select the Local Motion model from Cursor's model picker."
+    `Set Base URL to ${baseUrl}.`,
+    "Save it, then select Local Motion from Cursor's model picker."
     ],
-    statusMessage: "Cursor does not expose a stable extension API for changing its native model picker. Click Add Custom Model in Cursor Settings > Models and use these values."
+    statusMessage: "Cursor does not expose a stable extension API for changing its native model picker. Click Add Custom Model in Cursor Settings > Models and use Model name, API key, and Base URL exactly as shown."
   };
 }
 

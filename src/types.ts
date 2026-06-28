@@ -1,3 +1,5 @@
+export const LOCAL_MOTION_MODEL_ID = "Local Motion";
+
 export type CompatibilityStatus = "compatible" | "not-compatible";
 
 export interface MachineProfile {

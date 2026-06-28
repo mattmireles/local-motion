@@ -1,6 +1,6 @@
 import * as childProcess from "node:child_process";
 import * as vscode from "vscode";
-import type { InstalledModel, RuntimeSession, RuntimeStatus } from "../types";
+import { LOCAL_MOTION_MODEL_ID, type InstalledModel, type RuntimeSession, type RuntimeStatus } from "../types";
 import { waitForHealth } from "./llamaHealth";
 import { isStartStale } from "./runtimeGuards";
 import { OpenAiProxy } from "./openAiProxy";
@@ -126,7 +126,7 @@ export class LlamaServerManager {
       // the connected state can flip the moment Cursor actually hits the proxy.
       const proxy = new OpenAiProxy({
         upstreamBaseUrl,
-        modelId: model.modelId,
+        modelId: LOCAL_MOTION_MODEL_ID,
         onClientRequest: () => this.onStatusChanged()
       });
       try {
@@ -141,6 +141,7 @@ export class LlamaServerManager {
         this.proxy = proxy;
         const session: RuntimeSession = {
           ...model,
+          modelId: LOCAL_MOTION_MODEL_ID,
           port,
           baseUrl: proxyBaseUrl,
           upstreamBaseUrl

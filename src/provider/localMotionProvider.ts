@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { InstalledModel } from "../types";
+import { LOCAL_MOTION_MODEL_ID, type InstalledModel } from "../types";
 import type { OpenAiMessage } from "../runtime/openAiChat";
 import { streamChatCompletion } from "../runtime/openAiStream";
 import { LlamaServerManager } from "../runtime/llamaServer";
@@ -31,14 +31,14 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
     }
 
     const info: vscode.LanguageModelChatInformation = {
-      id: model.modelId,
-      name: model.displayName,
+      id: LOCAL_MOTION_MODEL_ID,
+      name: LOCAL_MOTION_MODEL_ID,
       family: "local-gguf",
       version: model.fileName,
       maxInputTokens: model.contextTokens,
       maxOutputTokens: 4096,
       tooltip: `${model.repoId}/${model.fileName}`,
-      detail: "Local Motion",
+      detail: model.displayName,
       capabilities: {
         toolCalling: false,
         imageInput: false

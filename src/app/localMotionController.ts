@@ -30,8 +30,8 @@ import type {
 import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
-import type { CandidateQuantization, InstalledModel, RuntimeSession } from "../types";
-import { formatBytes, modelDisplayName, safeId } from "../util/format";
+import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type InstalledModel, type RuntimeSession } from "../types";
+import { formatBytes, modelDisplayName } from "../util/format";
 
 export class LocalMotionController {
   private readonly cursorSetup: CursorSetupWorkflow;
@@ -291,7 +291,7 @@ export class LocalMotionController {
         let lastPercent = 0;
         const downloadConcurrency = vscode.workspace
           .getConfiguration("localMotion")
-          .get<number>("downloadConcurrency", 16);
+          .get<number>("downloadConcurrency", 24);
         return downloadGguf(
           candidate,
           this.modelsRoot(),
@@ -373,7 +373,7 @@ export class LocalMotionController {
       revision: candidate.revision,
       sizeBytes: candidate.sizeBytes,
       modelPath,
-      modelId: `local-motion-${safeId(`${candidate.repoId}-${candidate.quantization}`)}`,
+      modelId: LOCAL_MOTION_MODEL_ID,
       displayName,
       contextTokens
     };
@@ -390,9 +390,14 @@ export class LocalMotionController {
     installed: InstalledModel,
     options: { allowInstall: boolean }
   ): Promise<RuntimeSession> {
-    await this.assertReadyToStartInstalledModel(installed);
+    const cursorModel = { ...installed, modelId: LOCAL_MOTION_MODEL_ID };
+    await this.assertReadyToStartInstalledModel(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
-    const session = await this.runtime.start(installed, llamaServerPath);
+    const session = await this.runtime.start(cursorModel, llamaServerPath);
+    if (installed.modelId !== LOCAL_MOTION_MODEL_ID) {
+      await this.state.setInstalledModel(cursorModel);
+      this.provider.refresh();
+    }
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
     return session;
   }

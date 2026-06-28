@@ -50,6 +50,7 @@ import {
 } from "../out/runtime/openAiChat.js";
 import { OpenAiProxy } from "../out/runtime/openAiProxy.js";
 import { childFailureMessage } from "../out/runtime/llamaHealth.js";
+import { LOCAL_MOTION_MODEL_ID } from "../out/types.js";
 import { releasePortHolder, reserveLocalhostPort } from "../out/runtime/ports.js";
 import { isStartStale, parseContentLengthHeader } from "../out/runtime/runtimeGuards.js";
 import { filterForwardHeaders } from "../out/runtime/openAiProxy.js";
@@ -203,11 +204,11 @@ test("sharded GGUF part files are detected so only single-file quants are offere
 
 test("setup diagnostics distinguish ready setup from required action", () => {
   const ready = setupDiagnosticSummary({
-    installedModelId: "local-motion-test",
+    installedModelId: LOCAL_MOTION_MODEL_ID,
     installedFileValid: true,
     runtimeRunning: true,
     runtimeBaseUrl: "http://127.0.0.1:41434/v1",
-    runtimeModelId: "local-motion-test",
+    runtimeModelId: LOCAL_MOTION_MODEL_ID,
     endpointVerified: true,
     cursorSetupFreshness: "current",
     completedForInstalledModel: true
@@ -227,11 +228,11 @@ test("setup diagnostics distinguish ready setup from required action", () => {
   assert.match(missingModel.message, /Turn On Local Agent/);
 
   const stale = setupDiagnosticSummary({
-    installedModelId: "local-motion-test",
+    installedModelId: LOCAL_MOTION_MODEL_ID,
     installedFileValid: true,
     runtimeRunning: true,
     runtimeBaseUrl: "http://127.0.0.1:41434/v1",
-    runtimeModelId: "local-motion-test",
+    runtimeModelId: LOCAL_MOTION_MODEL_ID,
     endpointVerified: true,
     cursorSetupFreshness: "stale",
     completedForInstalledModel: true
@@ -329,7 +330,7 @@ test("OpenAI proxy uses the preferred Cursor port when it is available", async (
   const preferredPort = holder.port;
   await releasePortHolder(holder);
 
-  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: "local-motion-test" });
+  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: LOCAL_MOTION_MODEL_ID });
   try {
     const baseUrl = await proxy.start(preferredPort);
     assert.equal(baseUrl, `http://127.0.0.1:${preferredPort}/v1`);
@@ -344,7 +345,7 @@ test("OpenAI proxy uses the preferred Cursor port when it is available", async (
 
 test("OpenAI proxy falls back to a dynamic port when the preferred Cursor port is occupied", async () => {
   const holder = await reserveLocalhostPort();
-  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: "local-motion-test" });
+  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: LOCAL_MOTION_MODEL_ID });
   try {
     const baseUrl = await proxy.start(holder.port);
     assert.notEqual(baseUrl, `http://127.0.0.1:${holder.port}/v1`);
@@ -362,7 +363,7 @@ test("OpenAI proxy flags only the first real inbound chat request", async () => 
   let notifications = 0;
   const proxy = new OpenAiProxy({
     upstreamBaseUrl: "http://127.0.0.1:1/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     onClientRequest: () => {
       notifications += 1;
     }
@@ -422,23 +423,23 @@ test("Cursor setup view model uses the active runtime endpoint", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   assert.equal(viewModel.isRunning, true);
   assert.equal(viewModel.baseUrl, "http://127.0.0.1:50000/v1");
   assert.equal(viewModel.apiKey, LOCAL_MOTION_API_KEY);
-  assert.equal(viewModel.modelId, "local-motion-test");
+  assert.equal(viewModel.modelId, LOCAL_MOTION_MODEL_ID);
   assert.ok(viewModel.setupBlock.includes("http://127.0.0.1:50000/v1"));
-  assert.ok(viewModel.setupBlock.includes("local-motion-test"));
+  assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_MODEL_ID));
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_API_KEY));
-  assert.ok(viewModel.setupBlock.includes("Add Custom Model"));
+  assert.ok(viewModel.setupBlock.includes("Model name: Local Motion"));
   assert.ok(viewModel.statusMessage.includes("Cursor Settings > Models"));
   assert.ok(viewModel.steps.includes("Click Add Custom Model."));
   assert.ok(viewModel.steps.some((line) => line.includes("http://127.0.0.1:50000/v1")));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "http://127.0.0.1:50000/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), LOCAL_MOTION_API_KEY);
-  assert.equal(cursorSetupValue(viewModel, "modelId"), "local-motion-test");
+  assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);
   assert.equal(cursorSetupValue(viewModel, "setupBlock"), viewModel.setupBlock);
 });
 
@@ -459,7 +460,7 @@ test("Cursor setup freshness recognizes unchanged copied endpoint", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const lastCopied = lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:00.000Z");
@@ -472,7 +473,7 @@ test("Cursor setup freshness distinguishes copied values from verified setup", (
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const freshness = cursorSetupFreshness(
@@ -487,13 +488,13 @@ test("Cursor setup freshness marks changed endpoint stale", () => {
   const oldViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const currentViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50001/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const freshness = cursorSetupFreshness(
@@ -509,7 +510,7 @@ test("Cursor setup freshness marks stopped model stale after copied setup values
   const runningViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const stoppedViewModel = cursorSetupViewModel({
@@ -528,14 +529,14 @@ test("last copied Cursor setup records trigger and verification timestamp", () =
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   assert.deepEqual(
     lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z"),
     {
       baseUrl: "http://127.0.0.1:50000/v1",
-      modelId: "local-motion-test",
+      modelId: LOCAL_MOTION_MODEL_ID,
       apiKeyLabel: "local-motion",
       copiedAt: "2026-06-16T00:00:00.000Z",
       trigger: "prepareCursor",
@@ -548,7 +549,7 @@ test("automagical setup completion records the verified setup identity", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const copied = lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z");
@@ -557,7 +558,7 @@ test("automagical setup completion records the verified setup identity", () => {
     automagicalSetupCompletion(copied, "2026-06-16T00:00:02.000Z"),
     {
       baseUrl: "http://127.0.0.1:50000/v1",
-      modelId: "local-motion-test",
+      modelId: LOCAL_MOTION_MODEL_ID,
       apiKeyLabel: "local-motion",
       cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
       endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
@@ -570,7 +571,7 @@ test("automagical setup completion rejects unverified copied setup", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
 
@@ -617,10 +618,10 @@ test("Cursor setup workflow verifies, copies, opens settings, and records comple
   assert.equal(harness.requests[0].input, "http://127.0.0.1:50000/v1/models");
   assert.equal(harness.requests[0].authorization, `Bearer ${LOCAL_MOTION_API_KEY}`);
   assert.equal(harness.clipboardWrites.length, 1);
-  assert.ok(harness.clipboardWrites[0].includes("local-motion-test"));
+  assert.ok(harness.clipboardWrites[0].includes(LOCAL_MOTION_MODEL_ID));
   assert.deepEqual(harness.openedSettings, ["Cursor Models"]);
   assert.equal(harness.lastCopied?.endpointVerifiedAt, "2026-06-16T00:00:00.000Z");
-  assert.equal(harness.completion?.modelId, "local-motion-test");
+  assert.equal(harness.completion?.modelId, LOCAL_MOTION_MODEL_ID);
   assert.equal(harness.completion?.completedAt, "2026-06-16T00:00:01.000Z");
 });
 
@@ -660,13 +661,13 @@ test("resumes automagical setup only after a completed setup with an installed m
     revision: "main",
     sizeBytes: 4,
     modelPath: "/tmp/model-Q4_K_M.gguf",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     displayName: "Example",
     contextTokens: 8192
   };
   const completion = {
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     apiKeyLabel: "local-motion",
     cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
     endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
@@ -748,7 +749,7 @@ test("setup panel does not load default quantizations before advanced controls a
 test("state validators reject stale persisted setup shapes", () => {
   const copied = {
     baseUrl: "http://127.0.0.1:41434/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     apiKeyLabel: "local-motion",
     copiedAt: "2026-06-16T00:00:00.000Z",
     trigger: "prepareCursor",
@@ -756,7 +757,7 @@ test("state validators reject stale persisted setup shapes", () => {
   };
   const completion = {
     baseUrl: "http://127.0.0.1:41434/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     apiKeyLabel: "local-motion",
     cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
     endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
@@ -776,10 +777,10 @@ function cursorSetupWorkflowHarness(options = {}) {
   const runtime = {
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
-    modelId: "local-motion-test",
+    modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   };
-  const modelIds = options.modelIds ?? ["local-motion-test"];
+  const modelIds = options.modelIds ?? [LOCAL_MOTION_MODEL_ID];
   const clipboardWrites = [];
   const openedSettings = [];
   const requests = [];

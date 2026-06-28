@@ -119,7 +119,7 @@
         },
         "localMotion.downloadConcurrency": {
           "type": "number",
-          "default": 16,
+          "default": 24,
           "minimum": 1,
           "maximum": 32,
           "description": "Number of concurrent HTTP range requests to use when downloading large GGUF model files."

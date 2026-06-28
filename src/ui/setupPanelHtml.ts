@@ -423,7 +423,7 @@ export function setupPanelHtml(nonce: string): string {
     </div>
 
     <div id="connect" class="connect hidden">
-      <p>We copied your settings. In Cursor Settings → Models, click Add Custom Model and paste.</p>
+      <p>We copied the exact Cursor values. In Cursor Settings → Models, click Add Custom Model, then paste Model name, API key, and Base URL.</p>
       <pre id="setupBlock"></pre>
       <div class="row">
         <button id="openCursor" class="btn cta">Open Cursor Settings</button>
@@ -719,7 +719,7 @@ export function setupPanelHtml(nonce: string): string {
       const current = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current';
       // The honest connected signal: a real inbound request has hit the proxy.
       const inUse = Boolean(runtime.clientObserved);
-      const phase = (errored && !running) ? 'error' : busy ? 'starting' : running ? 'on' : 'off';
+      const phase = (errored && !running) ? 'error' : running ? 'on' : busy ? 'starting' : 'off';
       renderStorage();
 
       // Brand status dot: off / busy / on.

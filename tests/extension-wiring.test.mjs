@@ -163,9 +163,12 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
   assert.match(cursorSource, /Click Add Custom Model/);
+  assert.match(cursorSource, /Model name: /);
+  assert.match(cursorSource, /Set Model name to /);
   assert.match(cursorSource, /Cursor Settings > Models/);
   assert.equal(cursorSource.includes("Add or enable an OpenAI-compatible model"), false);
   assert.match(panelSource, /Add Custom Model/);
+  assert.match(panelSource, /running \? 'on' : busy \? 'starting'/);
 });
 
 test("runtime status changes refresh provider and native switch", async () => {
@@ -239,7 +242,7 @@ test("model download is never gated on current free memory; only loading checks 
   // There is exactly one runtime-memory gate, and it lives on the load path.
   const gateCalls = controllerSource.match(/this\.assertCurrentMemoryReady\(/g) ?? [];
   assert.equal(gateCalls.length, 1);
-  assert.match(controllerSource, /assertReadyToStartInstalledModel\(installed\)/);
+  assert.match(controllerSource, /assertReadyToStartInstalledModel\(cursorModel\)/);
 
   // In installAndStart, the download runs first; the memory gate only fires
   // afterwards, inside startInstalledModel.
