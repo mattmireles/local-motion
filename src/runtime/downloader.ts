@@ -75,7 +75,7 @@ export async function downloadGguf(
       segmentFailures = 0;
     } catch (error) {
       if (signal.aborted || !isRetryableSegmentError(error) || segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
-        if (error instanceof SlowDownloadError && segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
+        if (!signal.aborted && error instanceof SlowDownloadError && segmentFailures >= MAX_SEGMENT_ATTEMPTS - 1) {
           retrySlowStreams = false;
           segmentFailures = 0;
           continue;
@@ -139,7 +139,7 @@ async function downloadSegment(options: DownloadSegmentOptions): Promise<Downloa
     headers,
     signal: mergeAbortSignals(options.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS))
   });
-  if (!response.ok && response.status !== 206) {
+  if (!response.ok) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }
   if (!response.body) {
@@ -209,8 +209,8 @@ async function downloadSegment(options: DownloadSegmentOptions): Promise<Downloa
     if (!completed) {
       await reader.cancel().catch(() => undefined);
     }
-    await file.close();
     reader.releaseLock();
+    await file.close();
   }
 
   const expectedSegmentBytes = contentLength ?? (

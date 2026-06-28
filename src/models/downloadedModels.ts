@@ -118,9 +118,20 @@ async function removeParentIfEmpty(modelsRoot: string, directory: string): Promi
     return;
   }
 
-  const entries = await fs.promises.readdir(target);
-  if (entries.length > 0) {
-    return;
+  try {
+    const entries = await fs.promises.readdir(target);
+    if (entries.length > 0) {
+      return;
+    }
+    await fs.promises.rmdir(target);
+  } catch (error) {
+    if (isNodeError(error) && (error.code === "ENOTEMPTY" || error.code === "ENOENT")) {
+      return;
+    }
+    throw error;
   }
-  await fs.promises.rmdir(target);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }

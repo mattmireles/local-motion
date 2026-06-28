@@ -59,6 +59,32 @@ test("delete removes only the selected model file and its empty parent directory
   }
 });
 
+test("delete ignores a concurrently removed parent directory", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
+  const modelsRoot = path.join(root, "models");
+  const selected = path.join(modelsRoot, "example-alpha-main", "alpha.gguf");
+  await fs.mkdir(path.dirname(selected), { recursive: true });
+  await fs.writeFile(selected, "alpha");
+  const originalReaddir = fs.readdir;
+
+  try {
+    fs.readdir = async (target, options) => {
+      if (target === path.dirname(selected)) {
+        await fs.rm(target, { recursive: true, force: true });
+      }
+      return originalReaddir(target, options);
+    };
+
+    const deleted = await deleteDownloadedModel(modelsRoot, "example-alpha-main/alpha.gguf");
+
+    assert.equal(deleted, selected);
+    await assert.rejects(fs.access(path.dirname(selected)));
+  } finally {
+    fs.readdir = originalReaddir;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("downloaded model ids cannot escape Local Motion model storage", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-motion-models-"));
   const modelsRoot = path.join(root, "models");
