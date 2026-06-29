@@ -113,9 +113,17 @@ test("setup first screen is a single on/off switch before one advanced disclosur
   assert.match(panelSource, /els\.primary\.textContent = 'Turn On Local Agent'/);
   assert.match(panelSource, /els\.primary\.textContent = 'Turn Off Local Agent'/);
 
-  // The connect beat is one copy action against the full setup block, not a
-  // four-field copy table.
-  assert.match(panelSource, /command: 'copyCursorValue', key: 'setupBlock'/);
+  // Each Cursor value copies independently from its own row, so the user can
+  // drop them one at a time into Cursor's Add Custom Model fields.
+  assert.match(panelSource, /command: 'copyCursorValue', key: button\.dataset\.key/);
+  assert.match(panelSource, /data-key="modelId"/);
+  assert.match(panelSource, /data-key="apiKey"/);
+  assert.match(panelSource, /data-key="baseUrl"/);
+
+  // The toggle gates on disabled, not on a setup flag, so Turn Off is never a
+  // dead button while the agent is running.
+  assert.match(panelSource, /if \(els\.primary\.disabled\) return;/);
+  assert.equal(panelSource.includes("if (state.automagicalSetupRunning) return;"), false);
 });
 
 test("setup surface shows downloaded model storage before advanced controls", async () => {
@@ -323,13 +331,14 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.match(panelSource, /Cursor is using your local model\./);
   assert.match(panelSource, /runtime\.clientObserved/);
 
-  // The inUse branch runs before the freshness branch and suppresses the
-  // connect beat plus the model-menu nudge (nothing left to do once in use).
-  const inUseBranch = panelSource.indexOf("if (inUse) {");
-  const currentBranch = panelSource.indexOf("} else if (current && !handoffFailed) {");
-  assert.notEqual(inUseBranch, -1);
-  assert.notEqual(currentBranch, -1);
-  assert.equal(inUseBranch < currentBranch, true);
+  // Once a real request is observed the connect card is dropped; until then it
+  // stays visible. It must not vanish when Cursor Settings opens, so the old
+  // freshness-collapse branch is gone entirely.
+  assert.match(
+    panelSource,
+    /if \(inUse\) \{\s*els\.connect\.classList\.add\('hidden'\);\s*\} else \{[\s\S]*?els\.connect\.classList\.remove\('hidden'\)/
+  );
+  assert.equal(panelSource.includes("current && !handoffFailed"), false);
 });
 
 async function readPackageJson() {

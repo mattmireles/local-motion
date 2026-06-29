@@ -191,12 +191,6 @@ export function setupPanelHtml(nonce: string): string {
       line-height: 1.4;
     }
     ${setupPanelStorageStyles()}
-    .connected-line {
-      margin-top: 16px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-    .connected-line .fallback { margin-top: 6px; }
 
     /* The connect beat: its own element, never the primary slot. */
     .connect {
@@ -207,14 +201,27 @@ export function setupPanelHtml(nonce: string): string {
       background: var(--panel);
     }
     .connect.hidden { display: none; }
-    .connect p {
-      margin: 0;
+    .connect .connect-lead {
+      margin: 0 0 14px;
       color: var(--muted);
       line-height: 1.5;
     }
-    .connect pre {
-      margin: 12px 0;
-      white-space: pre-wrap;
+    /* Each Cursor value sits on its own row, copyable on its own. */
+    .fields { display: grid; gap: 12px; margin-bottom: 14px; }
+    .field label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--faint);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .field-row { display: flex; gap: 8px; align-items: stretch; }
+    .field-value {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
       overflow-wrap: anywhere;
       font-family: var(--vscode-editor-font-family, monospace);
       font-size: 12px;
@@ -222,9 +229,10 @@ export function setupPanelHtml(nonce: string): string {
       color: var(--vscode-editor-foreground, var(--vscode-foreground));
       border: 1px solid var(--line);
       border-radius: 6px;
-      padding: 12px;
+      padding: 8px 10px;
       background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground));
     }
+    .field-row .copy { flex: 0 0 auto; align-self: center; }
     .connect .row {
       display: flex;
       gap: 8px;
@@ -417,17 +425,33 @@ export function setupPanelHtml(nonce: string): string {
     </div>
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
 
-    <div id="connected" class="connected-line" style="display:none">
-      <span id="connectedText">Select Local Motion in Cursor's model menu.</span>
-      <div class="fallback"><button id="connectedFallback" class="btn link">Open Cursor Settings</button></div>
-    </div>
-
     <div id="connect" class="connect hidden">
-      <p>We copied the exact Cursor values. In Cursor Settings → Models, click Add Custom Model, then paste Model name, API key, and Base URL.</p>
-      <pre id="setupBlock"></pre>
+      <p class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
+      <div class="fields">
+        <div class="field">
+          <label>Model name</label>
+          <div class="field-row">
+            <span id="valModelId" class="field-value"></span>
+            <button class="btn ghost copy" data-key="modelId">Copy</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>API key</label>
+          <div class="field-row">
+            <span id="valApiKey" class="field-value"></span>
+            <button class="btn ghost copy" data-key="apiKey">Copy</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Base URL (OpenAI compatible)</label>
+          <div class="field-row">
+            <span id="valBaseUrl" class="field-value"></span>
+            <button class="btn ghost copy" data-key="baseUrl">Copy</button>
+          </div>
+        </div>
+      </div>
       <div class="row">
         <button id="openCursor" class="btn cta">Open Cursor Settings</button>
-        <button id="copySetup" class="btn ghost">Copy</button>
       </div>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
     </div>
@@ -491,6 +515,7 @@ export function setupPanelHtml(nonce: string): string {
       selectedModelName: '',
       progressMessage: '',
       progressPercent: undefined,
+      connectMessage: '',
       errorMessage: ''
     };
 
@@ -501,12 +526,10 @@ export function setupPanelHtml(nonce: string): string {
       subline: document.getElementById('subline'),
       progress: document.getElementById('progress'),
       progressFill: document.getElementById('progressFill'),
-      connected: document.getElementById('connected'),
-      connectedText: document.getElementById('connectedText'),
-      connectedFallback: document.getElementById('connectedFallback'),
       connect: document.getElementById('connect'),
-      setupBlock: document.getElementById('setupBlock'),
-      copySetup: document.getElementById('copySetup'),
+      valModelId: document.getElementById('valModelId'),
+      valApiKey: document.getElementById('valApiKey'),
+      valBaseUrl: document.getElementById('valBaseUrl'),
       openCursor: document.getElementById('openCursor'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
@@ -529,22 +552,26 @@ export function setupPanelHtml(nonce: string): string {
     /* The primary control binds to runtime on/off only. It never morphs
        into Connect, and never into a destructive third action. */
     els.primary.addEventListener('click', () => {
-      if (state.automagicalSetupRunning) return;
+      // Disabled is the single source of truth for "busy". Never gate the
+      // toggle on a setup flag — that is what made Turn Off a dead button.
+      if (els.primary.disabled) return;
       if (state.runtime && state.runtime.running) {
+        // Stop has a short grace period; give immediate, honest feedback.
+        els.primary.disabled = true;
+        els.primary.textContent = 'Turning Off…';
         vscode.postMessage({ command: 'stop' });
         return;
       }
       vscode.postMessage({ command: 'automagicalSetup' });
     });
 
-    /* The connect beat lives entirely outside the primary slot. */
-    els.copySetup.addEventListener('click', () => {
-      vscode.postMessage({ command: 'copyCursorValue', key: 'setupBlock' });
-    });
+    /* Each Cursor value copies on its own, outside the primary slot. */
+    for (const button of document.querySelectorAll('.connect .copy')) {
+      button.addEventListener('click', () => {
+        vscode.postMessage({ command: 'copyCursorValue', key: button.dataset.key });
+      });
+    }
     els.openCursor.addEventListener('click', () => {
-      vscode.postMessage({ command: 'prepareCursor' });
-    });
-    els.connectedFallback.addEventListener('click', () => {
       vscode.postMessage({ command: 'prepareCursor' });
     });
     els.manageStorage.addEventListener('click', () => {
@@ -683,12 +710,14 @@ export function setupPanelHtml(nonce: string): string {
         state.verification = message.verification;
         state.settings = message.settings;
         if (message.copy) state.copyResults.setupBlock = message.copy;
+        state.connectMessage = [message.settings && message.settings.message, message.verification && message.verification.message].filter(Boolean).join(' ');
         render();
         setStatus([message.verification && message.verification.message, message.copy && message.copy.message, message.settings && message.settings.message].filter(Boolean).join(' '));
       }
       if (message.type === 'cursorCopyResult') {
         state.errorMessage = '';
         state.copyResults[message.key] = { ok: message.ok, message: message.message };
+        state.connectMessage = message.message;
         if (message.cursorSetupFreshness) state.cursorSetupFreshness = message.cursorSetupFreshness;
         render();
         setStatus(message.message);
@@ -716,7 +745,6 @@ export function setupPanelHtml(nonce: string): string {
       const running = Boolean(runtime.running);
       const busy = state.automagicalSetupRunning;
       const errored = Boolean(state.errorMessage);
-      const current = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'current';
       // The honest connected signal: a real inbound request has hit the proxy.
       const inUse = Boolean(runtime.clientObserved);
       const phase = (errored && !running) ? 'error' : running ? 'on' : busy ? 'starting' : 'off';
@@ -732,7 +760,6 @@ export function setupPanelHtml(nonce: string): string {
         els.subline.textContent = state.errorMessage;
         els.subline.classList.remove('error');
         els.progress.classList.add('hidden');
-        els.connected.style.display = 'none';
         els.connect.classList.add('hidden');
         els.metaLine.style.display = 'none';
         els.primary.textContent = 'Try Again';
@@ -753,7 +780,7 @@ export function setupPanelHtml(nonce: string): string {
       if (phase === 'on') {
         // Settle motion plays only on the transition into ON, never on every
         // in-state update (a Copy click must not re-fade the whole surface).
-        renderOn(current, inUse, renderedPhase !== 'on');
+        renderOn(inUse, renderedPhase !== 'on');
         renderedPhase = phase;
         return;
       }
@@ -766,7 +793,6 @@ export function setupPanelHtml(nonce: string): string {
       els.headline.textContent = 'Local agent is off';
       els.subline.textContent = 'Runs a coding model on this Mac for Cursor.';
       els.progress.classList.add('hidden');
-      els.connected.style.display = 'none';
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
       els.primary.textContent = 'Turn On Local Agent';
@@ -777,7 +803,6 @@ export function setupPanelHtml(nonce: string): string {
     function renderStarting() {
       els.headline.textContent = 'Starting local agent';
       els.subline.textContent = state.progressMessage || 'Loading…';
-      els.connected.style.display = 'none';
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
 
@@ -796,7 +821,7 @@ export function setupPanelHtml(nonce: string): string {
       els.primary.disabled = true;
     }
 
-    function renderOn(current, inUse, entering) {
+    function renderOn(inUse, entering) {
       if (entering) {
         els.stage.classList.remove('settle');
         // Force reflow so the settle animation replays only on a fresh ON entry.
@@ -825,44 +850,19 @@ export function setupPanelHtml(nonce: string): string {
         els.subline.classList.add('error');
       }
 
-      const viewModel = state.cursorSetupViewModel;
-      const setupBlock = viewModel && viewModel.setupBlock;
-      // A handoff sub-action can fail (e.g. opening Cursor settings) even after
-      // the endpoint is verified and the block is copied — which still reports
-      // freshness 'current'. Do not show the clean connected line in that case;
-      // keep the connect beat so the failure stays visible and retryable.
-      const handoffFailed =
-        (state.settings && state.settings.ok === false) ||
-        (state.copyResults.setupBlock && state.copyResults.setupBlock.ok === false);
-
+      // Once a real request has arrived there is nothing left to do, so drop
+      // the card. Until then the values stay put so the user can copy them into
+      // Cursor — they must NEVER vanish just because Cursor Settings opened.
       if (inUse) {
-        // Proven: a real inbound request reached the local proxy. The subline
-        // already states it plainly, so drop every nudge — no connect beat, no
-        // "select it in the menu" hint, nothing left to do.
         els.connect.classList.add('hidden');
-        els.connected.style.display = 'none';
-      } else if (current && !handoffFailed) {
-        // The local endpoint is verified, but Cursor's own model list is not
-        // observable from here. State what is true and keep the one-time add
-        // as a quiet fallback rather than claiming Cursor is already using it.
-        els.connect.classList.add('hidden');
-        els.connected.style.display = 'block';
-        els.connectedText.textContent = 'Select Local Motion in Cursor\\'s model menu.';
       } else {
-        // Not yet verified for this endpoint, or a handoff sub-action failed:
-        // show the connect beat with the setup block and any failure note. When
-        // running, the view model carries a setup block; the fallback text only
-        // shows in the brief frame before it lands.
-        els.connected.style.display = 'none';
+        const viewModel = state.cursorSetupViewModel || {};
         els.connect.classList.remove('hidden');
-        els.setupBlock.textContent = setupBlock || 'Preparing the local endpoint…';
-        const note = [
-          state.copyResults.setupBlock && state.copyResults.setupBlock.message,
-          state.verification && state.verification.message,
-          state.settings && state.settings.message
-        ].filter(Boolean).join(' ');
-        els.connectNote.textContent = note;
-        els.connectNote.style.display = note ? 'block' : 'none';
+        els.valModelId.textContent = viewModel.modelId || 'Local Motion';
+        els.valApiKey.textContent = viewModel.apiKey || '';
+        els.valBaseUrl.textContent = viewModel.baseUrl || 'Preparing the local endpoint…';
+        els.connectNote.textContent = state.connectMessage || '';
+        els.connectNote.style.display = state.connectMessage ? 'block' : 'none';
       }
 
       // One quiet greyed metadata line: the model display name only.
@@ -965,6 +965,7 @@ export function setupPanelHtml(nonce: string): string {
         state.verification = undefined;
         state.settings = undefined;
         state.copyResults = {};
+        state.connectMessage = '';
       }
     }
 
