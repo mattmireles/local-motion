@@ -10,13 +10,14 @@ import {
   type CursorSetupValueKey,
   type CursorSetupViewModel
 } from "./cursorIntegration";
-import type {
-  CursorActionResult,
-  CursorCopyResult,
-  CursorEndpointVerification,
-  CursorSettingsOpened,
-  CursorSetupPayload,
-  CursorSetupPreparedResponse
+import {
+  SETUP_RESPONSE_TYPE,
+  type CursorActionResult,
+  type CursorCopyResult,
+  type CursorEndpointVerification,
+  type CursorSettingsOpened,
+  type CursorSetupPayload,
+  type CursorSetupPreparedResponse
 } from "../setupProtocol";
 import type { AutomagicalSetupCompletion, LastCopiedCursorSetup, RuntimeStatus } from "../types";
 
@@ -56,13 +57,13 @@ export class CursorSetupWorkflow {
     const verification = await this.verifyViewModelEndpoint(viewModel);
     if (!verification.ok) {
       return {
-        type: "cursorSetupPrepared",
+        type: SETUP_RESPONSE_TYPE.CURSOR_SETUP_PREPARED,
         viewModel,
         cursorSetupFreshness: this.freshness(viewModel),
         verification,
         copy: { ok: false, message: "Setup block was not copied because endpoint verification failed." },
         settings: {
-          type: "cursorSettingsOpened",
+          type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED,
           ok: false,
           message: "Cursor settings were not opened because endpoint verification failed."
         }
@@ -78,7 +79,7 @@ export class CursorSetupWorkflow {
     }
 
     const settings = await this.openCursorSettings();
-    return { type: "cursorSetupPrepared", viewModel, cursorSetupFreshness: freshness, verification, copy, settings };
+    return { type: SETUP_RESPONSE_TYPE.CURSOR_SETUP_PREPARED, viewModel, cursorSetupFreshness: freshness, verification, copy, settings };
   }
 
   async prepareCursorAndMarkCompleted(): Promise<CursorSetupPreparedResponse> {
@@ -104,7 +105,7 @@ export class CursorSetupWorkflow {
       await this.state.setLastCopiedCursorSetup(lastCopiedCursorSetup(viewModel, "copySetupBlock", this.host.now()));
       freshness = this.freshness(viewModel);
     }
-    return { type: "cursorCopyResult", key, cursorSetupFreshness: freshness, ...result };
+    return { type: SETUP_RESPONSE_TYPE.CURSOR_COPY_RESULT, key, cursorSetupFreshness: freshness, ...result };
   }
 
   async verifyCursorEndpoint(): Promise<CursorEndpointVerification> {
@@ -113,14 +114,14 @@ export class CursorSetupWorkflow {
 
   async openCursorSettings(): Promise<CursorSettingsOpened> {
     if (!this.currentViewModel().isRunning) {
-      return { type: "cursorSettingsOpened", ok: false, message: "Start a local model before opening Cursor Models settings." };
+      return { type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED, ok: false, message: "Start a local model before opening Cursor Models settings." };
     }
     try {
       await this.host.openSettings("Cursor Models");
-      return { type: "cursorSettingsOpened", ok: true, message: "Opened Settings filtered to Cursor Models." };
+      return { type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED, ok: true, message: "Opened Settings filtered to Cursor Models." };
     } catch (error) {
       return {
-        type: "cursorSettingsOpened",
+        type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED,
         ok: false,
         message: error instanceof Error ? error.message : String(error)
       };
@@ -152,7 +153,7 @@ export class CursorSetupWorkflow {
 
   private async verifyViewModelEndpoint(viewModel: CursorSetupViewModel): Promise<CursorEndpointVerification> {
     if (!viewModel.isRunning) {
-      return { type: "cursorEndpointVerification", ok: false, message: "Start a local model before verifying Cursor setup." };
+      return { type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION, ok: false, message: "Start a local model before verifying Cursor setup." };
     }
 
     const controller = new AbortController();
@@ -164,7 +165,7 @@ export class CursorSetupWorkflow {
       });
       if (!response.ok) {
         return {
-          type: "cursorEndpointVerification",
+          type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
           ok: false,
           message: `Local Motion endpoint returned HTTP ${response.status}. Copy API key "${viewModel.apiKey}" and verify the model is still running.`
         };
@@ -176,27 +177,27 @@ export class CursorSetupWorkflow {
         : [];
       if (!modelIds.includes(viewModel.modelId)) {
         return {
-          type: "cursorEndpointVerification",
+          type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
           ok: false,
           message: `Local Motion endpoint is running, but model "${viewModel.modelId}" was not listed.`
         };
       }
 
       return {
-        type: "cursorEndpointVerification",
+        type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
         ok: true,
         message: `Verified ${viewModel.modelId} at ${viewModel.baseUrl}.`
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         return {
-          type: "cursorEndpointVerification",
+          type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
           ok: false,
           message: "Local Motion endpoint did not respond within 5 seconds."
         };
       }
       return {
-        type: "cursorEndpointVerification",
+        type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
         ok: false,
         message: error instanceof Error ? error.message : String(error)
       };

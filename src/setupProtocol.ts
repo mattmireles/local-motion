@@ -2,16 +2,51 @@ import type { CursorSetupFreshness, CursorSetupValueKey, CursorSetupViewModel } 
 import type { DownloadProgress } from "./runtime/downloader";
 import type { CandidateQuantization, DownloadedModelEntry, ModelSearchResult, RuntimeStatus } from "./types";
 
+// Single source of truth for the webview <-> extension-host message protocol.
+// setupPanelHtml.ts's inline webview script cannot import this module (it
+// runs in the webview, not as a compiled TS module), so it interpolates
+// these values into its template literal instead of hand-duplicating the
+// string literals. Renaming a value here automatically changes both sides;
+// renaming a key produces a TypeScript compile error at every call site.
+export const SETUP_REQUEST_COMMAND = {
+  READY: "ready",
+  SEARCH: "search",
+  QUANTIZATIONS: "quantizations",
+  INSTALL_RUN: "installRun",
+  AUTOMAGICAL_SETUP: "automagicalSetup",
+  STOP: "stop",
+  DELETE_DOWNLOADED_MODEL: "deleteDownloadedModel",
+  PREPARE_CURSOR: "prepareCursor",
+  COPY_CURSOR_VALUE: "copyCursorValue"
+} as const;
+
+export const SETUP_RESPONSE_TYPE = {
+  STATE: "state",
+  SEARCH_RESULTS: "searchResults",
+  QUANTIZATIONS: "quantizations",
+  INSTALLED: "installed",
+  RUNTIME: "runtime",
+  AUTOMAGICAL_SETUP_COMPLETE: "automagicalSetupComplete",
+  CURSOR_SETUP_PREPARED: "cursorSetupPrepared",
+  CURSOR_COPY_RESULT: "cursorCopyResult",
+  CURSOR_SETTINGS_OPENED: "cursorSettingsOpened",
+  CURSOR_ENDPOINT_VERIFICATION: "cursorEndpointVerification",
+  INSTALL_PROGRESS: "installProgress",
+  INSTALL_MODEL_SELECTED: "installModelSelected",
+  AUTOMAGICAL_SETUP_STARTED: "automagicalSetupStarted",
+  ERROR: "error"
+} as const;
+
 export type SetupRequest =
-  | { command: "ready" }
-  | { command: "search"; query?: string }
-  | { command: "quantizations"; repoId?: string }
-  | { command: "installRun"; candidate?: CandidateQuantization }
-  | { command: "automagicalSetup" }
-  | { command: "stop" }
-  | { command: "deleteDownloadedModel"; id?: string }
-  | { command: "prepareCursor" }
-  | { command: "copyCursorValue"; key?: CursorSetupValueKey };
+  | { command: typeof SETUP_REQUEST_COMMAND.READY }
+  | { command: typeof SETUP_REQUEST_COMMAND.SEARCH; query?: string }
+  | { command: typeof SETUP_REQUEST_COMMAND.QUANTIZATIONS; repoId?: string }
+  | { command: typeof SETUP_REQUEST_COMMAND.INSTALL_RUN; candidate?: CandidateQuantization }
+  | { command: typeof SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP }
+  | { command: typeof SETUP_REQUEST_COMMAND.STOP }
+  | { command: typeof SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL; id?: string }
+  | { command: typeof SETUP_REQUEST_COMMAND.PREPARE_CURSOR }
+  | { command: typeof SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE; key?: CursorSetupValueKey };
 
 export interface CursorActionResult {
   ok: boolean;
@@ -19,15 +54,15 @@ export interface CursorActionResult {
 }
 
 export interface CursorEndpointVerification extends CursorActionResult {
-  type: "cursorEndpointVerification";
+  type: typeof SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION;
 }
 
 export interface CursorSettingsOpened extends CursorActionResult {
-  type: "cursorSettingsOpened";
+  type: typeof SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED;
 }
 
 export interface CursorSetupPreparedResponse {
-  type: "cursorSetupPrepared";
+  type: typeof SETUP_RESPONSE_TYPE.CURSOR_SETUP_PREPARED;
   viewModel: CursorSetupViewModel;
   cursorSetupFreshness: CursorSetupFreshness;
   verification: CursorEndpointVerification;
@@ -36,7 +71,7 @@ export interface CursorSetupPreparedResponse {
 }
 
 export interface CursorCopyResult extends CursorActionResult {
-  type: "cursorCopyResult";
+  type: typeof SETUP_RESPONSE_TYPE.CURSOR_COPY_RESULT;
   key: CursorSetupValueKey;
   cursorSetupFreshness: CursorSetupFreshness;
 }
@@ -67,7 +102,7 @@ export interface SetupInstalledModelView {
 }
 
 export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload {
-  type: "state";
+  type: typeof SETUP_RESPONSE_TYPE.STATE;
   defaultRepo: string;
   machine: SetupMachineView;
   installed?: SetupInstalledModelView;
@@ -75,30 +110,30 @@ export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayl
 }
 
 export interface SearchResultsResponse {
-  type: "searchResults";
+  type: typeof SETUP_RESPONSE_TYPE.SEARCH_RESULTS;
   results: ModelSearchResult[];
 }
 
 export interface QuantizationsResponse {
-  type: "quantizations";
+  type: typeof SETUP_RESPONSE_TYPE.QUANTIZATIONS;
   repoId: string;
   quantizations: CandidateQuantization[];
 }
 
 export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload {
-  type: "installed";
+  type: typeof SETUP_RESPONSE_TYPE.INSTALLED;
   installed: SetupInstalledModelView;
   runtime: RuntimeStatus;
   cursor?: CursorSetupPreparedResponse;
 }
 
 export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload {
-  type: "runtime";
+  type: typeof SETUP_RESPONSE_TYPE.RUNTIME;
   runtime: RuntimeStatus;
 }
 
 export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, SetupStoragePayload {
-  type: "automagicalSetupComplete";
+  type: typeof SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE;
   installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;
   cursor: CursorSetupPreparedResponse;
@@ -113,7 +148,7 @@ export type SetupResponse =
   | AutomagicalSetupCompleteResponse
   | CursorSetupPreparedResponse
   | CursorCopyResult
-  | { type: "installProgress"; progress: DownloadProgress; modelName?: string }
-  | { type: "installModelSelected"; modelName: string; requiredMemory: string; availableMemory: string }
-  | { type: "automagicalSetupStarted" }
-  | { type: "error"; message: string };
+  | { type: typeof SETUP_RESPONSE_TYPE.INSTALL_PROGRESS; progress: DownloadProgress; modelName?: string }
+  | { type: typeof SETUP_RESPONSE_TYPE.INSTALL_MODEL_SELECTED; modelName: string; requiredMemory: string; availableMemory: string }
+  | { type: typeof SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_STARTED }
+  | { type: typeof SETUP_RESPONSE_TYPE.ERROR; message: string };

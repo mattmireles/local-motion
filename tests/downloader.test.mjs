@@ -111,6 +111,45 @@ test("accepts a full 200 response when the first range request is ignored", asyn
   });
 });
 
+test("warns when a GGUF download has no checksum to verify", async () => {
+  await withDownloadSandbox(async ({ modelsRoot }) => {
+    globalThis.fetch = async () =>
+      new Response(new TextEncoder().encode("hello world"), {
+        status: 200,
+        headers: { "content-length": "11" }
+      });
+
+    const warnings = [];
+    await downloadGguf(testFile(), modelsRoot, () => {}, new AbortController().signal, {
+      onChecksumWarning: (message) => warnings.push(message)
+    });
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /no SHA-256 available/);
+  });
+});
+
+test("does not warn when a GGUF download has a checksum to verify", async () => {
+  await withDownloadSandbox(async ({ modelsRoot }) => {
+    globalThis.fetch = async () =>
+      new Response(new TextEncoder().encode("hello world"), {
+        status: 200,
+        headers: { "content-length": "11" }
+      });
+
+    const warnings = [];
+    await downloadGguf(
+      testFile({ sha256: "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9" }),
+      modelsRoot,
+      () => {},
+      new AbortController().signal,
+      { onChecksumWarning: (message) => warnings.push(message) }
+    );
+
+    assert.deepEqual(warnings, []);
+  });
+});
+
 test("restarts from zero when a resumed request gets a full 200 response", async () => {
   await withDownloadSandbox(async ({ modelsRoot }) => {
     const targetDir = path.join(modelsRoot, "example-model-main");

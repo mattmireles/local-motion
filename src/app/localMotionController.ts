@@ -14,18 +14,20 @@ import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
 import { LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
-import type {
-  AutomagicalSetupCompleteResponse,
-  CursorCopyResult,
-  CursorEndpointVerification,
-  CursorSetupPreparedResponse,
-  InstalledResponse,
-  QuantizationsResponse,
-  RuntimeResponse,
-  SearchResultsResponse,
-  SetupInstalledModelView,
-  SetupStoragePayload,
-  SetupStateResponse
+import {
+  SETUP_RESPONSE_TYPE,
+  type AutomagicalSetupCompleteResponse,
+  type CursorCopyResult,
+  type CursorEndpointVerification,
+  type CursorSetupPayload,
+  type CursorSetupPreparedResponse,
+  type InstalledResponse,
+  type QuantizationsResponse,
+  type RuntimeResponse,
+  type SearchResultsResponse,
+  type SetupInstalledModelView,
+  type SetupStoragePayload,
+  type SetupStateResponse
 } from "../setupProtocol";
 import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
@@ -63,11 +65,9 @@ export class LocalMotionController {
     await fs.promises.mkdir(this.context.globalStorageUri.fsPath, { recursive: true });
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const runtime = this.runtime.status();
-    const cursorSetup = this.cursorSetupPayload(runtime);
-    const storage = await this.storagePayload();
 
     return {
-      type: "state",
+      type: SETUP_RESPONSE_TYPE.STATE,
       defaultRepo: this.defaultRepo(),
       machine: {
         cpu: machine.cpuBrand,
@@ -80,21 +80,19 @@ export class LocalMotionController {
         appleSilicon: machine.isAppleSilicon
       },
       installed: this.optionalInstalledModelView(this.state.installedModel()),
-      ...storage,
       runtime,
-      cursorSetupViewModel: cursorSetup.viewModel,
-      cursorSetupFreshness: cursorSetup.freshness
+      ...await this.responseEnvelope(runtime)
     };
   }
 
   async search(query: string): Promise<SearchResultsResponse> {
     const results = await searchModels(query.trim() || this.defaultRepo());
-    return { type: "searchResults", results };
+    return { type: SETUP_RESPONSE_TYPE.SEARCH_RESULTS, results };
   }
 
   async quantizations(repoId: string): Promise<QuantizationsResponse> {
     const quantizations = await this.defaultQuantizations(repoId.trim());
-    return { type: "quantizations", repoId, quantizations };
+    return { type: SETUP_RESPONSE_TYPE.QUANTIZATIONS, repoId, quantizations };
   }
 
   async installRun(
@@ -117,14 +115,11 @@ export class LocalMotionController {
     const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
 
     const runtime = this.runtime.status();
-    const cursorSetup = this.cursorSetupPayload(runtime);
     return {
-      type: "installed",
+      type: SETUP_RESPONSE_TYPE.INSTALLED,
       installed: this.installedModelView(installed),
       runtime,
-      ...await this.storagePayload(),
-      cursorSetupViewModel: cursorSetup.viewModel,
-      cursorSetupFreshness: cursorSetup.freshness,
+      ...await this.responseEnvelope(runtime),
       cursor
     };
   }
@@ -159,21 +154,17 @@ export class LocalMotionController {
     }
 
     const runtime = this.runtime.status();
-    const cursorSetup = this.cursorSetupPayload(runtime);
-    return { type: "runtime", runtime, ...await this.storagePayload(), cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
+    return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
     const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
     const runtime = this.runtime.status();
-    const cursorSetup = this.cursorSetup.payload(runtime);
     return {
-      type: "automagicalSetupComplete",
+      type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE,
       installed: this.optionalInstalledModelView(this.state.installedModel()),
       runtime,
-      ...await this.storagePayload(),
-      cursorSetupViewModel: cursorSetup.cursorSetupViewModel,
-      cursorSetupFreshness: cursorSetup.cursorSetupFreshness,
+      ...await this.responseEnvelope(runtime),
       cursor
     };
   }
@@ -182,8 +173,7 @@ export class LocalMotionController {
     await this.runtime.stop();
     this.provider.refresh();
     const runtime = this.runtime.status();
-    const cursorSetup = this.cursorSetupPayload(runtime);
-    return { type: "runtime", runtime, ...await this.storagePayload(), cursorSetupViewModel: cursorSetup.viewModel, cursorSetupFreshness: cursorSetup.freshness };
+    return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
   }
 
   async deleteDownloadedModel(id: string): Promise<SetupStateResponse | undefined> {
@@ -305,7 +295,12 @@ export class LocalMotionController {
             onProgress(downloadProgress, displayName);
           },
           controller.signal,
-          { concurrency: downloadConcurrency }
+          {
+            concurrency: downloadConcurrency,
+            onChecksumWarning: (message) => {
+              void vscode.window.showWarningMessage(message);
+            }
+          }
         );
       }
     );
@@ -443,6 +438,20 @@ export class LocalMotionController {
     throw new Error(
       `${modelName} needs about ${formatBytes(requiredMemoryBytes)} of memory to run, but only ${formatBytes(availableMemoryBytes)} is free right now. Close some apps and turn it on again, or choose a smaller size in Advanced.`
     );
+  }
+
+  // Every status-bearing response carries the same cursor + storage envelope
+  // alongside its own `type`/`runtime`/`installed` fields; this is the one
+  // place that assembles it instead of five inline copies.
+  private async responseEnvelope(
+    runtime: ReturnType<LlamaServerManager["status"]>
+  ): Promise<CursorSetupPayload & SetupStoragePayload> {
+    const cursorSetup = this.cursorSetupPayload(runtime);
+    return {
+      cursorSetupViewModel: cursorSetup.viewModel,
+      cursorSetupFreshness: cursorSetup.freshness,
+      ...await this.storagePayload()
+    };
   }
 
   private cursorSetupPayload(runtime: ReturnType<LlamaServerManager["status"]>): {

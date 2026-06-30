@@ -1,3 +1,6 @@
+// Same-machine differentiator, not a secret: the proxy only binds to
+// 127.0.0.1 (see openAiProxy.ts), so this gates against other localhost
+// callers, not against any other user of this Mac.
 export const LOCAL_MOTION_API_KEY = "local-motion";
 
 export interface OpenAiMessage {

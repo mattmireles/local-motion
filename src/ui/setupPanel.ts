@@ -2,9 +2,10 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
-import type { AutomagicalSetupCompleteResponse, SetupRequest, SetupResponse } from "../setupProtocol";
+import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE, type AutomagicalSetupCompleteResponse, type SetupRequest, type SetupResponse } from "../setupProtocol";
 import { shouldPostInitialQuantizations } from "../setupPolicy";
 import { setupPanelHtml } from "./setupPanelHtml";
+import type { DownloadProgress } from "../runtime/downloader";
 import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
@@ -141,32 +142,32 @@ class SetupWebviewSession {
   private async handleMessage(message: SetupRequest): Promise<void> {
     try {
       switch (message.command) {
-        case "ready":
+        case SETUP_REQUEST_COMMAND.READY:
           await this.postInitialRuntimeState();
           this.markReady();
           if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
             await this.postDefaultQuantizations();
           }
           break;
-        case "search":
+        case SETUP_REQUEST_COMMAND.SEARCH:
           await this.post(await this.controller.search(message.query ?? ""));
           break;
-        case "quantizations":
+        case SETUP_REQUEST_COMMAND.QUANTIZATIONS:
           await this.post(await this.controller.quantizations(message.repoId ?? this.controller.defaultRepo()));
           break;
-        case "installRun":
+        case SETUP_REQUEST_COMMAND.INSTALL_RUN:
           if (!message.candidate) {
             throw new Error("No quantization was selected.");
           }
           await this.installRun(message.candidate);
           break;
-        case "automagicalSetup":
+        case SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP:
           await this.automagicalSetup();
           break;
-        case "stop":
+        case SETUP_REQUEST_COMMAND.STOP:
           await this.post(await this.controller.stop());
           break;
-        case "deleteDownloadedModel":
+        case SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL:
           if (this.setupOperationActive) {
             throw new Error("Wait for setup to finish before deleting downloaded models.");
           }
@@ -180,10 +181,10 @@ class SetupWebviewSession {
             }
           }
           break;
-        case "prepareCursor":
+        case SETUP_REQUEST_COMMAND.PREPARE_CURSOR:
           await this.post(await this.controller.prepareCursor());
           break;
-        case "copyCursorValue":
+        case SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE:
           if (!isCursorSetupValueKey(message.key)) {
             throw new Error("No Cursor setup value was selected.");
           }
@@ -212,41 +213,52 @@ class SetupWebviewSession {
     await this.post(await this.controller.quantizations(this.controller.defaultRepo()));
   }
 
-  private async installRun(candidate: CandidateQuantization): Promise<void> {
+  private async withSetupOperation<T>(run: () => Promise<T>): Promise<T> {
     this.setupOperationActive = true;
     try {
-      const payload = await this.controller.installRun(candidate, (progress, modelName) => {
-        void this.post({ type: "installProgress", progress, modelName });
-      }, (modelName, requiredMemory, availableMemory) => {
-        void this.post({ type: "installModelSelected", modelName, requiredMemory, availableMemory });
-      });
-      if (payload) {
-        await this.post(payload);
-      } else {
-        await this.postInitialRuntimeState();
-      }
+      return await run();
     } finally {
       this.setupOperationActive = false;
     }
   }
 
+  private installProgressCallbacks(): {
+    onProgress: (progress: DownloadProgress, modelName?: string) => void;
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void;
+  } {
+    return {
+      onProgress: (progress, modelName) => {
+        void this.post({ type: SETUP_RESPONSE_TYPE.INSTALL_PROGRESS, progress, modelName });
+      },
+      onModelSelected: (modelName, requiredMemory, availableMemory) => {
+        void this.post({ type: SETUP_RESPONSE_TYPE.INSTALL_MODEL_SELECTED, modelName, requiredMemory, availableMemory });
+      }
+    };
+  }
+
+  private async installRun(candidate: CandidateQuantization): Promise<void> {
+    await this.withSetupOperation(async () => {
+      const { onProgress, onModelSelected } = this.installProgressCallbacks();
+      const payload = await this.controller.installRun(candidate, onProgress, onModelSelected);
+      if (payload) {
+        await this.post(payload);
+      } else {
+        await this.postInitialRuntimeState();
+      }
+    });
+  }
+
   private async automagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    this.setupOperationActive = true;
-    try {
+    return this.withSetupOperation(async () => {
       await this.waitUntilReady();
-      await this.post({ type: "automagicalSetupStarted" });
-      const payload = await this.controller.automagicalSetup((progress, modelName) => {
-        void this.post({ type: "installProgress", progress, modelName });
-      }, (modelName, requiredMemory, availableMemory) => {
-        void this.post({ type: "installModelSelected", modelName, requiredMemory, availableMemory });
-      });
+      await this.post({ type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_STARTED });
+      const { onProgress, onModelSelected } = this.installProgressCallbacks();
+      const payload = await this.controller.automagicalSetup(onProgress, onModelSelected);
       if (payload) {
         await this.post(payload);
       }
       return payload;
-    } finally {
-      this.setupOperationActive = false;
-    }
+    });
   }
 
   async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
@@ -262,7 +274,7 @@ class SetupWebviewSession {
     const messageText = error instanceof Error ? error.message : String(error);
     this.output.appendLine(messageText);
     await this.postInitialRuntimeState().catch(() => undefined);
-    await this.post({ type: "error", message: messageText });
+    await this.post({ type: SETUP_RESPONSE_TYPE.ERROR, message: messageText });
     void vscode.window.showErrorMessage(messageText);
   }
 

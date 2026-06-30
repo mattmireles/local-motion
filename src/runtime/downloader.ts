@@ -37,6 +37,12 @@ export interface DownloadOptions {
   concurrency?: number;
   chunkSizeBytes?: number;
   parallelMinBytes?: number;
+  // Hugging Face omits an LFS oid (our sha256 source) for some siblings, so
+  // integrity falls back to a byte-count match alone. Callers with a UI
+  // (the extension host) should surface this where a user will see it
+  // (e.g. a warning notification); a console.warn always fires regardless,
+  // for the extension host's developer log.
+  onChecksumWarning?: (message: string) => void;
 }
 
 export interface DownloadProgress {
@@ -61,6 +67,9 @@ export async function downloadGguf(
   const partialPath = `${targetPath}.part`;
   if (await exists(targetPath)) {
     await validateExistingFile(targetPath, file.sizeBytes, file.sha256);
+    if (!file.sha256) {
+      warnMissingChecksum(file.repoId, file.fileName, options.onChecksumWarning);
+    }
     return targetPath;
   }
 
@@ -135,6 +144,8 @@ export async function downloadGguf(
   }
   if (file.sha256) {
     await assertSha256(partialPath, file.sha256);
+  } else {
+    warnMissingChecksum(file.repoId, file.fileName, options.onChecksumWarning);
   }
   await fs.promises.rm(manifestPathForPartial(partialPath), { force: true });
   await fs.promises.rename(partialPath, targetPath);
@@ -709,6 +720,19 @@ async function validateExistingFile(
   if (expectedSha256) {
     await assertSha256(targetPath, expectedSha256);
   }
+}
+
+// Hugging Face only exposes an LFS oid (our sha256 source) for siblings
+// tracked via Git LFS. A handful of small or non-standard repos omit it, in
+// which case integrity falls back to a byte-count match alone. HF exposes
+// no other content hash to verify against, so this can't be fixed by
+// computing a checksum — it can only be made visible. console.warn covers
+// the extension host's developer log; onChecksumWarning lets a caller with
+// a UI (the controller) surface it somewhere a user will actually see.
+function warnMissingChecksum(repoId: string, fileName: string, onChecksumWarning?: (message: string) => void): void {
+  const message = `Local Motion: no SHA-256 available for ${repoId}/${fileName} (Hugging Face did not report an LFS oid). Verifying download size only.`;
+  console.warn(message);
+  onChecksumWarning?.(message);
 }
 
 async function assertSha256(targetPath: string, expectedSha256: string): Promise<void> {

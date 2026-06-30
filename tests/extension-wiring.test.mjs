@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+// These tests grep compiled/source text rather than executing the webview
+// script — there is no DOM harness (e.g. jsdom) in this repo to run that
+// script directly. That's a real coverage gap, not an oversight: several
+// assertions below exist specifically to pin regressions an earlier audit
+// found (see "both were audit P0/P1 hazards"). Adding a DOM testing
+// dependency to close the gap is a separate decision, not a drive-by change.
+
 test("automagical setup settings describe fallback repositories", async () => {
   const packageJson = await readPackageJson();
   const properties = packageJson.contributes.configuration.properties;
@@ -49,7 +56,7 @@ test("automagical dependency install has no second confirmation prompt", async (
 test("host-started automagical setup reports errors to the webview", async () => {
   const panelSource = await readText("../out/ui/setupPanel.js");
   assert.equal(panelSource.includes("hostStartedAutomagicalSetup"), true);
-  assert.equal(panelSource.includes("type: \"error\""), true);
+  assert.equal(panelSource.includes("type: setupProtocol_1.SETUP_RESPONSE_TYPE.ERROR"), true);
 });
 
 test("retry automagical setup command is registered and contributed", async () => {
@@ -106,16 +113,20 @@ test("setup first screen is a single on/off switch before one advanced disclosur
   assert.equal(panelSource.includes("memoryAction"), false);
 
   // The primary toggle binds to runtime on/off only: stop when running, else turn on.
+  // The webview can't import setupProtocol.ts (it isn't a compiled module in
+  // the browser context), so it interpolates SETUP_REQUEST_COMMAND/
+  // SETUP_RESPONSE_TYPE into its template literal instead of hand-duplicating
+  // the string values — these assertions match that interpolated form.
   assert.match(
     panelSource,
-    /els\.primary\.addEventListener\('click'[\s\S]*?state\.runtime && state\.runtime\.running[\s\S]*?command: 'stop'[\s\S]*?command: 'automagicalSetup'/
+    /els\.primary\.addEventListener\('click'[\s\S]*?state\.runtime && state\.runtime\.running[\s\S]*?command: '\$\{SETUP_REQUEST_COMMAND\.STOP\}'[\s\S]*?command: '\$\{SETUP_REQUEST_COMMAND\.AUTOMAGICAL_SETUP\}'/
   );
   assert.match(panelSource, /els\.primary\.textContent = 'Turn On Local Agent'/);
   assert.match(panelSource, /els\.primary\.textContent = 'Turn Off Local Agent'/);
 
   // Each Cursor value copies independently from its own row, so the user can
   // drop them one at a time into Cursor's Add Custom Model fields.
-  assert.match(panelSource, /command: 'copyCursorValue', key: button\.dataset\.key/);
+  assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.COPY_CURSOR_VALUE\}', key: button\.dataset\.key/);
   assert.match(panelSource, /data-key="modelId"/);
   assert.match(panelSource, /data-key="apiKey"/);
   assert.match(panelSource, /data-key="baseUrl"/);
@@ -143,7 +154,7 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(controllerSource, /listDownloadedModels/);
   assert.match(controllerSource, /deleteDownloadedModel\(this\.modelsRoot\(\), id\)/);
   assert.match(controllerSource, /This will turn off the local agent first/);
-  assert.match(panelHostSource, /case "deleteDownloadedModel"/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.DELETE_DOWNLOADED_MODEL/);
   assert.match(panelHostSource, /Wait for setup to finish before deleting downloaded models/);
   assert.match(panelHostSource, /postInitialRuntimeState\(\)\.catch/);
 
@@ -152,19 +163,25 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.notEqual(storageIndex, -1);
   assert.notEqual(advancedIndex, -1);
   assert.equal(storageIndex < advancedIndex, true);
+  // Markup/styles are a real, pure module boundary (setupPanelStorage.ts);
+  // the storage *script* is not — it shares one execution scope with the
+  // rest of the webview, so it lives directly in setupPanelHtml.ts instead
+  // of behind a function call that only fakes a separate module.
   assert.match(storageSource, /id="manageStorage"/);
   assert.match(storageSource, /aria-expanded="false"/);
   assert.match(storageSource, /aria-controls="storagePanel"/);
-  assert.match(storageSource, /aria-label="Delete /);
-  assert.match(storageSource, /state\.setupOperationRunning \? ' disabled' : ''/);
+  assert.equal(storageSource.includes("function renderStorage"), false);
+  assert.match(panelSource, /aria-label="Delete /);
+  assert.match(panelSource, /state\.setupOperationRunning \? ' disabled' : ''/);
   assert.match(panelSource, /setupOperationRunning: false/);
   assert.match(panelSource, /state\.setupOperationRunning = true/);
-  assert.match(panelSource, /installModelSelected/);
+  assert.match(panelSource, /SETUP_RESPONSE_TYPE\.INSTALL_MODEL_SELECTED/);
   assert.match(panelSource, /selectedModelName/);
   assert.match(panelSource, /Downloading ' \+ modelProgressName\(\)/);
   assert.match(panelSource, /Model budget/);
-  assert.match(storageSource, /command: 'deleteDownloadedModel'/);
-  assert.match(panelSource, /setupPanelStorageScript\(\)/);
+  assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.DELETE_DOWNLOADED_MODEL\}'/);
+  assert.match(panelSource, /function updateDownloadedStorage\(message\)/);
+  assert.match(panelSource, /function renderStorage\(\)/);
 });
 
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {
@@ -225,7 +242,9 @@ test("manual install and run prepares Cursor automatically", async () => {
   assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
   assert.match(controllerSource, /const cursor = await this\.cursorSetup\.prepareCursorAndMarkCompleted\(\)/);
   assert.match(controllerSource, /cursor\s*[,}]/);
-  assert.match(panelHtmlSource, /message\.type === 'installed'/);
+  // Compiled output keeps the qualified import reference (setupProtocol_1.*)
+  // rather than the bare constant name used in the TS source.
+  assert.match(panelHtmlSource, /message\.type === '\$\{setupProtocol_1\.SETUP_RESPONSE_TYPE\.INSTALLED\}'/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
 });
