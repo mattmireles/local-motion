@@ -217,7 +217,6 @@ export class LocalMotionController {
     }
 
     const modelPath = resolveDownloadedModelId(this.modelsRoot(), id);
-    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
     const installed: InstalledModel = {
       // The storage id is <safeId(repoId-revision)>/<fileName>; the folder
       // name is the best surviving record of the source repo and is only
@@ -228,7 +227,7 @@ export class LocalMotionController {
       modelPath,
       modelId: LOCAL_MOTION_MODEL_ID,
       displayName: model.fileName.replace(/\.gguf$/i, ""),
-      contextTokens
+      contextTokens: this.contextTokensSetting()
     };
 
     await this.startInstalledModel(installed, {
@@ -371,8 +370,7 @@ export class LocalMotionController {
 
   private async defaultQuantizations(repoId: string): Promise<CandidateQuantization[]> {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
-    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
-    return listQuantizations(repoId, machine, contextTokens);
+    return listQuantizations(repoId, machine, this.contextTokensSetting());
   }
 
   private async automagicalCandidate(): Promise<CandidateQuantization> {
@@ -424,7 +422,6 @@ export class LocalMotionController {
       formatBytes(machine.availableMemoryBytes)
     );
     const modelPath = await this.download(candidate, onProgress);
-    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
     const installed: InstalledModel = {
       repoId: candidate.repoId,
       fileName: candidate.fileName,
@@ -433,7 +430,7 @@ export class LocalMotionController {
       modelPath,
       modelId: LOCAL_MOTION_MODEL_ID,
       displayName,
-      contextTokens
+      contextTokens: this.contextTokensSetting()
     };
 
     await this.startInstalledModel(installed, {
@@ -448,13 +445,17 @@ export class LocalMotionController {
     installed: InstalledModel,
     options: { allowInstall: boolean }
   ): Promise<RuntimeSession> {
-    const cursorModel = { ...installed, modelId: LOCAL_MOTION_MODEL_ID };
+    const cursorModel = {
+      ...installed,
+      modelId: LOCAL_MOTION_MODEL_ID,
+      contextTokens: this.contextTokensSetting()
+    };
     await this.warnIfMemoryTight(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
     const session = await this.runtime.start(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace()).catch((error: unknown) => {
       throw withMemoryHint(error, cursorModel.displayName);
     });
-    if (installed.modelId !== LOCAL_MOTION_MODEL_ID) {
+    if (installed.modelId !== LOCAL_MOTION_MODEL_ID || installed.contextTokens !== cursorModel.contextTokens) {
       await this.state.setInstalledModel(cursorModel);
       this.provider.refresh();
     }
@@ -469,6 +470,10 @@ export class LocalMotionController {
     } catch {
       return undefined;
     }
+  }
+
+  private contextTokensSetting(): number {
+    return vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
   }
 
   private async reusableInstalledModel(options: { requireCurrentDefault?: boolean } = {}): Promise<InstalledModel | undefined> {

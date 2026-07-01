@@ -230,6 +230,20 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
 });
 
+test("every model start reads the live contextTokens setting, not the frozen record", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+
+  const startBody = controllerSource.slice(
+    controllerSource.indexOf("private async startInstalledModel"),
+    controllerSource.indexOf("private async modelFileSize")
+  );
+  assert.match(startBody, /contextTokens: this\.contextTokensSetting\(\)/);
+  assert.match(startBody, /installed\.contextTokens !== cursorModel\.contextTokens/);
+
+  const configReads = controllerSource.match(/get<number>\("contextTokens", 8192\)/g) ?? [];
+  assert.equal(configReads.length, 1);
+});
+
 test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
