@@ -137,7 +137,7 @@ export class CursorSetupWorkflow {
   }
 
   private async writeCursorValue(key: CursorSetupValueKey, viewModel: CursorSetupViewModel): Promise<CursorActionResult> {
-    if (!viewModel.isRunning && key !== "apiKey") {
+    if (!viewModel.isRunning) {
       return { ok: false, message: "Start a local model before copying Cursor setup values." };
     }
     try {
@@ -167,7 +167,7 @@ export class CursorSetupWorkflow {
         return {
           type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
           ok: false,
-          message: `Local Motion endpoint returned HTTP ${response.status}. Copy API key "${viewModel.apiKey}" and verify the model is still running.`
+          message: `Local Motion endpoint returned HTTP ${response.status}. Copy the current session API key and verify the model is still running.`
         };
       }
 

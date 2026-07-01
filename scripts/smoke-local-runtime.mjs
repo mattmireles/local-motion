@@ -11,7 +11,6 @@ import { downloadGguf } from "../out/runtime/downloader.js";
 import { waitForHealth } from "../out/runtime/llamaHealth.js";
 import { OpenAiProxy } from "../out/runtime/openAiProxy.js";
 import { releasePortHolder, reserveLocalhostPort } from "../out/runtime/ports.js";
-import { LOCAL_MOTION_API_KEY } from "../out/runtime/openAiChat.js";
 import { profileMachine } from "../out/system/machineProfile.js";
 
 const execFile = promisify(childProcess.execFile);
@@ -43,8 +42,9 @@ try {
 
   proxy = new OpenAiProxy({ upstreamBaseUrl, modelId });
   const baseUrl = await proxy.start(preferredProxyPort);
-  await verifyModels(baseUrl, modelId);
-  await verifyChat(baseUrl, modelId);
+  const apiKey = proxy.apiKey();
+  await verifyModels(baseUrl, modelId, apiKey);
+  await verifyChat(baseUrl, modelId, apiKey);
   console.log(`Smoke passed: ${modelId} reachable at ${baseUrl}`);
 } finally {
   await proxy?.stop();
@@ -127,9 +127,9 @@ function processOutput(prefix, chunk) {
   }
 }
 
-async function verifyModels(baseUrl, modelId) {
+async function verifyModels(baseUrl, modelId, apiKey) {
   const response = await fetch(`${baseUrl}/models`, {
-    headers: { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` }
+    headers: { authorization: `Bearer ${apiKey}` }
   });
   if (!response.ok) {
     throw new Error(`/v1/models failed: ${response.status} ${response.statusText}`);
@@ -141,12 +141,12 @@ async function verifyModels(baseUrl, modelId) {
   }
 }
 
-async function verifyChat(baseUrl, modelId) {
+async function verifyChat(baseUrl, modelId, apiKey) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${LOCAL_MOTION_API_KEY}`
+      authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model: modelId,

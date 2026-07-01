@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { buildChatRequest, LOCAL_MOTION_API_KEY, type OpenAiMessage } from "./openAiChat";
+import { buildChatRequest, type OpenAiMessage } from "./openAiChat";
 
 interface ChatCompletionChunk {
   choices?: Array<{
@@ -12,6 +12,7 @@ interface ChatCompletionChunk {
 export async function streamChatCompletion(
   baseUrl: string,
   modelId: string,
+  apiKey: string,
   messages: OpenAiMessage[],
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
   token: vscode.CancellationToken
@@ -24,7 +25,7 @@ export async function streamChatCompletion(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${LOCAL_MOTION_API_KEY}`
+        authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify(buildChatRequest(modelId, messages)),
       signal: controller.signal

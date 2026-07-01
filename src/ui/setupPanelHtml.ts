@@ -23,13 +23,14 @@ export function setupPanelHtml(nonce: string): string {
 
     <div id="stage" class="stage" role="status" aria-live="polite">
       <p id="headline" class="headline">Checking Local Motion…</p>
-      <p id="subline" class="subline">Runs a coding model on this Mac for Cursor.</p>
+      <p id="subline" class="subline">Runs a model on this Mac. Cursor setup uses an optional tunnel.</p>
     </div>
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
 
     <div id="connect" class="connect hidden">
-      <p class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
-      <div class="fields">
+      <p id="connectLead" class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
+      <p id="tunnelDisclosure" class="note disclosure">Prompts and files sent from Cursor transit Cursor's backend and a Cloudflare tunnel. Anyone with the URL and key can reach the proxy while the tunnel is up. Cursor's Zero Data Retention does not apply to custom keys.</p>
+      <div id="fields" class="fields">
         <div class="field">
           <label>Model name</label>
           <div class="field-row">
@@ -53,6 +54,8 @@ export function setupPanelHtml(nonce: string): string {
         </div>
       </div>
       <div class="row">
+        <button id="enableTunnel" class="btn cta">Turn on Cursor tunnel</button>
+        <button id="installCloudflared" class="btn ghost">Copy brew install cloudflared</button>
         <button id="openCursor" class="btn cta">Open Cursor Settings</button>
       </div>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
@@ -115,6 +118,7 @@ export function setupPanelHtml(nonce: string): string {
       automagicalSetupRunning: false,
       modelSwitchRunning: false,
       setupOperationRunning: false,
+      cursorTunnelEnabledNextStart: false,
       selectedModelName: '',
       progressMessage: '',
       progressPercent: undefined,
@@ -130,6 +134,10 @@ export function setupPanelHtml(nonce: string): string {
       progress: document.getElementById('progress'),
       progressFill: document.getElementById('progressFill'),
       connect: document.getElementById('connect'),
+      connectLead: document.getElementById('connectLead'),
+      fields: document.getElementById('fields'),
+      enableTunnel: document.getElementById('enableTunnel'),
+      installCloudflared: document.getElementById('installCloudflared'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
@@ -177,6 +185,17 @@ export function setupPanelHtml(nonce: string): string {
     els.openCursor.addEventListener('click', () => {
       vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.PREPARE_CURSOR}' });
     });
+    els.enableTunnel.addEventListener('click', () => {
+      state.cursorTunnelEnabledNextStart = true;
+      state.connectMessage = 'Cursor tunnel will start the next time the local agent starts.';
+      render();
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.ENABLE_CURSOR_TUNNEL}' });
+    });
+    els.installCloudflared.addEventListener('click', () => {
+      state.connectMessage = 'Copied brew install cloudflared.';
+      render();
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.COPY_TUNNEL_INSTALL_COMMAND}' });
+    });
     els.manageStorage.addEventListener('click', () => {
       state.storageOpen = !state.storageOpen;
       renderStorage();
@@ -200,6 +219,7 @@ export function setupPanelHtml(nonce: string): string {
         els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
+        clearNextStartTunnelFlag(message.runtime);
         state.machine = message.machine;
         updateDownloadedStorage(message);
         /* A model switch spans several runtime status changes (old model
@@ -263,6 +283,7 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === '${SETUP_RESPONSE_TYPE.INSTALLED}') {
         state.installed = message.installed;
         state.runtime = message.runtime;
+        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
@@ -283,6 +304,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.RUNTIME}') {
         state.runtime = message.runtime;
+        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         state.progressMessage = '';
@@ -303,6 +325,7 @@ export function setupPanelHtml(nonce: string): string {
         state.selectedModelName = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
+        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -409,7 +432,7 @@ export function setupPanelHtml(nonce: string): string {
 
     function renderOff() {
       els.headline.textContent = 'Local agent is off';
-      els.subline.textContent = 'Runs a coding model on this Mac for Cursor.';
+      els.subline.textContent = 'Runs a model on this Mac. Cursor setup uses an optional tunnel.';
       els.progress.classList.add('hidden');
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
@@ -451,8 +474,8 @@ export function setupPanelHtml(nonce: string): string {
       // "is using" is earned only by a real inbound request; otherwise the
       // honest claim is the softer "can use".
       els.subline.textContent = inUse
-        ? 'Cursor is using your local model.'
-        : 'Cursor can use your local model.';
+        ? 'Cursor is using your local model - local compute, Cursor-routed prompts.'
+        : 'Cursor can use your local model - local compute, Cursor-routed prompts.';
       els.progress.classList.add('hidden');
 
       // A clean symmetric on/off toggle, never a destructive-sounding morph.
@@ -475,10 +498,22 @@ export function setupPanelHtml(nonce: string): string {
         els.connect.classList.add('hidden');
       } else {
         const viewModel = state.cursorSetupViewModel || {};
+        const tunnel = (state.runtime && state.runtime.cursorTunnel) || {};
+        const cursorReady = Boolean(viewModel.isRunning);
+        const enabledNextStart = state.cursorTunnelEnabledNextStart && !tunnel.enabled;
         els.connect.classList.remove('hidden');
-        els.valModelId.textContent = viewModel.modelId || 'Local Motion';
-        els.valApiKey.textContent = viewModel.apiKey || '';
-        els.valBaseUrl.textContent = viewModel.baseUrl || 'Preparing the local endpoint…';
+        els.connectLead.textContent = cursorReady
+          ? 'In Cursor: Settings > Models > Add Custom Model. Copy each value into the matching field.'
+          : enabledNextStart
+            ? 'Cursor tunnel is on. Turn the local agent off and on to start the tunnel.'
+            : viewModel.statusMessage || "Cursor's backend cannot reach localhost.";
+        els.fields.style.display = cursorReady ? 'grid' : 'none';
+        els.openCursor.style.display = cursorReady ? '' : 'none';
+        els.enableTunnel.style.display = (!cursorReady && !tunnel.enabled && !enabledNextStart) ? '' : 'none';
+        els.installCloudflared.style.display = tunnel.error === 'binary-missing' ? '' : 'none';
+        els.valModelId.textContent = cursorReady ? (viewModel.modelId || 'Local Motion') : '';
+        els.valApiKey.textContent = cursorReady ? (viewModel.apiKey || '') : '';
+        els.valBaseUrl.textContent = cursorReady ? (viewModel.baseUrl || '') : '';
         els.connectNote.textContent = state.connectMessage || '';
         els.connectNote.style.display = state.connectMessage ? 'block' : 'none';
       }
@@ -497,6 +532,12 @@ export function setupPanelHtml(nonce: string): string {
     function runtimeDisplayName() {
       const runtime = state.runtime || {};
       return runtime.displayName || runtime.modelId || '';
+    }
+
+    function clearNextStartTunnelFlag(runtime) {
+      if (runtime && runtime.cursorTunnel && runtime.cursorTunnel.enabled) {
+        state.cursorTunnelEnabledNextStart = false;
+      }
     }
 
     /* ------------------------------------------------------------------ */

@@ -230,6 +230,20 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
 });
 
+test("every model start reads the live contextTokens setting, not the frozen record", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+
+  const startBody = controllerSource.slice(
+    controllerSource.indexOf("private async startInstalledModel"),
+    controllerSource.indexOf("private async modelFileSize")
+  );
+  assert.match(startBody, /contextTokens: this\.contextTokensSetting\(\)/);
+  assert.match(startBody, /installed\.contextTokens !== cursorModel\.contextTokens/);
+
+  const configReads = controllerSource.match(/get<number>\("contextTokens", 8192\)/g) ?? [];
+  assert.equal(configReads.length, 1);
+});
+
 test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
@@ -344,7 +358,7 @@ test("free memory never blocks a model: advisory at load, honest error from llam
 
   // The honest out-of-memory signal is llama-server itself failing to start;
   // that failure is caught and explained with a way out.
-  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath\)\.catch/);
+  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace\(\)\)\.catch/);
   assert.match(controllerSource, /withMemoryHint\(error, cursorModel\.displayName\)/);
 
   // In installAndStart, the download runs first; the memory advisory only
@@ -396,6 +410,26 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.equal(description.includes("prepare Cursor automatically"), false);
 });
 
+test("Cursor tunnel settings are explicit opt-in and next-start only", async () => {
+  const packageJson = await readPackageJson();
+  const extensionSource = await readText("../src/extension.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const configSource = await readText("../src/app/cursorTunnelConfig.ts");
+  const properties = packageJson.contributes.configuration.properties;
+  assert.equal(properties["localMotion.cursorTunnel"].default, false);
+  assert.match(properties["localMotion.cursorTunnel"].description, /Cloudflare Quick Tunnel/);
+  assert.match(properties["localMotion.cursorTunnel"].description, /prompts will transit Cursor's servers/);
+  assert.match(properties["localMotion.cursorTunnel"].description, /next model start/);
+  assert.equal(properties["localMotion.cursorTunnelUrl"].default, "");
+  assert.match(properties["localMotion.cursorTunnelUrl"].description, /user-managed tunnel/);
+  assert.match(properties["localMotion.cursorTunnelUrl"].description, /instead of spawning a Quick Tunnel/);
+  assert.match(properties["localMotion.cursorTunnelUrl"].description, /next model start/);
+  assert.match(extensionSource, /new LlamaServerManager\([\s\S]*cursorTunnelConfigFromWorkspace/);
+  assert.match(controllerSource, /cursorTunnelConfigFromWorkspace\(\)/);
+  assert.match(configSource, /normalizePublicHttpsTunnelUrl/);
+  assert.match(configSource, /manual\.url !== undefined/);
+});
+
 test("runtime status surfaces the first real Cursor request", async () => {
   const proxySource = await readText("../out/runtime/openAiProxy.js");
   const runtimeSource = await readText("../out/runtime/llamaServer.js");
@@ -419,12 +453,57 @@ test("runtime status surfaces the first real Cursor request", async () => {
   assert.match(typesSource, /clientObserved\?: boolean/);
 });
 
+test("runtime owns the Cursor tunnel next to the proxy and stops it on crashes", async () => {
+  const runtimeSource = await readText("../src/runtime/llamaServer.ts");
+  const childExitSource = await readText("../src/runtime/runtimeChildExit.ts");
+  const tunnelTests = await readText("../tests/cursor-tunnel.test.mjs");
+  const typesSource = await readText("../src/types.ts");
+
+  assert.match(runtimeSource, /private tunnel: CloudflaredTunnel \| undefined/);
+  assert.match(runtimeSource, /attachRuntimeChildExitHandler\(child/);
+  assert.match(childExitSource, /void handlers\.stopTunnel\(\);[\s\S]*?void handlers\.stopProxy\(\);/);
+  assert.match(tunnelTests, /runtime child exit cleanup stops the tunnel kill switch/);
+  assert.match(runtimeSource, /const tunnelStop = this\.stopTunnel\(\);[\s\S]*?const proxyStop = this\.proxy\?\.stop\(\);/);
+  assert.match(runtimeSource, /source: "manual", url: config\.manualUrl/);
+  assert.match(runtimeSource, /manualUrlInvalid/);
+  assert.match(runtimeSource, /findCloudflared\(\)/);
+  assert.match(runtimeSource, /startQuickTunnel/);
+  assert.match(runtimeSource, /tunnelDnsResolves/);
+  assert.match(runtimeSource, /await tunnel\.stop\(\)/);
+  assert.match(runtimeSource, /error: "binary-missing"/);
+  assert.match(runtimeSource, /error: "start-timeout"/);
+  assert.match(runtimeSource, /error: "exited"/);
+  assert.match(runtimeSource, /error: "dns-unresolved"/);
+  assert.match(runtimeSource, /error: "invalid-url"/);
+  assert.match(typesSource, /source\?: "managed" \| "manual"/);
+  assert.match(typesSource, /dns-unresolved/);
+  assert.match(typesSource, /invalid-url/);
+});
+
 test("setup ON state confirms a real Cursor request without re-nagging", async () => {
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // The earned, confident line appears only when a real request was observed.
-  assert.match(panelSource, /Cursor is using your local model\./);
+  assert.match(panelSource, /Cursor is using your local model - local compute, Cursor-routed prompts\./);
   assert.match(panelSource, /runtime\.clientObserved/);
+  assert.match(panelSource, /Prompts and files sent from Cursor transit Cursor's backend and a Cloudflare tunnel/);
+  assert.match(panelSource, /Zero Data Retention does not apply to custom keys/);
+  assert.match(panelSource, /Turn on Cursor tunnel/);
+  assert.match(panelSource, /cursorTunnelEnabledNextStart = true/);
+  assert.match(panelSource, /Cursor tunnel is on\. Turn the local agent off and on to start the tunnel\./);
+  assert.match(panelSource, /!cursorReady && !tunnel\.enabled && !enabledNextStart/);
+  assert.match(panelSource, /Copy brew install cloudflared/);
+  assert.match(panelSource, /ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelSource, /COPY_TUNNEL_INSTALL_COMMAND/);
+  assert.match(protocolSource, /ENABLE_CURSOR_TUNNEL: "enableCursorTunnel"/);
+  assert.match(protocolSource, /COPY_TUNNEL_INSTALL_COMMAND: "copyTunnelInstallCommand"/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.COPY_TUNNEL_INSTALL_COMMAND/);
+  assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
+  assert.match(controllerSource, /writeText\("brew install cloudflared"\)/);
 
   // Once a real request is observed the connect card is dropped; until then it
   // stays visible. It must not vanish when Cursor Settings opens, so the old

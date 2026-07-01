@@ -8,7 +8,7 @@ export function isLastCopiedCursorSetup(value: unknown): value is LastCopiedCurs
   const trigger = value.trigger;
   return isNonEmptyString(value.baseUrl) &&
     isNonEmptyString(value.modelId) &&
-    value.apiKeyLabel === "local-motion" &&
+    isValidApiKeyLabel(value.apiKeyLabel) &&
     isNonEmptyString(value.copiedAt) &&
     (trigger === "prepareCursor" || trigger === "copySetupBlock") &&
     optionalNonEmptyString(value.endpointVerifiedAt);
@@ -18,7 +18,7 @@ export function isAutomagicalSetupCompletion(value: unknown): value is Automagic
   return isRecord(value) &&
     isNonEmptyString(value.baseUrl) &&
     isNonEmptyString(value.modelId) &&
-    value.apiKeyLabel === "local-motion" &&
+    isValidApiKeyLabel(value.apiKeyLabel) &&
     isNonEmptyString(value.cursorSetupCopiedAt) &&
     isNonEmptyString(value.endpointVerifiedAt) &&
     isNonEmptyString(value.completedAt);
@@ -34,4 +34,8 @@ function isNonEmptyString(value: unknown): value is string {
 
 function optionalNonEmptyString(value: unknown): boolean {
   return value === undefined || isNonEmptyString(value);
+}
+
+function isValidApiKeyLabel(value: unknown): value is "session-key" | "local-motion" {
+  return value === "session-key" || value === "local-motion";
 }

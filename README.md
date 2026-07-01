@@ -1,8 +1,8 @@
 # Local Motion
 
-Local Motion turns a private local coding agent on and off for Cursor and VS
-Code. It chooses a compatible local model for your Mac, loads it when you need
-it, and frees the memory when you do not.
+Local Motion turns a local coding agent on and off for VS Code and Cursor. It
+chooses a compatible local model for your Mac, loads it when you need it, and
+frees the memory when you do not.
 
 ## What It Does
 
@@ -12,7 +12,7 @@ it, and frees the memory when you do not.
 - Keeps every downloaded model on disk and switches between them on demand,
   so you can run a maximum-size model normally and a lighter one when the
   Mac is busy.
-- Connects Cursor through a local endpoint without writing Cursor private state.
+- Connects Cursor through an opt-in tunnel without writing Cursor private state.
 - Frees the loaded model from memory immediately when you are done.
 - Keeps the runtime bound to `127.0.0.1`.
 
@@ -31,7 +31,8 @@ it, and frees the memory when you do not.
   only when setup or advanced model controls need them.
 - Downloads model files with resumable streaming.
 - Finds or installs `llama-server` through Homebrew.
-- Starts `llama-server` and a stable local OpenAI-compatible proxy for Cursor.
+- Starts `llama-server`, a stable loopback OpenAI-compatible proxy, and an
+  opt-in Cursor tunnel when enabled.
 - Registers the running model with the VS Code Language Model API, with the
   provider's manage action opening the local-agent switch.
 
@@ -46,6 +47,8 @@ it, and frees the memory when you do not.
 - Localhost port `41434` available for the Cursor-facing proxy, or set
   `localMotion.proxyPort` to another port. If the preferred port is occupied,
   Local Motion falls back to an ephemeral port and shows updated setup values.
+- `cloudflared` when using the managed Cursor tunnel, or set
+  `localMotion.cursorTunnelUrl` to a public HTTPS tunnel URL you manage.
 
 ## Setup
 
@@ -92,13 +95,13 @@ Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
 model file, local runtime, proxy verification, copied Cursor values, and the
 remaining Cursor picker verification step.
 
-After the local agent is connected once, Local Motion can restart the installed model
-automatically on future editor startups without downloading a new model,
+After the local agent is connected once, Local Motion can restart the installed
+model automatically on future editor startups without downloading a new model,
 opening the setup panel, opening Cursor settings, or replacing the clipboard.
-Cursor keeps using the stable local proxy URL from the completed setup. If
-background resume fails or the proxy falls back to a different port, Local
-Motion offers to open setup for recovery. Disable
-`localMotion.resumeAutomagicalSetupOnStartup` to turn that off.
+Cursor tunnel URLs can rotate across model restarts, so the setup panel marks
+previously copied Cursor values stale when the active Base URL changes. Disable
+`localMotion.resumeAutomagicalSetupOnStartup` to turn automatic local model
+restart off.
 
 For advanced manual control:
 
@@ -107,13 +110,13 @@ For advanced manual control:
 3. Click `Install and Turn On`; Local Motion starts the model, verifies the Cursor
    endpoint, copies the setup block, and opens Cursor Models settings.
 
-`Connect Cursor to Local Agent` verifies `GET /v1/models` on the local proxy with
-`Authorization: Bearer local-motion`, copies the full setup block, opens Cursor
-Settings (in plain VS Code, the filtered settings editor instead), and leaves
-one-click copy controls visible for:
+`Connect Cursor to Local Agent` verifies `GET /v1/models` through the
+Cursor-facing tunnel with the current session key, copies the full setup block,
+opens Cursor Settings (in plain VS Code, the filtered settings editor instead),
+and leaves one-click copy controls visible for:
 
-- OpenAI API Key: `local-motion`
-- Override OpenAI Base URL: the active Local Motion Base URL
+- OpenAI API Key: the current session key
+- Override OpenAI Base URL: the active public Cursor tunnel Base URL
 - Add Custom Model: the active Local Motion model ID
 - Full setup block
 
@@ -131,8 +134,10 @@ request through its own cloud backend, which refuses private addresses with
 chat, in any build. The proven workaround is a public HTTPS tunnel
 (cloudflared or ngrok) in front of the Local Motion proxy — with the tradeoff
 that prompts then transit Cursor's backend and the tunnel, so the Cursor path
-is "local compute", not "fully private". Full failure analysis, fix matrix,
-and setup steps:
+is "local compute", not "fully private". Anyone with the tunnel URL and current
+session key can reach the proxy while the tunnel is up, and Cursor's Zero Data
+Retention does not apply to custom keys. Full failure analysis, fix matrix, and
+setup steps:
 [Cursor private-network block guide](README/Guides/cursor-private-network-block-guide.md).
 The fully local path (`vscode.lm` provider) works in real VS Code only; Cursor
 does not implement the VS Code Language Model API.
@@ -141,7 +146,8 @@ Cursor's OpenAI Base URL override is global in Cursor settings and may not apply
 to every Cursor surface. Custom API keys officially power chat models only —
 Tab autocomplete, Apply, and Auto never use the custom endpoint, and Agent mode
 is best-effort. Treat setup as proven only for the Cursor surface you manually
-test, such as `Cmd+L` chat.
+test, such as `Cmd+L` chat. Do not assume Agent, Composer, Inline Edit, or Tab
+autocomplete use the tunnel until verified in your Cursor build.
 
 Local Motion keeps Cursor's Base URL stable across restarts by preferring
 `http://127.0.0.1:41434/v1` for the local proxy. If that port is occupied and
@@ -151,9 +157,11 @@ copied Cursor values stale and offers `Copy Updated Setup`.
 ## Privacy
 
 Local Motion binds its runtime services to `127.0.0.1`. Model files are stored in
-the extension global storage directory, outside the workspace. Cursor requests
-sent to the Local Motion proxy are sanitized before forwarding to
-`llama-server`.
+the extension global storage directory, outside the workspace. VS Code
+Language Model API requests stay on loopback. Cursor requests use local compute
+but transit Cursor's backend and the configured tunnel before reaching the
+Local Motion proxy. Requests sent to the proxy are sanitized before forwarding
+to `llama-server`.
 
 ## Development
 

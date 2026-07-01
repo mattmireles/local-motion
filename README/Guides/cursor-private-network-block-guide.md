@@ -9,6 +9,9 @@ July 1, 2026
   setup path this guide constrains.
 - **[Cursor Model Picker Setup Plan](../Plans/001-cursor-model-picker-setup-plan.md)**:
   Product contract for assisted Cursor setup (no private-state mutation).
+- **[Honest Cursor Tunnel Handoff Plan](../Plans/002-cursor-tunnel-handoff-plan.md)**:
+  Implementation record for the opt-in tunnel handoff, session bearer key,
+  manual tunnel override, and verification gaps.
 
 ## 1. Problem Frame
 
@@ -23,9 +26,10 @@ Copy Request (<uuid>)
 ```
 
 **Environment.** Cursor on macOS, current builds as of 2026-07-01. Local Motion
-proxy on `http://127.0.0.1:41434/v1`, bearer key `local-motion`. The local
-stack is provably healthy: `GET /v1/models` and streamed `/v1/chat/completions`
-both succeed via curl against the loopback proxy.
+proxy on `http://127.0.0.1:41434/v1`, using the current session key shown in
+the setup panel. The local stack is provably healthy: `GET /v1/models` and
+streamed `/v1/chat/completions` both succeed via curl against the loopback
+proxy.
 
 **Root cause (confirmed, not inference).** Cursor routes every custom-API-key
 (BYOK) model request through its cloud backend. The official docs say it
@@ -126,8 +130,8 @@ Run in order; stop at the first failure.
 1. **Prove the local stack** (rules out everything repo-side):
 
    ```bash
-   curl -s -H "Authorization: Bearer local-motion" http://127.0.0.1:41434/v1/models
-   curl -s -H "Authorization: Bearer local-motion" -H "Content-Type: application/json" \
+   curl -s -H "Authorization: Bearer <session-key>" http://127.0.0.1:41434/v1/models
+   curl -s -H "Authorization: Bearer <session-key>" -H "Content-Type: application/json" \
      -d '{"model":"Local Motion","messages":[{"role":"user","content":"Say OK."}],"max_tokens":8}' \
      http://127.0.0.1:41434/v1/chat/completions
    ```
@@ -147,7 +151,7 @@ Run in order; stop at the first failure.
    tunnel), e.g. from any external host or `curl --resolve` sanity checks:
 
    ```bash
-   curl -s -H "Authorization: Bearer local-motion" https://<tunnel-host>/v1/models
+   curl -s -H "Authorization: Bearer <session-key>" https://<tunnel-host>/v1/models
    ```
 
 5. **Test with a real chat message, not the Verify button.** Verify has
@@ -204,8 +208,8 @@ cloudflared tunnel run local-motion
 
 Base URL: `https://llm.yourdomain.com/v1`. Stable across restarts; SSE
 supported. Do **not** front it with Cloudflare Access Service Auth — Cursor's
-backend can only send the OpenAI `Authorization: Bearer <key>` header; that is
-the entire header budget. Rely on the origin bearer key.
+backend can only send the OpenAI `Authorization: Bearer <session-key>` header;
+that is the entire header budget. Rely on the origin bearer key.
 
 ### 5.3. Operational rules regardless of tunnel
 

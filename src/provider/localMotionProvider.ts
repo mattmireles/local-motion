@@ -67,6 +67,7 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
     await streamChatCompletion(
       running.upstreamBaseUrl ?? running.baseUrl ?? "",
       model.id,
+      running.apiKey,
       toOpenAiMessages(messages),
       progress,
       token

@@ -11,6 +11,7 @@ import {
   shouldPersistCursorSetupCopy
 } from "../out/cursor/cursorIntegration.js";
 import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
+import { normalizePublicHttpsTunnelUrl } from "../out/cursor/tunnelUrl.js";
 import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
   classifyCompatibility,
@@ -47,8 +48,8 @@ import {
   isLastCopiedCursorSetup
 } from "../out/stateValidation.js";
 import {
+  generateApiKey,
   isAuthorizedBearer,
-  LOCAL_MOTION_API_KEY,
   sanitizeExternalChatRequest,
   sanitizeStop
 } from "../out/runtime/openAiChat.js";
@@ -388,7 +389,7 @@ test("OpenAI proxy uses the preferred Cursor port when it is available", async (
     const baseUrl = await proxy.start(preferredPort);
     assert.equal(baseUrl, `http://127.0.0.1:${preferredPort}/v1`);
     const response = await fetch(`${baseUrl}/models`, {
-      headers: { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` }
+      headers: { authorization: `Bearer ${proxy.apiKey()}` }
     });
     assert.equal(response.status, 200);
   } finally {
@@ -403,7 +404,7 @@ test("OpenAI proxy falls back to a dynamic port when the preferred Cursor port i
     const baseUrl = await proxy.start(holder.port);
     assert.notEqual(baseUrl, `http://127.0.0.1:${holder.port}/v1`);
     const response = await fetch(`${baseUrl}/models`, {
-      headers: { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` }
+      headers: { authorization: `Bearer ${proxy.apiKey()}` }
     });
     assert.equal(response.status, 200);
   } finally {
@@ -423,7 +424,7 @@ test("OpenAI proxy flags only the first real inbound chat request", async () => 
   });
   try {
     const baseUrl = await proxy.start();
-    const authorized = { authorization: `Bearer ${LOCAL_MOTION_API_KEY}` };
+    const authorized = { authorization: `Bearer ${proxy.apiKey()}` };
     assert.equal(proxy.hasServedClientRequest(), false);
 
     // Listing models is Local Motion's own verification path and Cursor's
@@ -466,6 +467,18 @@ test("OpenAI proxy flags only the first real inbound chat request", async () => 
   }
 });
 
+test("generates and requires a per-session bearer token", () => {
+  const first = generateApiKey();
+  const second = generateApiKey();
+  assert.match(first, /^[0-9a-f]{64}$/);
+  assert.notEqual(first, second);
+  assert.equal(isAuthorizedBearer(`Bearer ${first}`, first), true);
+  assert.equal(isAuthorizedBearer("Bearer local-motion", first), false);
+  assert.equal(isAuthorizedBearer("Bearer other", first), false);
+  assert.equal(isAuthorizedBearer(`Bearer ${first}`, ""), false);
+  assert.equal(isAuthorizedBearer(undefined, first), false);
+});
+
 test("OpenAI proxy serves a single JSON completion when the client omits stream", async () => {
   const completion = {
     id: "chatcmpl-local",
@@ -491,7 +504,7 @@ test("OpenAI proxy serves a single JSON completion when the client omits stream"
     const baseUrl = await proxy.start();
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${LOCAL_MOTION_API_KEY}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${proxy.apiKey()}` },
       body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] })
     });
     assert.equal(response.status, 200);
@@ -505,34 +518,127 @@ test("OpenAI proxy serves a single JSON completion when the client omits stream"
   }
 });
 
-test("requires the documented local bearer token", () => {
-  assert.equal(isAuthorizedBearer(`Bearer ${LOCAL_MOTION_API_KEY}`), true);
-  assert.equal(isAuthorizedBearer("Bearer other"), false);
-  assert.equal(isAuthorizedBearer(undefined), false);
+test("OpenAI proxy rejects the legacy static bearer key and protects health", async () => {
+  const proxy = new OpenAiProxy({ upstreamBaseUrl: "http://127.0.0.1:1/v1", modelId: LOCAL_MOTION_MODEL_ID });
+  try {
+    const baseUrl = await proxy.start();
+    const legacy = await fetch(`${baseUrl}/models`, {
+      headers: { authorization: "Bearer local-motion" }
+    });
+    assert.equal(legacy.status, 401);
+
+    const healthWithoutBearer = await fetch(baseUrl.replace(/\/v1$/, "/health"));
+    assert.equal(healthWithoutBearer.status, 401);
+  } finally {
+    await proxy.stop();
+  }
 });
 
-test("Cursor setup view model uses the active runtime endpoint", () => {
+test("Cursor setup view model uses the public tunnel endpoint", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   assert.equal(viewModel.isRunning, true);
-  assert.equal(viewModel.baseUrl, "http://127.0.0.1:50000/v1");
-  assert.equal(viewModel.apiKey, LOCAL_MOTION_API_KEY);
+  assert.equal(viewModel.baseUrl, "https://public.example.com/v1");
+  assert.equal(viewModel.apiKey, "session-secret");
   assert.equal(viewModel.modelId, LOCAL_MOTION_MODEL_ID);
-  assert.ok(viewModel.setupBlock.includes("http://127.0.0.1:50000/v1"));
+  assert.ok(viewModel.setupBlock.includes("https://public.example.com/v1"));
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_MODEL_ID));
-  assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_API_KEY));
+  assert.ok(viewModel.setupBlock.includes("session-secret"));
   assert.ok(viewModel.setupBlock.includes("Model name: Local Motion"));
   assert.ok(viewModel.statusMessage.includes("Cursor Settings > Models"));
   assert.ok(viewModel.steps.includes("Click Add Custom Model."));
-  assert.ok(viewModel.steps.some((line) => line.includes("http://127.0.0.1:50000/v1")));
-  assert.equal(cursorSetupValue(viewModel, "baseUrl"), "http://127.0.0.1:50000/v1");
-  assert.equal(cursorSetupValue(viewModel, "apiKey"), LOCAL_MOTION_API_KEY);
+  assert.ok(viewModel.steps.some((line) => line.includes("https://public.example.com/v1")));
+  assert.equal(cursorSetupValue(viewModel, "baseUrl"), "https://public.example.com/v1");
+  assert.equal(cursorSetupValue(viewModel, "apiKey"), "session-secret");
   assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);
   assert.equal(cursorSetupValue(viewModel, "setupBlock"), viewModel.setupBlock);
+});
+
+test("Cursor setup view model does not duplicate a tunnel v1 suffix", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com/v1/" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  assert.equal(viewModel.isRunning, true);
+  assert.equal(viewModel.baseUrl, "https://public.example.com/v1");
+});
+
+test("Cursor setup view model refuses localhost without a tunnel", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  assert.equal(viewModel.isRunning, false);
+  assert.equal(viewModel.baseUrl, "");
+  assert.match(viewModel.statusMessage, /localhost/);
+  assert.ok(viewModel.steps.some((line) => line.includes("cursorTunnel")));
+});
+
+test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
+  assert.deepEqual(normalizePublicHttpsTunnelUrl(""), { invalid: false });
+  assert.deepEqual(normalizePublicHttpsTunnelUrl(" https://public.example.com/v1/ "), {
+    url: "https://public.example.com",
+    invalid: false
+  });
+  assert.deepEqual(normalizePublicHttpsTunnelUrl("https://public.example.com/custom/v1"), {
+    url: "https://public.example.com/custom",
+    invalid: false
+  });
+
+  for (const value of [
+    "notaurl",
+    "http://public.example.com",
+    "https://localhost:41434/v1",
+    "https://127.0.0.1:41434/v1",
+    "https://10.0.0.10/v1",
+    "https://172.16.1.1/v1",
+    "https://192.168.1.1/v1",
+    "https://100.64.0.1/v1",
+    "https://[::1]/v1",
+    "https://[fc00::1]/v1",
+    "https://[fe80::1]/v1",
+    "https://[2606:4700:4700::1111]/v1"
+  ]) {
+    assert.deepEqual(normalizePublicHttpsTunnelUrl(value), { invalid: true });
+  }
+});
+
+test("Cursor setup view model explains tunnel error states while local runtime stays up", () => {
+  const expected = [
+    ["invalid-url", /must be a public HTTPS tunnel URL/, /private IPs/],
+    ["binary-missing", /cloudflared is not installed/, /brew install cloudflared/],
+    ["start-timeout", /did not become reachable/, /public HTTPS tunnel/],
+    ["dns-unresolved", /did not become reachable/, /public HTTPS tunnel/],
+    ["exited", /managed Cursor tunnel stopped/, /Restart the local model/]
+  ];
+
+  for (const [error, statusPattern, stepPattern] of expected) {
+    const viewModel = cursorSetupViewModel({
+      running: true,
+      baseUrl: "http://127.0.0.1:50000/v1",
+      apiKey: "session-secret",
+      cursorTunnel: { enabled: true, source: "managed", error },
+      modelId: LOCAL_MOTION_MODEL_ID,
+      message: "running"
+    });
+    assert.equal(viewModel.isRunning, false);
+    assert.equal(viewModel.baseUrl, "");
+    assert.match(viewModel.statusMessage, statusPattern);
+    assert.ok(viewModel.steps.some((line) => stepPattern.test(line)));
+  }
 });
 
 test("Cursor setup view model does not invent endpoint values when stopped", () => {
@@ -543,7 +649,7 @@ test("Cursor setup view model does not invent endpoint values when stopped", () 
   assert.equal(viewModel.isRunning, false);
   assert.equal(viewModel.baseUrl, "");
   assert.equal(viewModel.modelId, "");
-  assert.equal(viewModel.apiKey, LOCAL_MOTION_API_KEY);
+  assert.equal(viewModel.apiKey, "");
   assert.equal(viewModel.statusMessage, "No model is running.");
   assert.ok(viewModel.steps.some((line) => line.includes("Start a local model")));
 });
@@ -552,6 +658,8 @@ test("Cursor setup freshness recognizes unchanged copied endpoint", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -565,6 +673,8 @@ test("Cursor setup freshness distinguishes copied values from verified setup", (
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -580,12 +690,16 @@ test("Cursor setup freshness marks changed endpoint stale", () => {
   const oldViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://old.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   const currentViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50001/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://new.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -594,14 +708,16 @@ test("Cursor setup freshness marks changed endpoint stale", () => {
     lastCopiedCursorSetup(oldViewModel, "prepareCursor", "2026-06-16T00:00:00.000Z")
   );
   assert.equal(freshness.status, "stale");
-  assert.ok(freshness.message.includes("50000"));
-  assert.ok(freshness.message.includes("50001"));
+  assert.ok(freshness.message.includes("old.example"));
+  assert.ok(freshness.message.includes("new.example"));
 });
 
 test("Cursor setup freshness marks stopped model stale after copied setup values", () => {
   const runningViewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -621,15 +737,17 @@ test("last copied Cursor setup records trigger and verification timestamp", () =
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
   assert.deepEqual(
     lastCopiedCursorSetup(viewModel, "prepareCursor", "2026-06-16T00:00:00.000Z", "2026-06-16T00:00:01.000Z"),
     {
-      baseUrl: "http://127.0.0.1:50000/v1",
+      baseUrl: "https://public.example.com/v1",
       modelId: LOCAL_MOTION_MODEL_ID,
-      apiKeyLabel: "local-motion",
+      apiKeyLabel: "session-key",
       copiedAt: "2026-06-16T00:00:00.000Z",
       trigger: "prepareCursor",
       endpointVerifiedAt: "2026-06-16T00:00:01.000Z"
@@ -641,6 +759,8 @@ test("automagical setup completion records the verified setup identity", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -649,9 +769,9 @@ test("automagical setup completion records the verified setup identity", () => {
   assert.deepEqual(
     automagicalSetupCompletion(copied, "2026-06-16T00:00:02.000Z"),
     {
-      baseUrl: "http://127.0.0.1:50000/v1",
+      baseUrl: "https://public.example.com/v1",
       modelId: LOCAL_MOTION_MODEL_ID,
-      apiKeyLabel: "local-motion",
+      apiKeyLabel: "session-key",
       cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
       endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
       completedAt: "2026-06-16T00:00:02.000Z"
@@ -663,6 +783,8 @@ test("automagical setup completion rejects unverified copied setup", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   });
@@ -707,8 +829,8 @@ test("Cursor setup workflow verifies, copies, opens settings, and records comple
   assert.equal(result.verification.ok, true);
   assert.equal(result.copy.ok, true);
   assert.equal(result.settings.ok, true);
-  assert.equal(harness.requests[0].input, "http://127.0.0.1:50000/v1/models");
-  assert.equal(harness.requests[0].authorization, `Bearer ${LOCAL_MOTION_API_KEY}`);
+  assert.equal(harness.requests[0].input, "https://public.example.com/v1/models");
+  assert.equal(harness.requests[0].authorization, "Bearer session-secret");
   assert.equal(harness.clipboardWrites.length, 1);
   assert.ok(harness.clipboardWrites[0].includes(LOCAL_MOTION_MODEL_ID));
   assert.deepEqual(harness.openedSettings, ["Cursor Models"]);
@@ -842,7 +964,7 @@ test("state validators reject stale persisted setup shapes", () => {
   const copied = {
     baseUrl: "http://127.0.0.1:41434/v1",
     modelId: LOCAL_MOTION_MODEL_ID,
-    apiKeyLabel: "local-motion",
+    apiKeyLabel: "session-key",
     copiedAt: "2026-06-16T00:00:00.000Z",
     trigger: "prepareCursor",
     endpointVerifiedAt: "2026-06-16T00:00:01.000Z"
@@ -850,17 +972,21 @@ test("state validators reject stale persisted setup shapes", () => {
   const completion = {
     baseUrl: "http://127.0.0.1:41434/v1",
     modelId: LOCAL_MOTION_MODEL_ID,
-    apiKeyLabel: "local-motion",
+    apiKeyLabel: "session-key",
     cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
     endpointVerifiedAt: "2026-06-16T00:00:01.000Z",
     completedAt: "2026-06-16T00:00:02.000Z"
   };
 
   assert.equal(isLastCopiedCursorSetup(copied), true);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, apiKeyLabel: "local-motion" }), true);
   assert.equal(isLastCopiedCursorSetup({ ...copied, trigger: "bad" }), false);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, apiKeyLabel: "wrong-key" }), false);
   assert.equal(isLastCopiedCursorSetup({ ...copied, baseUrl: "" }), false);
   assert.equal(isLastCopiedCursorSetup(true), false);
   assert.equal(isAutomagicalSetupCompletion(completion), true);
+  assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "local-motion" }), true);
+  assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "wrong-key" }), false);
   assert.equal(isAutomagicalSetupCompletion({ ...completion, endpointVerifiedAt: "" }), false);
   assert.equal(isAutomagicalSetupCompletion(true), false);
 });
@@ -869,6 +995,8 @@ function cursorSetupWorkflowHarness(options = {}) {
   const runtime = {
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
     modelId: LOCAL_MOTION_MODEL_ID,
     message: "running"
   };

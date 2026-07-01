@@ -75,7 +75,16 @@ export interface RuntimeSession {
   contextTokens: number;
   baseUrl: string;
   upstreamBaseUrl: string;
+  apiKey: string;
   port: number;
+  cursorTunnel?: CursorTunnelStatus;
+}
+
+export interface CursorTunnelStatus {
+  enabled: boolean;
+  source?: "managed" | "manual";
+  url?: string;
+  error?: "binary-missing" | "start-timeout" | "exited" | "dns-unresolved" | "invalid-url";
 }
 
 export interface RuntimeStatus {
@@ -83,6 +92,13 @@ export interface RuntimeStatus {
   baseUrl?: string;
   port?: number;
   modelId?: string;
+  /**
+   * Per-runtime-session bearer credential for the OpenAI-compatible proxy.
+   * Present only while a model is running. This value is intentionally not
+   * persisted; copied setup records keep only apiKeyLabel.
+   */
+  apiKey?: string;
+  cursorTunnel?: CursorTunnelStatus;
   message: string;
   /**
    * True once the local OpenAI-compatible proxy has served a real inbound
@@ -97,7 +113,7 @@ export interface RuntimeStatus {
 export interface LastCopiedCursorSetup {
   baseUrl: string;
   modelId: string;
-  apiKeyLabel: "local-motion";
+  apiKeyLabel: "session-key" | "local-motion";
   copiedAt: string;
   trigger: "prepareCursor" | "copySetupBlock";
   endpointVerifiedAt?: string;
@@ -106,7 +122,7 @@ export interface LastCopiedCursorSetup {
 export interface AutomagicalSetupCompletion {
   baseUrl: string;
   modelId: string;
-  apiKeyLabel: "local-motion";
+  apiKeyLabel: "session-key" | "local-motion";
   cursorSetupCopiedAt: string;
   endpointVerifiedAt: string;
   completedAt: string;
