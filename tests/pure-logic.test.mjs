@@ -23,6 +23,7 @@ import {
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
 import { profileMachine } from "../out/system/machineProfile.js";
+import * as http from "node:http";
 import * as os from "node:os";
 import {
   AUTOMAGICAL_MODEL_REPOS,
@@ -337,6 +338,13 @@ test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {
   });
 });
 
+test("defaults omitted stream to false per the OpenAI chat completions spec", () => {
+  assert.equal(sanitizeExternalChatRequest({ messages: [] }, "m").stream, false);
+  assert.equal(sanitizeExternalChatRequest({ messages: [], stream: true }, "m").stream, true);
+  assert.equal(sanitizeExternalChatRequest({ messages: [], stream: false }, "m").stream, false);
+  assert.equal(sanitizeExternalChatRequest({ messages: [], stream: "yes" }, "m").stream, false);
+});
+
 test("sanitizes stop sequences from external chat payloads", () => {
   assert.equal(sanitizeStop("END"), "END");
   assert.deepEqual(sanitizeStop(["END", "STOP"]), ["END", "STOP"]);
@@ -469,6 +477,45 @@ test("generates and requires a per-session bearer token", () => {
   assert.equal(isAuthorizedBearer("Bearer other", first), false);
   assert.equal(isAuthorizedBearer(`Bearer ${first}`, ""), false);
   assert.equal(isAuthorizedBearer(undefined, first), false);
+});
+
+test("OpenAI proxy serves a single JSON completion when the client omits stream", async () => {
+  const completion = {
+    id: "chatcmpl-local",
+    object: "chat.completion",
+    choices: [{ index: 0, message: { role: "assistant", content: "Hi" }, finish_reason: "stop" }]
+  };
+  let upstreamRequestBody;
+  const upstream = http.createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      upstreamRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(completion));
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const proxy = new OpenAiProxy({
+    upstreamBaseUrl: `http://127.0.0.1:${upstream.address().port}/v1`,
+    modelId: LOCAL_MOTION_MODEL_ID
+  });
+  try {
+    const baseUrl = await proxy.start();
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${proxy.apiKey()}` },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] })
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /application\/json/);
+    // The body must parse as one JSON object, not SSE "data:" frames.
+    assert.deepEqual(JSON.parse(await response.text()), completion);
+    assert.equal(upstreamRequestBody.stream, false);
+  } finally {
+    await proxy.stop();
+    await new Promise((resolve) => upstream.close(resolve));
+  }
 });
 
 test("OpenAI proxy rejects the legacy static bearer key and protects health", async () => {
