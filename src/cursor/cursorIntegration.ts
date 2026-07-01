@@ -1,5 +1,4 @@
 import type { AutomagicalSetupCompletion, LastCopiedCursorSetup, RuntimeStatus } from "../types";
-import { LOCAL_MOTION_API_KEY } from "../runtime/openAiChat";
 
 export interface CursorSetupViewModel {
   baseUrl: string;
@@ -31,13 +30,14 @@ export function isCursorSetupValueKey(value: unknown): value is CursorSetupValue
 
 export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewModel {
   const baseUrl = status.baseUrl ?? "";
+  const apiKey = status.apiKey ?? "";
   const modelId = status.modelId ?? "";
-  const isRunning = status.running && baseUrl.length > 0 && modelId.length > 0;
+  const isRunning = status.running && baseUrl.length > 0 && apiKey.length > 0 && modelId.length > 0;
 
   if (!isRunning) {
     return {
       baseUrl,
-      apiKey: LOCAL_MOTION_API_KEY,
+      apiKey,
       modelId,
       isRunning: false,
       setupBlock: "Start a local model in Local Motion before preparing Cursor.",
@@ -49,13 +49,13 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
   const setupBlock = [
     "Local Motion Cursor setup",
     `Model name: ${modelId}`,
-    `OpenAI API Key: ${LOCAL_MOTION_API_KEY}`,
+    `OpenAI API Key: ${apiKey}`,
     `Override OpenAI Base URL: ${baseUrl}`
   ].join("\n");
 
   return {
     baseUrl,
-    apiKey: LOCAL_MOTION_API_KEY,
+    apiKey,
     modelId,
     isRunning: true,
     setupBlock,
@@ -64,7 +64,7 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     "Go to Models.",
     "Click Add Custom Model.",
     `Set Model name to ${modelId}.`,
-    `Set API Key to ${LOCAL_MOTION_API_KEY}.`,
+    `Set API Key to ${apiKey}.`,
     `Set Base URL to ${baseUrl}.`,
     "Save it, then select Local Motion from Cursor's model picker."
     ],
@@ -103,7 +103,7 @@ export function lastCopiedCursorSetup(
   return {
     baseUrl: viewModel.baseUrl,
     modelId: viewModel.modelId,
-    apiKeyLabel: "local-motion",
+    apiKeyLabel: "session-key",
     copiedAt,
     trigger,
     endpointVerifiedAt

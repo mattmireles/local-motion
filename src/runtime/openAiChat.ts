@@ -1,7 +1,10 @@
-// Same-machine differentiator, not a secret: the proxy only binds to
-// 127.0.0.1 (see openAiProxy.ts), so this gates against other localhost
-// callers, not against any other user of this Mac.
-export const LOCAL_MOTION_API_KEY = "local-motion";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+
+// This is a real per-session credential because the same proxy may be exposed
+// through an opt-in tunnel. Do not persist it or log it.
+export function generateApiKey(): string {
+  return randomBytes(32).toString("hex");
+}
 
 export interface OpenAiMessage {
   role: "user" | "assistant" | "system";
@@ -54,9 +57,15 @@ export function sanitizeStop(value: unknown): string | string[] | undefined {
   return undefined;
 }
 
-export function isAuthorizedBearer(value: string | string[] | undefined): boolean {
+export function isAuthorizedBearer(value: string | string[] | undefined, expectedKey: string): boolean {
   const header = Array.isArray(value) ? value[0] : value;
-  return header === `Bearer ${LOCAL_MOTION_API_KEY}`;
+  if (!header?.startsWith("Bearer ") || expectedKey.length === 0) {
+    return false;
+  }
+  const actualKey = header.slice("Bearer ".length);
+  const actual = Buffer.from(actualKey);
+  const expected = Buffer.from(expectedKey);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 function sanitizeMessages(input: unknown): OpenAiMessage[] {

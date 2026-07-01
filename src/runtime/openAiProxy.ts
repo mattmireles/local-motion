@@ -1,5 +1,5 @@
 import * as http from "node:http";
-import { isAuthorizedBearer, LOCAL_MOTION_API_KEY, sanitizeExternalChatRequest } from "./openAiChat";
+import { generateApiKey, isAuthorizedBearer, sanitizeExternalChatRequest } from "./openAiChat";
 
 interface ProxyOptions {
   upstreamBaseUrl: string;
@@ -28,6 +28,7 @@ const BODY_READ_TIMEOUT_MS = 60_000;
 export class OpenAiProxy {
   private server: http.Server | undefined;
   private port: number | undefined;
+  private readonly sessionApiKey = generateApiKey();
   private readonly abortControllers = new Set<AbortController>();
   private readonly sockets = new Set<import("node:net").Socket>();
   // Flips true on the first authorized chat completion this proxy serves.
@@ -37,6 +38,10 @@ export class OpenAiProxy {
   private clientRequestServed = false;
 
   constructor(private readonly options: ProxyOptions) {}
+
+  apiKey(): string {
+    return this.sessionApiKey;
+  }
 
   /** Whether a client has issued a real inbound chat completion this run. */
   hasServedClientRequest(): boolean {
@@ -98,12 +103,12 @@ export class OpenAiProxy {
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
     try {
-      if (request.method === "GET" && request.url === "/health") {
-        await this.forwardHealth(response);
+      if (!isAuthorizedBearer(request.headers.authorization, this.sessionApiKey)) {
+        this.writeJson(response, 401, { error: { message: "Unauthorized" } });
         return;
       }
-      if (!isAuthorizedBearer(request.headers.authorization)) {
-        this.writeJson(response, 401, { error: { message: "Unauthorized" } });
+      if (request.method === "GET" && request.url === "/health") {
+        await this.forwardHealth(response);
         return;
       }
       if (request.method === "GET" && request.url === "/v1/models") {
@@ -149,7 +154,7 @@ export class OpenAiProxy {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${LOCAL_MOTION_API_KEY}`
+          authorization: `Bearer ${this.sessionApiKey}`
         },
         body: JSON.stringify(body),
         signal: controller.signal

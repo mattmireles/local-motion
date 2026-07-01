@@ -29,6 +29,7 @@ export class LlamaServerManager {
       baseUrl: this.session.baseUrl,
       port: this.session.port,
       modelId: this.session.modelId,
+      apiKey: this.session.apiKey,
       message: `${this.session.displayName} is running.`,
       clientObserved: this.proxy?.hasServedClientRequest() ?? false
     };
@@ -144,7 +145,8 @@ export class LlamaServerManager {
           modelId: LOCAL_MOTION_MODEL_ID,
           port,
           baseUrl: proxyBaseUrl,
-          upstreamBaseUrl
+          upstreamBaseUrl,
+          apiKey: proxy.apiKey()
         };
         this.session = session;
         this.onStatusChanged();

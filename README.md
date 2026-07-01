@@ -108,11 +108,11 @@ For advanced manual control:
    endpoint, copies the setup block, and opens Cursor Models settings.
 
 `Connect Cursor to Local Agent` verifies `GET /v1/models` on the local proxy with
-`Authorization: Bearer local-motion`, copies the full setup block, opens Cursor
-Settings (in plain VS Code, the filtered settings editor instead), and leaves
-one-click copy controls visible for:
+the current session key, copies the full setup block, opens Cursor Settings (in
+plain VS Code, the filtered settings editor instead), and leaves one-click copy
+controls visible for:
 
-- OpenAI API Key: `local-motion`
+- OpenAI API Key: the current session key
 - Override OpenAI Base URL: the active Local Motion Base URL
 - Add Custom Model: the active Local Motion model ID
 - Full setup block
