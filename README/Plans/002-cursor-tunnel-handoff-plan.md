@@ -379,10 +379,7 @@ cross-agent audit P1s found in
 `tmp/cross-agent-audits/phase-audit-0ctZHx/codex-phase-audit.md` were fixed:
 manual URLs now reject localhost/private/HTTP/garbage values with
 `invalid-url`, and managed Quick Tunnels now stop and report `dns-unresolved`
-when the printed hostname does not resolve. The kill-switch crash path is
-guarded at source level by `tests/extension-wiring.test.mjs` because the
-current repo has no executable `LlamaServerManager` child-process harness;
-manual Extension Development Host process-kill proof remains in Phase 5.
+when the printed hostname does not resolve.
 The follow-up audit P1 in
 `tmp/cross-agent-audits/phase-audit-VGupxO/codex-phase-audit.md` was also
 fixed: manual tunnel validation now rejects IPv6 literal hosts, including
@@ -417,7 +414,7 @@ privacy tradeoff.
 
 **Tasks:**
 
-- [ ] `src/ui/setupPanelHtml.ts` (+ `setupPanelStyles.ts`,
+- [x] `src/ui/setupPanelHtml.ts` (+ `setupPanelStyles.ts`,
   `setupProtocol.ts`, `setupPanel.ts` as needed): add a Cursor-connection
   section state machine:
   - tunnel off → explain why localhost cannot work with Cursor and offer
@@ -426,28 +423,52 @@ privacy tradeoff.
     `brew install cloudflared` step;
   - tunnel on and up → show the trycloudflare base URL in the existing copy
     fields.
-- [ ] Replace privacy-implying Cursor copy: "Runs a coding model on this Mac
+- [x] Replace privacy-implying Cursor copy: "Runs a coding model on this Mac
   for Cursor" → "Runs the model on this Mac. Cursor routes prompts through its
   servers and the tunnel."; "Cursor is using your local model." → "Cursor is
   using your local model — local compute, Cursor-routed prompts." Audit every
   Cursor-path string in `setupPanelHtml.ts` and `cursorIntegration.ts` for
   "private"/"local-only" claims.
-- [ ] One-line disclosure adjacent to the enable control, permanent (not a
+- [x] One-line disclosure adjacent to the enable control, permanent (not a
   dismissable toast): "Prompts and files sent from Cursor transit Cursor's
   backend and a Cloudflare tunnel. Anyone with the URL and key can reach the
   proxy while the tunnel is up. Cursor's Zero Data Retention does not apply to
   custom keys."
-- [ ] Do not touch VS Code (`vscode.lm`) path copy — it remains "fully local"
+- [x] Do not touch VS Code (`vscode.lm`) path copy — it remains "fully local"
   and must stay accurate.
 
 **Verification:** `npm run check && npm test` (extension-wiring tests updated
-for the new protocol message); manual Extension Development Host pass per the
-repo's Local Testing procedure; copy-audit gate:
+for the new protocol message); copy-audit gate:
 `grep -rniE "private|local-only|local endpoint|fully local" README.md package.json src/ui src/cursor`
 and review every hit — Cursor-path claims must read "local compute,
 Cursor-routed prompts"; note `package.json` currently says "private local
 coding agent" and must be reworded honestly (VS Code path may keep "fully
-local").
+local"). Not testable in this shell: manual Extension Development Host pass
+per the repo's Local Testing procedure. That interactive UI proof remains in
+the final Phase 5 manual gate.
+
+**Phase 4 status:** Complete on 2026-07-01. Verification run:
+`npm run check`, `npm run lint`, and `npm test` (108 tests). The setup webview
+now shows a tunnel-enable action when Cursor has no public Base URL, a copyable
+`brew install cloudflared` fallback when the managed tunnel is enabled but the
+binary is missing, and the existing Cursor copy fields only when a public
+tunnel URL exists. The permanent disclosure is in the connect card. Copy audit
+run:
+`grep -rniE "private|local-only|local endpoint|fully local" README.md package.json src/ui src/cursor`.
+Reviewed hits: README private-state and private-network language is accurate,
+source `private` hits are TypeScript member visibility, and Cursor-path copy now
+uses local compute / Cursor-routed prompts.
+The Phase 4 audit P3 in
+`tmp/cross-agent-audits/phase-audit-59gM2G/codex-phase-audit.md` was fixed:
+after clicking "Turn on Cursor tunnel" during an active run, the setup panel now
+remembers that the tunnel is enabled for the next start, hides the repeated
+enable button, and shows the restart instruction. The audit P2 was not a code
+bug; the plan now explicitly records the Extension Development Host pass as
+not testable in this shell and defers it to the final manual gate.
+Final Phase 4 audit artifact:
+`tmp/cross-agent-audits/phase-audit-UwQaj2/codex-phase-audit.md` reported no
+P0-P2 findings and marked the phase commit-ready; Claude remained unavailable
+due account rate limit (`429`, reset 7:10pm America/Los_Angeles).
 
 ---
 

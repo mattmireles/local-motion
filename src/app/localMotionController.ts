@@ -186,6 +186,16 @@ export class LocalMotionController {
     return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
   }
 
+  async enableCursorTunnel(): Promise<RuntimeResponse> {
+    await vscode.workspace.getConfiguration("localMotion").update("cursorTunnel", true, vscode.ConfigurationTarget.Global);
+    const runtime = this.runtime.status();
+    return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
+  }
+
+  async copyTunnelInstallCommand(): Promise<void> {
+    await vscode.env.clipboard.writeText("brew install cloudflared");
+  }
+
   /**
    * Manual model switch: run any fully downloaded GGUF from the Storage
    * list. Downloaded files persist after installs, so a user can keep a

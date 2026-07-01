@@ -468,10 +468,28 @@ test("runtime owns the Cursor tunnel next to the proxy and stops it on crashes",
 
 test("setup ON state confirms a real Cursor request without re-nagging", async () => {
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // The earned, confident line appears only when a real request was observed.
-  assert.match(panelSource, /Cursor is using your local model\./);
+  assert.match(panelSource, /Cursor is using your local model - local compute, Cursor-routed prompts\./);
   assert.match(panelSource, /runtime\.clientObserved/);
+  assert.match(panelSource, /Prompts and files sent from Cursor transit Cursor's backend and a Cloudflare tunnel/);
+  assert.match(panelSource, /Zero Data Retention does not apply to custom keys/);
+  assert.match(panelSource, /Turn on Cursor tunnel/);
+  assert.match(panelSource, /cursorTunnelEnabledNextStart = true/);
+  assert.match(panelSource, /Cursor tunnel is on\. Turn the local agent off and on to start the tunnel\./);
+  assert.match(panelSource, /!cursorReady && !tunnel\.enabled && !enabledNextStart/);
+  assert.match(panelSource, /Copy brew install cloudflared/);
+  assert.match(panelSource, /ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelSource, /COPY_TUNNEL_INSTALL_COMMAND/);
+  assert.match(protocolSource, /ENABLE_CURSOR_TUNNEL: "enableCursorTunnel"/);
+  assert.match(protocolSource, /COPY_TUNNEL_INSTALL_COMMAND: "copyTunnelInstallCommand"/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.COPY_TUNNEL_INSTALL_COMMAND/);
+  assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
+  assert.match(controllerSource, /writeText\("brew install cloudflared"\)/);
 
   // Once a real request is observed the connect card is dropped; until then it
   // stays visible. It must not vanish when Cursor Settings opens, so the old

@@ -1,7 +1,7 @@
 {
   "name": "local-motion",
   "displayName": "Local Motion",
-  "description": "Turn a private local coding agent on and off inside VS Code and Cursor.",
+  "description": "Turn a local coding agent on and off inside VS Code and Cursor.",
   "version": "0.0.1",
   "publisher": "local-motion",
   "license": "MIT",
