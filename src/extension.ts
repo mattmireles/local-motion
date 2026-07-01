@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
+import { cursorTunnelConfigFromWorkspace } from "./app/cursorTunnelConfig";
 import { LocalMotionController } from "./app/localMotionController";
 import {
   hasCompletedAutomagicalSetupForInstalledModel,
@@ -27,7 +28,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     provider.refresh();
     refreshStatusBar();
     void setupView?.refresh();
-  });
+  }, cursorTunnelConfigFromWorkspace);
   const resolver = new LlamaServerResolver(output);
   provider = new LocalMotionProvider(context, runtime, resolver, () => state.installedModel());
   const controller = new LocalMotionController(context, state, runtime, resolver, provider);

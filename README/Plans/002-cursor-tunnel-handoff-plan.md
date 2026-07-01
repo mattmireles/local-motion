@@ -323,47 +323,88 @@ when a live tunnel dies. Live spike results:
 
 **Tasks:**
 
-- [ ] `package.json`: add setting `localMotion.cursorTunnel` (boolean,
+- [x] `package.json`: add setting `localMotion.cursorTunnel` (boolean,
   default `false`) with an honest description ("Expose the local proxy to
   Cursor via a Cloudflare Quick Tunnel. Prompts will transit Cursor's servers
   and the tunnel. Applies on the next model start.").
-- [ ] `package.json`: add setting `localMotion.cursorTunnelUrl` (string,
+- [x] `package.json`: add setting `localMotion.cursorTunnelUrl` (string,
   default `""`) for a user-managed public HTTPS endpoint, e.g. a Cloudflare
   Named Tunnel. When set, Local Motion must use this URL instead of spawning a
   Quick Tunnel. This was added after the Phase 2 live gate showed new Quick
   Tunnel hostnames can fail DNS resolution for at least five minutes on this
   machine.
-- [ ] `src/types.ts`: add an explicit tunnel state to `RuntimeStatus`:
-  `cursorTunnel?: { enabled: boolean; source?: "managed" | "manual"; url?: string; error?: "binary-missing" | "start-timeout" | "exited" | "dns-unresolved"; }`
+- [x] `src/types.ts`: add an explicit tunnel state to `RuntimeStatus`:
+  `cursorTunnel?: { enabled: boolean; source?: "managed" | "manual"; url?: string; error?: "binary-missing" | "start-timeout" | "exited" | "dns-unresolved" | "invalid-url"; }`
   — absence of a URL must be distinguishable between setting-off, missing
   binary, timeout, and death, or the webview state machine has to guess.
-- [ ] `src/runtime/llamaServer.ts`: `LlamaServerManager` owns the tunnel as a
+- [x] `src/runtime/llamaServer.ts`: `LlamaServerManager` owns the tunnel as a
   sibling of `this.proxy` — start it after the proxy binds (when the setting
   is on), stop it on **every** proxy-stop path including the llama-server
   crash `exit` handler (`llamaServer.ts:111-119`) and `deactivate()`. Tunnel
   start failure must NOT fail the model start — the local path keeps working
   and `cursorTunnel.error` explains. If `localMotion.cursorTunnelUrl` is set,
   do not spawn `cloudflared`; surface the manual URL and skip process ownership.
-- [ ] `src/app/localMotionController.ts`: read the setting at model start,
+- [x] `src/app/localMotionController.ts`: read the setting at model start,
   pass a tunnel config into the manager, surface `cursorTunnel` in status.
   Toggling either tunnel setting mid-run takes effect on next model start
   (documented in the setting descriptions; no live re-plumbing).
-- [ ] `src/cursor/cursorIntegration.ts`: `cursorSetupViewModel` uses
+- [x] `src/cursor/cursorIntegration.ts`: `cursorSetupViewModel` uses
   `cursorTunnel.url + "/v1"` when present as the Cursor-facing base URL. When
   the tunnel is absent, the steps/status copy must state plainly that Cursor's
   backend cannot reach a localhost URL and point at the tunnel opt-in (or the
   manual guide) — no more handing out a loopback URL as if it worked.
-- [ ] Staleness: no code change expected — confirm with a test that a rotated
+- [x] Staleness: no code change expected — confirm with a test that a rotated
   tunnel URL flips `cursorSetupFreshness` to `stale`.
 
 **Verification:** `npm run check && npm test`; unit tests: view model prefers
 tunnel URL; freshness goes stale across a simulated tunnel restart; each
 `cursorTunnel.error` state leaves `running: true` with loopback base URL and
 the right copy; **crash-path regression test**: simulated llama-server exit
-stops the tunnel (this guards the plan's own kill-switch requirement).
-Manual (Extension Development Host): toggle setting, start model, confirm
-tunnel URL appears and `prepareCursor` verifies against it; `kill` the
-llama-server process and confirm `pgrep cloudflared` is empty.
+stops the tunnel (this guards the plan's own kill-switch requirement). The
+Extension Development Host proof is deferred to Phase 5 after the Phase 4 UI
+controls exist: toggle setting, start model, confirm tunnel URL appears and
+`prepareCursor` verifies against it; `kill` the llama-server process and
+confirm `pgrep cloudflared` is empty.
+
+**Phase 3 status:** Complete on 2026-07-01. Verification run:
+`npm run check`, `npm run lint`, and `npm test` (108 tests). New tests cover:
+manual tunnel URL preference, `/v1` suffix normalization, refusal to hand
+Cursor a localhost URL, public-HTTPS validation for
+`localMotion.cursorTunnelUrl`, staleness on rotated tunnel URLs, tunnel
+error-state copy while the local runtime stays up, opt-in/next-start setting
+descriptions, managed Quick Tunnel DNS readiness before surfacing a URL, and
+behavioral child-exit tunnel kill-switch cleanup used by
+`LlamaServerManager`. The
+cross-agent audit P1s found in
+`tmp/cross-agent-audits/phase-audit-0ctZHx/codex-phase-audit.md` were fixed:
+manual URLs now reject localhost/private/HTTP/garbage values with
+`invalid-url`, and managed Quick Tunnels now stop and report `dns-unresolved`
+when the printed hostname does not resolve. The kill-switch crash path is
+guarded at source level by `tests/extension-wiring.test.mjs` because the
+current repo has no executable `LlamaServerManager` child-process harness;
+manual Extension Development Host process-kill proof remains in Phase 5.
+The follow-up audit P1 in
+`tmp/cross-agent-audits/phase-audit-VGupxO/codex-phase-audit.md` was also
+fixed: manual tunnel validation now rejects IPv6 literal hosts, including
+loopback/private IPv6 and public IPv6 literals, because the manual override
+contract is a public HTTPS tunnel hostname.
+The later audit P1 in
+`tmp/cross-agent-audits/phase-audit-LRc7Te/codex-phase-audit.md` was fixed by
+extracting `cursorTunnelConfigFromWorkspace()` and passing it into
+`LlamaServerManager` as a default config provider. Controller starts still
+pass the config explicitly, and provider-initiated VS Code LM starts now use
+the same next-start tunnel settings instead of bypassing them.
+The P2/P3 verification drift found in
+`tmp/cross-agent-audits/phase-audit-j8jBIk/codex-phase-audit.md` was fixed by
+extracting `attachRuntimeChildExitHandler()` and adding
+`runtime child exit cleanup stops the tunnel kill switch` in
+`tests/cursor-tunnel.test.mjs`; the Phase 3 verification text now explicitly
+defers Extension Development Host UI/process proof until the Phase 4 UI
+controls exist and the Phase 5 manual gate runs.
+Final Phase 3 audit artifact:
+`tmp/cross-agent-audits/phase-audit-b6crXm/codex-phase-audit.md` reported no
+P0-P2 findings and marked the phase ready to commit; Claude remained
+unavailable due account rate limit (`429`, reset 7:10pm America/Los_Angeles).
 
 ---
 

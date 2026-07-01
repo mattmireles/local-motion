@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { cursorTunnelConfigFromWorkspace } from "./cursorTunnelConfig";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
@@ -440,7 +441,7 @@ export class LocalMotionController {
     const cursorModel = { ...installed, modelId: LOCAL_MOTION_MODEL_ID };
     await this.warnIfMemoryTight(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
-    const session = await this.runtime.start(cursorModel, llamaServerPath).catch((error: unknown) => {
+    const session = await this.runtime.start(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace()).catch((error: unknown) => {
       throw withMemoryHint(error, cursorModel.displayName);
     });
     if (installed.modelId !== LOCAL_MOTION_MODEL_ID) {

@@ -5,6 +5,7 @@ import {
   findCloudflared,
   startQuickTunnel
 } from "../out/runtime/cloudflaredTunnel.js";
+import { attachRuntimeChildExitHandler } from "../out/runtime/runtimeChildExit.js";
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -165,4 +166,77 @@ test("startQuickTunnel reports an unexpected exit after URL resolution", async (
 
   assert.equal(observed.code, 2);
   assert.match(observed.output, /post-start/);
+});
+
+test("runtime child exit cleanup stops the tunnel kill switch", () => {
+  const child = new FakeChild();
+  const otherChild = new FakeChild();
+  let currentChild = child;
+  let childCleared = false;
+  let sessionCleared = false;
+  let tunnelStops = 0;
+  let proxyStops = 0;
+  let proxyCleared = false;
+  let statusChanges = 0;
+  const output = [];
+
+  attachRuntimeChildExitHandler(child, {
+    appendLine: (line) => output.push(line),
+    isCurrentChild: (candidate) => candidate === currentChild,
+    clearChild: () => {
+      childCleared = true;
+      currentChild = undefined;
+    },
+    clearSession: () => {
+      sessionCleared = true;
+    },
+    stopTunnel: () => {
+      tunnelStops += 1;
+    },
+    stopProxy: () => {
+      proxyStops += 1;
+    },
+    clearProxy: () => {
+      proxyCleared = true;
+    },
+    onStatusChanged: () => {
+      statusChanges += 1;
+    }
+  });
+  attachRuntimeChildExitHandler(otherChild, {
+    appendLine: (line) => output.push(line),
+    isCurrentChild: (candidate) => candidate === currentChild,
+    clearChild: () => {
+      throw new Error("stale child must not clear runtime child");
+    },
+    clearSession: () => {
+      throw new Error("stale child must not clear session");
+    },
+    stopTunnel: () => {
+      throw new Error("stale child must not stop tunnel");
+    },
+    stopProxy: () => {
+      throw new Error("stale child must not stop proxy");
+    },
+    clearProxy: () => {
+      throw new Error("stale child must not clear proxy");
+    },
+    onStatusChanged: () => {
+      throw new Error("stale child must not notify status");
+    }
+  });
+
+  otherChild.exit(0, null);
+  child.exit(null, "SIGTERM");
+
+  assert.deepEqual(output, [
+    "llama-server exited: code=0 signal=none",
+    "llama-server exited: code=none signal=SIGTERM"
+  ]);
+  assert.equal(childCleared, true);
+  assert.equal(sessionCleared, true);
+  assert.equal(tunnelStops, 1);
+  assert.equal(proxyStops, 1);
+  assert.equal(proxyCleared, true);
+  assert.equal(statusChanges, 1);
 });

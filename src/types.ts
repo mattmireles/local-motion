@@ -77,6 +77,14 @@ export interface RuntimeSession {
   upstreamBaseUrl: string;
   apiKey: string;
   port: number;
+  cursorTunnel?: CursorTunnelStatus;
+}
+
+export interface CursorTunnelStatus {
+  enabled: boolean;
+  source?: "managed" | "manual";
+  url?: string;
+  error?: "binary-missing" | "start-timeout" | "exited" | "dns-unresolved" | "invalid-url";
 }
 
 export interface RuntimeStatus {
@@ -90,6 +98,7 @@ export interface RuntimeStatus {
    * persisted; copied setup records keep only apiKeyLabel.
    */
   apiKey?: string;
+  cursorTunnel?: CursorTunnelStatus;
   message: string;
   /**
    * True once the local OpenAI-compatible proxy has served a real inbound

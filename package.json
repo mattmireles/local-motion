@@ -131,6 +131,16 @@
           "maximum": 65535,
           "description": "Preferred localhost port for the Cursor-facing OpenAI proxy. Local Motion falls back to an ephemeral port if this port is already in use."
         },
+        "localMotion.cursorTunnel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Expose the local proxy to Cursor via a Cloudflare Quick Tunnel. Experimental: prompts will transit Cursor's servers and the tunnel. Applies on the next model start."
+        },
+        "localMotion.cursorTunnelUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional public HTTPS base URL for a user-managed tunnel, such as a Cloudflare Named Tunnel. When set, Local Motion uses this instead of spawning a Quick Tunnel. Applies on the next model start."
+        },
         "localMotion.defaultModelRepo": {
           "type": "string",
           "default": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
