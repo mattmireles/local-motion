@@ -1,0 +1,168 @@
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { test } from "node:test";
+import {
+  findCloudflared,
+  startQuickTunnel
+} from "../out/runtime/cloudflaredTunnel.js";
+
+class FakeChild extends EventEmitter {
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
+  exitCode = null;
+  signalCode = null;
+  killedSignals = [];
+
+  kill(signal = "SIGTERM") {
+    this.killedSignals.push(signal);
+    return true;
+  }
+
+  exit(code = 0, signal = null) {
+    this.exitCode = code;
+    this.signalCode = signal;
+    this.emit("exit", code, signal);
+  }
+}
+
+test("findCloudflared prefers PATH before Homebrew locations", async () => {
+  const seen = [];
+  const result = await findCloudflared({
+    commandPath: async (command) => {
+      assert.equal(command, "cloudflared");
+      return "/tmp/bin/cloudflared";
+    },
+    executableExists: async (targetPath) => {
+      seen.push(targetPath);
+      return targetPath === "/tmp/bin/cloudflared";
+    }
+  });
+
+  assert.equal(result, "/tmp/bin/cloudflared");
+  assert.deepEqual(seen, ["/tmp/bin/cloudflared"]);
+});
+
+test("findCloudflared checks Homebrew fallbacks when PATH misses", async () => {
+  const seen = [];
+  const result = await findCloudflared({
+    commandPath: async () => undefined,
+    executableExists: async (targetPath) => {
+      seen.push(targetPath);
+      return targetPath === "/usr/local/bin/cloudflared";
+    }
+  });
+
+  assert.equal(result, "/usr/local/bin/cloudflared");
+  assert.deepEqual(seen, ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]);
+});
+
+test("startQuickTunnel parses trycloudflare URL from noisy stderr", async () => {
+  const child = new FakeChild();
+  const spawned = [];
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: (command, args, options) => {
+      spawned.push({ command, args, options });
+      return child;
+    },
+    startupTimeoutMs: 50
+  });
+
+  child.stderr.emit("data", "2026 INF Starting quick tunnel\n");
+  child.stderr.emit("data", "Visit https://able-baker-charlie.trycloudflare.com for your tunnel\n");
+  const tunnel = await tunnelPromise;
+
+  assert.equal(tunnel.url, "https://able-baker-charlie.trycloudflare.com");
+  assert.equal(spawned[0].command, "/bin/cloudflared");
+  assert.deepEqual(spawned[0].args, ["tunnel", "--url", "http://127.0.0.1:41434"]);
+  assert.deepEqual(spawned[0].options.stdio, ["ignore", "pipe", "pipe"]);
+});
+
+test("startQuickTunnel rejects when startup times out and stops the child", async () => {
+  const child = new FakeChild();
+  let exits = 0;
+  await assert.rejects(
+    () => startQuickTunnel("/bin/cloudflared", 41434, {
+      spawn: () => child,
+      startupTimeoutMs: 1,
+      killTimeoutMs: 1,
+      onExit: () => {
+        exits += 1;
+      }
+    }),
+    /did not print a trycloudflare URL/
+  );
+  child.stdout.emit("data", "https://too-late.trycloudflare.com");
+  child.exit(null, "SIGKILL");
+
+  assert.equal(child.killedSignals.includes("SIGTERM"), true);
+  assert.equal(exits, 0);
+});
+
+test("startQuickTunnel rejects if cloudflared exits before printing a URL", async () => {
+  const child = new FakeChild();
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: () => child,
+    startupTimeoutMs: 50
+  });
+
+  child.stderr.emit("data", "no tunnel today");
+  child.exit(1, null);
+
+  await assert.rejects(tunnelPromise, /exited before printing/);
+});
+
+test("startQuickTunnel stop terminates the child without reporting an unexpected exit", async () => {
+  const child = new FakeChild();
+  let exits = 0;
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: () => child,
+    startupTimeoutMs: 50,
+    killTimeoutMs: 50,
+    onExit: () => {
+      exits += 1;
+    }
+  });
+  child.stdout.emit("data", "https://one-two-three.trycloudflare.com");
+  const tunnel = await tunnelPromise;
+
+  const stopped = tunnel.stop();
+  child.exit(null, "SIGTERM");
+  await stopped;
+
+  assert.deepEqual(child.killedSignals, ["SIGTERM"]);
+  assert.equal(exits, 0);
+});
+
+test("startQuickTunnel stop escalates to SIGKILL when the child does not exit", async () => {
+  const child = new FakeChild();
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: () => child,
+    startupTimeoutMs: 50,
+    killTimeoutMs: 1
+  });
+  child.stdout.emit("data", "https://sigkill-fallback.trycloudflare.com");
+  const tunnel = await tunnelPromise;
+
+  await tunnel.stop();
+
+  assert.deepEqual(child.killedSignals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("startQuickTunnel reports an unexpected exit after URL resolution", async () => {
+  const child = new FakeChild();
+  let observed;
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: () => child,
+    startupTimeoutMs: 50,
+    onExit: (exit) => {
+      observed = exit;
+    }
+  });
+  child.stdout.emit("data", "https://post-start.trycloudflare.com");
+  await tunnelPromise;
+
+  child.exit(2, null);
+
+  assert.equal(observed.code, 2);
+  assert.match(observed.output, /post-start/);
+});

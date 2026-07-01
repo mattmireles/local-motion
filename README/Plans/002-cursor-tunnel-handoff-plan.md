@@ -258,7 +258,7 @@ the cursor private-network guide now describe the current session key instead.
 
 **Tasks:**
 
-- [ ] Create `src/runtime/cloudflaredTunnel.ts` (~150 LOC target):
+- [x] Create `src/runtime/cloudflaredTunnel.ts` (~150 LOC target):
   - `findCloudflared(): string | undefined` — check PATH plus
     `/opt/homebrew/bin/cloudflared` and `/usr/local/bin/cloudflared`
     (mirror the resolver pattern in `llamaServerResolver.ts`).
@@ -267,24 +267,51 @@ the cursor private-network guide now describe the current session key instead.
     `https://<subdomain>.trycloudflare.com` match from stderr/stdout, resolve
     with `{ url, stop() }`; reject after a 30 s startup timeout with the
     captured output in the error message.
-  - Exit handling: if the process dies while a session is active, clear
-    `tunnelUrl` and surface a status message (freshness then reports stale).
+  - Exit handling: expose an `onExit` callback so Phase 3 can clear
+    `tunnelUrl` and surface a status message when a live tunnel process dies.
   - `stop()` kills the child (SIGTERM, SIGKILL fallback) — this is the kill
     switch; document it in the file header.
-- [ ] Keep the module pure of vscode imports so it is testable under
+- [x] Keep the module pure of vscode imports so it is testable under
   `node --test` like the rest of `src/runtime`.
 
 **Verification:** `npm run check && npm test`; unit tests for URL parsing
 (fixture cloudflared output, including the banner noise), timeout path, and
 exit-cleanup using a fake child process.
 
-**Mandatory SSE spike (gates Phase 3/4 decisions):** run the module against
-the live proxy, then drive one **streamed** `chat/completions` through the
-trycloudflare URL with `curl -N`. Record whether tokens arrive incrementally
-or buffered. If streaming is broken (not merely buffered), stop and add the
-`localMotion.cursorTunnelUrl` manual-override setting (named-tunnel escape
-hatch) to Phase 3 before proceeding — do not ship a managed path that can't
-stream.
+**Mandatory live tunnel spike (gates Phase 3/4 decisions):** run the module
+against the live proxy, then drive one **streamed** `chat/completions` through
+the trycloudflare URL with `curl -N`. Record whether tokens arrive
+incrementally or buffered. If streaming is broken (not merely buffered), stop
+and add the `localMotion.cursorTunnelUrl` manual-override setting
+(named-tunnel escape hatch) to Phase 3 before proceeding — do not ship a
+managed path that can't stream. If the module-created Quick Tunnel hostname
+does not resolve within five minutes, treat that as a managed Quick Tunnel
+reachability failure, add the same manual override, and proceed only with the
+plan explicitly amended; do not claim the managed Quick Tunnel path is proven.
+
+**Phase 2 status:** Complete on 2026-07-01 after the live tunnel gate failed
+the managed Quick Tunnel path and Phase 3 was amended with the required
+manual/named-tunnel override. Verification run:
+`npm run check`, `npm run lint`, `npm test`, and focused
+`npm run compile && node --test tests/cursor-tunnel.test.mjs`. The module is
+pure runtime code and exposes `onExit` so Phase 3 can clear `RuntimeStatus`
+when a live tunnel dies. Live spike results:
+
+- New Quick Tunnel processes printed URLs, but fresh hostnames failed DNS
+  resolution for up to 90 seconds in three runs, then for five minutes with a
+  fake streaming upstream behind the current `OpenAiProxy` and generated
+  session key. This is a Quick Tunnel reachability failure, not an SSE verdict.
+- An already-running Quick Tunnel for the same local proxy shape resolved and
+  `curl -N` streamed `POST /v1/chat/completions` to `data: [DONE]` through
+  `https://ear-parks-relative-voices.trycloudflare.com/v1/chat/completions`
+  using `Authorization: Bearer local-motion`. Tokens arrived through SSE;
+  this proves SSE works once a `trycloudflare.com` hostname is actually
+  reachable.
+- Phase 3 must add `localMotion.cursorTunnelUrl` before UI work and treat
+  endpoint verification as the real readiness proof; merely parsing a
+  `trycloudflare.com` URL is not enough to claim Cursor can reach it yet. The
+  managed Quick Tunnel path remains experimental/unproven until a
+  module-created hostname resolves and verifies end to end.
 
 ---
 
@@ -300,8 +327,14 @@ stream.
   default `false`) with an honest description ("Expose the local proxy to
   Cursor via a Cloudflare Quick Tunnel. Prompts will transit Cursor's servers
   and the tunnel. Applies on the next model start.").
+- [ ] `package.json`: add setting `localMotion.cursorTunnelUrl` (string,
+  default `""`) for a user-managed public HTTPS endpoint, e.g. a Cloudflare
+  Named Tunnel. When set, Local Motion must use this URL instead of spawning a
+  Quick Tunnel. This was added after the Phase 2 live gate showed new Quick
+  Tunnel hostnames can fail DNS resolution for at least five minutes on this
+  machine.
 - [ ] `src/types.ts`: add an explicit tunnel state to `RuntimeStatus`:
-  `cursorTunnel?: { enabled: boolean; url?: string; error?: "binary-missing" | "start-timeout" | "exited"; }`
+  `cursorTunnel?: { enabled: boolean; source?: "managed" | "manual"; url?: string; error?: "binary-missing" | "start-timeout" | "exited" | "dns-unresolved"; }`
   — absence of a URL must be distinguishable between setting-off, missing
   binary, timeout, and death, or the webview state machine has to guess.
 - [ ] `src/runtime/llamaServer.ts`: `LlamaServerManager` owns the tunnel as a
@@ -309,11 +342,12 @@ stream.
   is on), stop it on **every** proxy-stop path including the llama-server
   crash `exit` handler (`llamaServer.ts:111-119`) and `deactivate()`. Tunnel
   start failure must NOT fail the model start — the local path keeps working
-  and `cursorTunnel.error` explains.
+  and `cursorTunnel.error` explains. If `localMotion.cursorTunnelUrl` is set,
+  do not spawn `cloudflared`; surface the manual URL and skip process ownership.
 - [ ] `src/app/localMotionController.ts`: read the setting at model start,
   pass a tunnel config into the manager, surface `cursorTunnel` in status.
-  Toggling the setting mid-run takes effect on next model start (documented in
-  the setting description; no live re-plumbing).
+  Toggling either tunnel setting mid-run takes effect on next model start
+  (documented in the setting descriptions; no live re-plumbing).
 - [ ] `src/cursor/cursorIntegration.ts`: `cursorSetupViewModel` uses
   `cursorTunnel.url + "/v1"` when present as the Cursor-facing base URL. When
   the tunnel is absent, the steps/status copy must state plainly that Cursor's
