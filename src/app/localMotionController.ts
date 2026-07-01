@@ -53,7 +53,16 @@ export class LocalMotionController {
           await vscode.env.clipboard.writeText(value);
         },
         openSettings: async (query) => {
-          await vscode.commands.executeCommand("workbench.action.openSettings", query);
+          // Cursor's Add Custom Model flow lives in Cursor Settings — a
+          // separate surface from the VS Code settings editor, opened by a
+          // Cursor-only command (confirmed in Cursor's workbench bundle).
+          // Plain VS Code lacks that command and falls back to the
+          // filtered settings editor.
+          try {
+            await vscode.commands.executeCommand("cursor.openCursorSettings");
+          } catch {
+            await vscode.commands.executeCommand("workbench.action.openSettings", query);
+          }
         },
         fetch: (input, init) => fetch(input, init),
         now: () => new Date().toISOString()

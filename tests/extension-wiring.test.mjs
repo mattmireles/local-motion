@@ -230,6 +230,23 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
 });
 
+test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+
+  // Cursor has two settings surfaces. Add Custom Model lives in Cursor
+  // Settings (command cursor.openCursorSettings); workbench.action.openSettings
+  // opens the VS Code settings editor, which filtered "Cursor Models" to two
+  // unrelated entries. The native command must be tried first, with the VS
+  // Code editor only as the non-Cursor fallback.
+  const nativeIndex = controllerSource.indexOf('executeCommand("cursor.openCursorSettings")');
+  const fallbackIndex = controllerSource.indexOf('executeCommand("workbench.action.openSettings", query)');
+  assert.notEqual(nativeIndex, -1);
+  assert.notEqual(fallbackIndex, -1);
+  assert.equal(nativeIndex < fallbackIndex, true);
+  const between = controllerSource.slice(nativeIndex, fallbackIndex);
+  assert.match(between, /catch/);
+});
+
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");

@@ -118,7 +118,7 @@ export class CursorSetupWorkflow {
     }
     try {
       await this.host.openSettings("Cursor Models");
-      return { type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED, ok: true, message: "Opened Settings filtered to Cursor Models." };
+      return { type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED, ok: true, message: "Opened Cursor Settings. Click Add Custom Model under Models." };
     } catch (error) {
       return {
         type: SETUP_RESPONSE_TYPE.CURSOR_SETTINGS_OPENED,

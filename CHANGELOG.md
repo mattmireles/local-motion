@@ -14,6 +14,10 @@
 - Adds a Run button to each fully downloaded model in the Storage list, so
   users can keep several models on disk and switch manually — for example a
   max-utilization model and a lighter one for when the Mac is busy.
+- Fixes Open Cursor Settings opening the VS Code settings editor instead of
+  Cursor Settings, where Add Custom Model actually lives. In Cursor the
+  native `cursor.openCursorSettings` command opens the right surface; plain
+  VS Code keeps the filtered settings editor.
 
 ## 0.0.1
 
