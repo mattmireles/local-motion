@@ -124,10 +124,24 @@ picker or private settings. Local Motion deliberately does not write Cursor
 SQLite databases, secure storage, `settings.json`, or other private application
 state.
 
+**Known Cursor limit (confirmed 2026-07-01):** Cursor routes every custom-model
+request through its own cloud backend, which refuses private addresses with
+`Provider returned error: Access to private networks is forbidden`. A
+`http://127.0.0.1:41434/v1` Base URL therefore cannot work in Cursor's native
+chat, in any build. The proven workaround is a public HTTPS tunnel
+(cloudflared or ngrok) in front of the Local Motion proxy — with the tradeoff
+that prompts then transit Cursor's backend and the tunnel, so the Cursor path
+is "local compute", not "fully private". Full failure analysis, fix matrix,
+and setup steps:
+[Cursor private-network block guide](README/Guides/cursor-private-network-block-guide.md).
+The fully local path (`vscode.lm` provider) works in real VS Code only; Cursor
+does not implement the VS Code Language Model API.
+
 Cursor's OpenAI Base URL override is global in Cursor settings and may not apply
-to every Cursor surface. Treat setup as proven only for the Cursor surface you
-manually test, such as `Cmd+L` chat. Do not assume Agent, Composer, Inline Edit,
-or Tab autocomplete use the local endpoint until verified in your Cursor build.
+to every Cursor surface. Custom API keys officially power chat models only —
+Tab autocomplete, Apply, and Auto never use the custom endpoint, and Agent mode
+is best-effort. Treat setup as proven only for the Cursor surface you manually
+test, such as `Cmd+L` chat.
 
 Local Motion keeps Cursor's Base URL stable across restarts by preferring
 `http://127.0.0.1:41434/v1` for the local proxy. If that port is occupied and

@@ -14,6 +14,10 @@ similar extensions.
 - **[Cursor Model Picker Setup Plan](../Plans/001-cursor-model-picker-setup-plan.md)**:
   Local Motion's assisted Cursor setup plan; defines guardrails this repo follows
   (no private-state mutation, instruction-only Cursor integration).
+- **[Cursor "Access to private networks is forbidden" Debugging Field Guide](cursor-private-network-block-guide.md)**:
+  Why a localhost base URL can never work in Cursor (backend-routed BYOK, SSRF
+  block) and the verified tunnel workarounds. Read before touching the Cursor
+  handoff.
 - **Implementation anchors in this repo**:
   - [`src/provider/localMotionProvider.ts`](../../src/provider/localMotionProvider.ts) —
     `vscode.lm` provider and `isUserSelectable` workaround.
