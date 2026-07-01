@@ -36,7 +36,9 @@ export function sanitizeExternalChatRequest(input: unknown, fallbackModelId: str
       typeof source.model === "string" && source.model.trim() ? source.model : fallbackModelId,
       sanitizeMessages(source.messages)
     ),
-    stream: source.stream !== false,
+    // OpenAI's spec defaults stream to false; an omitted or non-boolean
+    // value must yield a single JSON completion, never SSE.
+    stream: source.stream === true,
     temperature: numberOrDefault(source.temperature, 0.2),
     top_p: numberOrDefault(source.top_p, 0.95),
     max_tokens: numberOrDefault(source.max_tokens, 2048),
