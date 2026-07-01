@@ -9,6 +9,9 @@ it, and frees the memory when you do not.
 - Gives you one local-agent switch: turn on, connect Cursor, free memory.
 - Chooses a compatible local coding model for this Mac.
 - Reuses the installed model when possible, so turning it on again is quick.
+- Keeps every downloaded model on disk and switches between them on demand,
+  so you can run a maximum-size model normally and a lighter one when the
+  Mac is busy.
 - Connects Cursor through a local endpoint without writing Cursor private state.
 - Frees the loaded model from memory immediately when you are done.
 - Keeps the runtime bound to `127.0.0.1`.
@@ -16,6 +19,14 @@ it, and frees the memory when you do not.
 ## Under The Hood
 
 - Profiles your Mac for architecture, memory, and model storage space.
+- Sizes the model memory budget at 80% of unified memory, pegged to the Apple
+  Silicon Metal wired-memory limit (the real ceiling for GPU-resident GGUF
+  weights), and estimates load cost at 1.1x file size plus explicit KV-cache
+  and server overheads.
+- Never blocks a start on current free memory. macOS reclaims cache and
+  compresses idle apps on demand, so Local Motion shows a non-blocking
+  "memory is tight" warning instead of refusing, and reports an honest
+  out-of-memory explanation if `llama-server` genuinely cannot load.
 - Searches Hugging Face GGUF repositories and ranks compatible quantizations
   only when setup or advanced model controls need them.
 - Downloads model files with resumable streaming.
@@ -67,6 +78,15 @@ The ladder is maintained from a live ranking; see
 If setup fails or is cancelled, run `Local Motion: Repair Local Agent`.
 
 Run `Local Motion: Free Memory` to unload the local model immediately.
+
+### Switching Models
+
+Every downloaded model stays on disk. To switch, open the setup panel, click
+`Manage` next to the storage line, and click `Run` on any fully downloaded
+model. The current model stops, the selected one starts, and it becomes the
+model that `Turn On Local Agent` starts next time. A practical pattern on a
+loaded Mac: keep one maximum-size model for focused work and one small model
+for when other applications need the memory.
 
 Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
 model file, local runtime, proxy verification, copied Cursor values, and the

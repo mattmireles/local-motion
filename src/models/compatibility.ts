@@ -2,6 +2,16 @@ import type { CandidateQuantization, CompatibilityResult, GgufFile, MachineProfi
 
 const GIB = 1024 ** 3;
 
+/**
+ * Runtime footprint of the weights relative to GGUF file size. llama.cpp
+ * mmaps the file, so weights cost ~1× the file; the extra 10% covers compute
+ * buffers and allocator slack. KV cache and server overhead are added as
+ * separate terms below — do not fold them back in here, that was the old
+ * 1.32 multiplier double-counting ~13GB of phantom requirement on a 40GB
+ * model.
+ */
+const MODEL_LOAD_OVERHEAD = 1.1;
+
 export function classifyCompatibility(
   file: GgufFile,
   machine: MachineProfile,
@@ -10,7 +20,7 @@ export function classifyCompatibility(
   const estimatedModelBytes = file.sizeBytes ?? estimateModelBytes(file);
   const contextOverhead = estimateContextOverheadBytes(contextTokens, file.parameterCount);
   const serverOverhead = machine.isAppleSilicon ? 1.25 * GIB : 2 * GIB;
-  const requiredMemoryBytes = Math.ceil(estimatedModelBytes * 1.32 + contextOverhead + serverOverhead);
+  const requiredMemoryBytes = Math.ceil(estimatedModelBytes * MODEL_LOAD_OVERHEAD + contextOverhead + serverOverhead);
   const requiredDiskBytes = Math.ceil(estimatedModelBytes * 1.08 + 1 * GIB);
   const blockingReasons: string[] = [];
   const advisories: string[] = [];
@@ -41,7 +51,7 @@ export function classifyCompatibility(
         ? blockingReasons
         : advisories.length > 0
           ? advisories
-          : ["Fits the conservative memory and disk budget for this Mac."]
+          : ["Fits this Mac's memory and disk budget."]
   };
 }
 

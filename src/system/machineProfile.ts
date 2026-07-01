@@ -6,6 +6,19 @@ import type { MachineProfile } from "../types";
 
 const execFile = promisify(childProcess.execFile);
 
+/**
+ * Fraction of total unified memory offered to the model at install time.
+ *
+ * The binding physical constraint on Apple Silicon is Metal's wired-memory
+ * ceiling (`MTLDevice.recommendedMaxWorkingSetSize`), not free RAM: GGUF
+ * weights are GPU-wired, and Metal refuses allocations past that ceiling no
+ * matter how idle the machine is. Measured at 81% of total RAM on a 64GB
+ * M2 Ultra (55,662,788,608 bytes); 0.80 sits just under it. macOS handles
+ * everything else — cache eviction, compression of idle apps — so a
+ * separate reserve for "other apps" would be double-counting.
+ */
+const METAL_WIRED_LIMIT_FRACTION = 0.8;
+
 export async function profileMachine(storageRoot: string): Promise<MachineProfile> {
   const [cpuBrand, availableMemoryBytes, availableDiskBytes] = await Promise.all([
     readCpuBrand(),
@@ -25,7 +38,7 @@ export async function profileMachine(storageRoot: string): Promise<MachineProfil
     isAppleSilicon,
     totalMemoryBytes,
     availableMemoryBytes,
-    recommendedModelMemoryBytes: Math.floor(totalMemoryBytes * 0.72),
+    recommendedModelMemoryBytes: Math.floor(totalMemoryBytes * METAL_WIRED_LIMIT_FRACTION),
     storageRoot,
     availableDiskBytes
   };

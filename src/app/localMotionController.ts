@@ -6,7 +6,7 @@ import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { classifyCompatibility, meetsAutomagicalQualityFloor, parameterCountFromText, quantizationFromFileName, selectBestCompatibleQuantization } from "../models/compatibility";
 import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
-import { deleteDownloadedModel, listDownloadedModels } from "../models/downloadedModels";
+import { deleteDownloadedModel, listDownloadedModels, resolveDownloadedModelId } from "../models/downloadedModels";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
 import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
@@ -174,6 +174,49 @@ export class LocalMotionController {
     this.provider.refresh();
     const runtime = this.runtime.status();
     return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
+  }
+
+  /**
+   * Manual model switch: run any fully downloaded GGUF from the Storage
+   * list. Downloaded files persist after installs, so a user can keep a
+   * max-utilization model and a lighter one side by side and flip between
+   * them when the machine is loaded — runtime.start() stops the previous
+   * server before spawning the new one.
+   */
+  async startDownloadedModel(id: string): Promise<SetupStateResponse> {
+    const downloaded = await this.downloadedModels();
+    const model = downloaded.models.find((candidate) => candidate.id === id);
+    if (!model) {
+      throw new Error("Downloaded model was not found.");
+    }
+    if (model.partial) {
+      throw new Error("That download is incomplete. Finish downloading it or delete it.");
+    }
+    if (model.active) {
+      return this.initialState();
+    }
+
+    const modelPath = resolveDownloadedModelId(this.modelsRoot(), id);
+    const contextTokens = vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
+    const installed: InstalledModel = {
+      // The storage id is <safeId(repoId-revision)>/<fileName>; the folder
+      // name is the best surviving record of the source repo and is only
+      // used for parameter-count inference and display fallbacks.
+      repoId: path.dirname(id),
+      fileName: model.fileName,
+      sizeBytes: model.sizeBytes,
+      modelPath,
+      modelId: LOCAL_MOTION_MODEL_ID,
+      displayName: model.fileName.replace(/\.gguf$/i, ""),
+      contextTokens
+    };
+
+    await this.startInstalledModel(installed, {
+      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+    });
+    await this.state.setInstalledModel(installed);
+    this.provider.refresh();
+    return this.initialState();
   }
 
   async deleteDownloadedModel(id: string): Promise<SetupStateResponse | undefined> {
@@ -386,9 +429,11 @@ export class LocalMotionController {
     options: { allowInstall: boolean }
   ): Promise<RuntimeSession> {
     const cursorModel = { ...installed, modelId: LOCAL_MOTION_MODEL_ID };
-    await this.assertReadyToStartInstalledModel(cursorModel);
+    await this.warnIfMemoryTight(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
-    const session = await this.runtime.start(cursorModel, llamaServerPath);
+    const session = await this.runtime.start(cursorModel, llamaServerPath).catch((error: unknown) => {
+      throw withMemoryHint(error, cursorModel.displayName);
+    });
     if (installed.modelId !== LOCAL_MOTION_MODEL_ID) {
       await this.state.setInstalledModel(cursorModel);
       this.provider.refresh();
@@ -417,7 +462,15 @@ export class LocalMotionController {
       : undefined;
   }
 
-  private async assertReadyToStartInstalledModel(installed: InstalledModel): Promise<void> {
+  /**
+   * Advisory only, never blocking. macOS keeps "free" memory near zero by
+   * design (cache fills idle RAM) and reclaims it on demand — it evicts
+   * file cache and compresses idle apps the moment the model asks for
+   * pages. Instantaneous free memory therefore does not predict whether
+   * the model loads; the honest failure signal is llama-server itself,
+   * which startInstalledModel catches and explains.
+   */
+  private async warnIfMemoryTight(installed: InstalledModel): Promise<void> {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     const compatibility = classifyCompatibility({
       repoId: installed.repoId,
@@ -428,15 +481,11 @@ export class LocalMotionController {
       parameterCount: parameterCountFromText(`${installed.repoId} ${installed.fileName}`),
       downloadUrl: ""
     }, machine, installed.contextTokens);
-    this.assertCurrentMemoryReady(installed.displayName, compatibility.requiredMemoryBytes, machine.availableMemoryBytes);
-  }
-
-  private assertCurrentMemoryReady(modelName: string, requiredMemoryBytes: number, availableMemoryBytes: number): void {
-    if (requiredMemoryBytes <= availableMemoryBytes) {
+    if (compatibility.requiredMemoryBytes <= machine.availableMemoryBytes) {
       return;
     }
-    throw new Error(
-      `${modelName} needs about ${formatBytes(requiredMemoryBytes)} of memory to run, but only ${formatBytes(availableMemoryBytes)} is free right now. Close some apps and turn it on again, or choose a smaller size in Advanced.`
+    void vscode.window.showWarningMessage(
+      `Memory is tight: ${installed.displayName} wants about ${formatBytes(compatibility.requiredMemoryBytes)} and about ${formatBytes(machine.availableMemoryBytes)} looks free right now. macOS will make room, but other apps may slow down while it runs.`
     );
   }
 
@@ -491,4 +540,21 @@ export class LocalMotionController {
   private optionalInstalledModelView(installed: InstalledModel | undefined): SetupInstalledModelView | undefined {
     return installed ? this.installedModelView(installed) : undefined;
   }
+}
+
+/**
+ * llama-server dying during startup is the honest out-of-memory signal (the
+ * advisory in warnIfMemoryTight never blocks), so explain the likely cause
+ * and the way out. Only genuine server failures get the hint — all
+ * llamaHealth failure messages start with "llama-server"; cancellations and
+ * resolver errors pass through untouched.
+ */
+function withMemoryHint(error: unknown, modelName: string): Error {
+  const original = error instanceof Error ? error : new Error(String(error));
+  if (!original.message.startsWith("llama-server")) {
+    return original;
+  }
+  return new Error(
+    `${modelName} failed to start. If this Mac is busy, it may not have room for the model right now — close some apps and try again, or run a smaller downloaded model from Storage. (${original.message})`
+  );
 }

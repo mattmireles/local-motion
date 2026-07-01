@@ -113,6 +113,7 @@ export function setupPanelHtml(nonce: string): string {
       settings: undefined,
       copyResults: {},
       automagicalSetupRunning: false,
+      modelSwitchRunning: false,
       setupOperationRunning: false,
       selectedModelName: '',
       progressMessage: '',
@@ -201,14 +202,22 @@ export function setupPanelHtml(nonce: string): string {
         state.runtime = message.runtime;
         state.machine = message.machine;
         updateDownloadedStorage(message);
-        state.setupOperationRunning = false;
+        /* A model switch spans several runtime status changes (old model
+           stops, new one loads), each of which pushes a fresh STATE. The
+           switch is only over when a state arrives with the model running —
+           until then the surface must keep saying "starting", not "off". */
+        if (state.modelSwitchRunning && message.runtime && message.runtime.running) {
+          state.modelSwitchRunning = false;
+          state.progressMessage = '';
+        }
+        state.setupOperationRunning = state.modelSwitchRunning;
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
         renderMachine(message.machine);
         render();
-        setStatus('Ready.');
+        setStatus(state.modelSwitchRunning ? state.progressMessage : 'Ready.');
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.SEARCH_RESULTS}') renderSearchResults(message.results);
       if (message.type === '${SETUP_RESPONSE_TYPE.QUANTIZATIONS}') renderQuantizations(message.quantizations);
@@ -326,6 +335,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.ERROR}') {
         state.automagicalSetupRunning = false;
+        state.modelSwitchRunning = false;
         state.setupOperationRunning = false;
         state.progressMessage = '';
         state.progressPercent = undefined;
@@ -349,7 +359,13 @@ export function setupPanelHtml(nonce: string): string {
       const errored = Boolean(state.errorMessage);
       // The honest connected signal: a real inbound request has hit the proxy.
       const inUse = Boolean(runtime.clientObserved);
-      const phase = (errored && !running) ? 'error' : running ? 'on' : busy ? 'starting' : 'off';
+      // A switch outranks "on": while one model hands off to another, the
+      // old model may still report running, but Turn Off must not be
+      // clickable against a server that is about to be replaced.
+      const phase = (errored && !running) ? 'error'
+        : state.modelSwitchRunning ? 'starting'
+        : running ? 'on'
+        : busy ? 'starting' : 'off';
       renderStorage();
 
       // Brand status dot: off / busy / on.
@@ -537,12 +553,19 @@ export function setupPanelHtml(nonce: string): string {
           !model.active && model.installed ? 'Installed' : '',
           model.partial ? 'Partial' : ''
         ].filter(Boolean).join(' · ');
+        const disabled = state.setupOperationRunning ? ' disabled' : '';
+        const runButton = model.active || model.partial
+          ? ''
+          : '<button class="btn" data-index="' + index + '" data-action="run" aria-label="Run ' + esc(model.fileName) + '"' + disabled + '>Run</button>';
         return '<div class="storage-item">' +
           '<div>' +
             '<div class="storage-name">' + esc(model.fileName) + '</div>' +
             '<div class="storage-meta">' + esc(formatBytes(model.sizeBytes)) + (labels ? ' · ' + esc(labels) : '') + '</div>' +
           '</div>' +
-          '<button class="btn danger" data-index="' + index + '" aria-label="Delete ' + esc(model.fileName) + ', ' + esc(formatBytes(model.sizeBytes)) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>Delete</button>' +
+          '<div class="storage-actions">' +
+            runButton +
+            '<button class="btn danger" data-index="' + index + '" data-action="delete" aria-label="Delete ' + esc(model.fileName) + ', ' + esc(formatBytes(model.sizeBytes)) + '"' + disabled + '>Delete</button>' +
+          '</div>' +
         '</div>';
       }).join('');
 
@@ -551,6 +574,15 @@ export function setupPanelHtml(nonce: string): string {
           if (state.setupOperationRunning) return;
           const model = models[Number(button.dataset.index)];
           if (!model) return;
+          if (button.dataset.action === 'run') {
+            state.modelSwitchRunning = true;
+            state.setupOperationRunning = true;
+            state.progressMessage = 'Starting ' + model.fileName + '…';
+            render();
+            setStatus(state.progressMessage);
+            vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL}', id: model.id });
+            return;
+          }
           vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL}', id: model.id });
         });
       }

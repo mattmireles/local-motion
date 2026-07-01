@@ -167,6 +167,20 @@ class SetupWebviewSession {
         case SETUP_REQUEST_COMMAND.STOP:
           await this.post(await this.controller.stop());
           break;
+        case SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL:
+          if (this.setupOperationActive) {
+            throw new Error("Wait for setup to finish before switching models.");
+          }
+          if (!message.id) {
+            throw new Error("No downloaded model was selected.");
+          }
+          {
+            const id = message.id;
+            await this.withSetupOperation(async () => {
+              await this.post(await this.controller.startDownloadedModel(id));
+            });
+          }
+          break;
         case SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL:
           if (this.setupOperationActive) {
             throw new Error("Wait for setup to finish before deleting downloaded models.");

@@ -43,6 +43,10 @@ export function setupPanelStorageStyles(): string {
       border-top: none;
       padding-top: 0;
     }
+    .storage-actions {
+      display: flex;
+      gap: 6px;
+    }
     .storage-name {
       font-size: 13px;
       overflow-wrap: anywhere;

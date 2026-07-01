@@ -184,6 +184,52 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(panelSource, /function renderStorage\(\)/);
 });
 
+test("downloaded models can be run directly from storage for manual switching", async () => {
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
+
+  // Protocol carries the switch command.
+  assert.match(protocolSource, /START_DOWNLOADED_MODEL: "startDownloadedModel"/);
+  assert.match(protocolSource, /SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL; id\?: string/);
+
+  // The controller rebuilds an installed model from the on-disk file and
+  // reuses the normal start path (which stops the previous server), then
+  // persists it as the installed model so restarts pick the switched model.
+  assert.match(controllerSource, /async startDownloadedModel\(id: string\)/);
+  assert.match(controllerSource, /resolveDownloadedModelId\(this\.modelsRoot\(\), id\)/);
+  assert.match(controllerSource, /That download is incomplete/);
+  const switchStart = controllerSource.indexOf("async startDownloadedModel");
+  const switchStartCall = controllerSource.indexOf("this.startInstalledModel(installed", switchStart);
+  const switchPersist = controllerSource.indexOf("await this.state.setInstalledModel(installed)", switchStart);
+  assert.notEqual(switchStartCall, -1);
+  assert.notEqual(switchPersist, -1);
+  assert.equal(switchStartCall < switchPersist, true);
+
+  // The host serializes switching behind the same setup-operation guard as
+  // installs, and the webview offers Run only for complete, inactive files.
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL/);
+  assert.match(panelHostSource, /Wait for setup to finish before switching models/);
+  assert.match(panelSource, /model\.active \|\| model\.partial/);
+  assert.match(panelSource, /data-action="run"/);
+  assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL\}', id: model\.id/);
+
+  // A switch spans several runtime status changes, each pushing a STATE that
+  // resets setupOperationRunning. The switch flag must outlive those resets
+  // (surface keeps saying "starting", buttons stay disabled) and clear only
+  // when a STATE arrives with the new model actually running — or on error.
+  assert.match(panelSource, /state\.modelSwitchRunning = true;/);
+  assert.match(panelSource, /state\.modelSwitchRunning \? 'starting'/);
+  assert.match(panelSource, /state\.setupOperationRunning = state\.modelSwitchRunning;/);
+  assert.match(
+    panelSource,
+    /if \(state\.modelSwitchRunning && message\.runtime && message\.runtime\.running\) \{\s*state\.modelSwitchRunning = false;/
+  );
+  const errorHandler = panelSource.slice(panelSource.indexOf("SETUP_RESPONSE_TYPE.ERROR}'"));
+  assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
+});
+
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
@@ -193,7 +239,7 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   assert.match(cursorSource, /Cursor Settings > Models/);
   assert.equal(cursorSource.includes("Add or enable an OpenAI-compatible model"), false);
   assert.match(panelSource, /Add Custom Model/);
-  assert.match(panelSource, /running \? 'on' : busy \? 'starting'/);
+  assert.match(panelSource, /running \? 'on'\s*: busy \? 'starting'/);
 });
 
 test("runtime status changes refresh provider and native switch", async () => {
@@ -258,7 +304,7 @@ test("installed model state is committed before provider refresh", async () => {
   assert.equal(setStateIndex < refreshIndex, true);
 });
 
-test("model download is never gated on current free memory; only loading checks RAM", async () => {
+test("free memory never blocks a model: advisory at load, honest error from llama-server", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // The pre-download memory gate is gone. A multi-GB download takes a long
@@ -266,13 +312,26 @@ test("model download is never gated on current free memory; only loading checks 
   // the model is actually loaded — so it must not block the download.
   assert.equal(controllerSource.includes("assertReadyToStartCandidate"), false);
 
-  // There is exactly one runtime-memory gate, and it lives on the load path.
-  const gateCalls = controllerSource.match(/this\.assertCurrentMemoryReady\(/g) ?? [];
-  assert.equal(gateCalls.length, 1);
-  assert.match(controllerSource, /assertReadyToStartInstalledModel\(cursorModel\)/);
+  // The throwing runtime gate is gone too. macOS "free" memory is elastic
+  // (cache eviction, compression), so instantaneous free RAM must never veto
+  // a start — a 64GB Mac with many apps open was refusing models it could
+  // easily run. The load path warns instead.
+  assert.equal(controllerSource.includes("assertCurrentMemoryReady"), false);
+  assert.match(controllerSource, /this\.warnIfMemoryTight\(cursorModel\)/);
+  const warnBody = controllerSource.slice(
+    controllerSource.indexOf("private async warnIfMemoryTight"),
+    controllerSource.indexOf("// Every status-bearing response")
+  );
+  assert.match(warnBody, /showWarningMessage/);
+  assert.equal(warnBody.includes("throw"), false);
 
-  // In installAndStart, the download runs first; the memory gate only fires
-  // afterwards, inside startInstalledModel.
+  // The honest out-of-memory signal is llama-server itself failing to start;
+  // that failure is caught and explained with a way out.
+  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath\)\.catch/);
+  assert.match(controllerSource, /withMemoryHint\(error, cursorModel\.displayName\)/);
+
+  // In installAndStart, the download runs first; the memory advisory only
+  // fires afterwards, inside startInstalledModel.
   const installStart = controllerSource.indexOf("private async installAndStart");
   const downloadIndex = controllerSource.indexOf("this.download(candidate", installStart);
   const startIndex = controllerSource.indexOf("this.startInstalledModel(installed", installStart);

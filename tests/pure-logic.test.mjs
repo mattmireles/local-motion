@@ -13,6 +13,7 @@ import {
 import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
 import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
+  classifyCompatibility,
   effectiveMemoryBudget,
   isShardedGgufFileName,
   meetsAutomagicalQualityFloor,
@@ -20,6 +21,8 @@ import {
   quantizationFromFileName,
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
+import { profileMachine } from "../out/system/machineProfile.js";
+import * as os from "node:os";
 import {
   AUTOMAGICAL_MODEL_REPOS,
   DEFAULT_MODEL_REPO,
@@ -83,6 +86,48 @@ test("uses stable model budget for compatibility selection", () => {
     }),
     24 * 1024 ** 3
   );
+});
+
+test("model memory budget tracks the Metal wired limit at 80% of total RAM", async () => {
+  // The binding constraint for GPU-wired GGUF weights on Apple Silicon is
+  // Metal's recommendedMaxWorkingSetSize (measured 81% of RAM on a 64GB
+  // M2 Ultra), not free memory. The budget must sit just under it — the old
+  // 0.72 was unexplained conservatism that blocked models the machine runs.
+  const machine = await profileMachine(os.tmpdir());
+  assert.equal(machine.recommendedModelMemoryBytes, Math.floor(os.totalmem() * 0.8));
+});
+
+test("a 64GB Mac fits a 70B-class 4-bit model at moderate context", () => {
+  // Regression for the over-conservative gates: a 42.5GB 70B Q4_K_M file
+  // was classified as needing ~62GB (1.32x multiplier double-counting
+  // overheads) against a 46GB budget (0.72 of RAM). Honest math: ~1.1x the
+  // mmap'd file plus explicit KV-cache and server overheads, inside an 80%
+  // wired-limit budget.
+  const GIB = 1024 ** 3;
+  const result = classifyCompatibility(
+    {
+      repoId: "example/llama-70B-GGUF",
+      fileName: "llama-70B-Q4_K_M.gguf",
+      sizeBytes: 42_500_000_000,
+      quantization: "Q4_K_M",
+      parameterCount: 70,
+      downloadUrl: "https://example.invalid/llama-70B-Q4_K_M.gguf"
+    },
+    {
+      platform: "darwin",
+      arch: "arm64",
+      cpuBrand: "Apple M2 Ultra",
+      isMac: true,
+      isAppleSilicon: true,
+      totalMemoryBytes: 64 * GIB,
+      availableMemoryBytes: 8 * GIB,
+      recommendedModelMemoryBytes: Math.floor(64 * GIB * 0.8),
+      storageRoot: "/tmp",
+      availableDiskBytes: 500 * GIB
+    },
+    4096
+  );
+  assert.equal(result.status, "compatible");
 });
 
 test("selects the highest-quality compatible quantization for automagical setup", () => {
