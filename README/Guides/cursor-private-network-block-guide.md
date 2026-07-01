@@ -9,6 +9,9 @@ July 1, 2026
   setup path this guide constrains.
 - **[Cursor Model Picker Setup Plan](../Plans/001-cursor-model-picker-setup-plan.md)**:
   Product contract for assisted Cursor setup (no private-state mutation).
+- **[Honest Cursor Tunnel Handoff Plan](../Plans/002-cursor-tunnel-handoff-plan.md)**:
+  Implementation record for the opt-in tunnel handoff, session bearer key,
+  manual tunnel override, and verification gaps.
 
 ## 1. Problem Frame
 

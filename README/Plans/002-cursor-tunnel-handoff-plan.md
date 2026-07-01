@@ -480,13 +480,13 @@ due account rate limit (`429`, reset 7:10pm America/Los_Angeles).
 
 **Tasks:**
 
-- [ ] `README.md`: Cursor section describes the tunnel opt-in, the install
+- [x] `README.md`: Cursor section describes the tunnel opt-in, the install
   prerequisite, and the honest privacy framing; VS Code section keeps the
   fully-local claim.
-- [ ] Cross-link this plan from the
+- [x] Cross-link this plan from the
   [field guide](../Guides/cursor-private-network-block-guide.md) (guide copied
   into this branch at plan time; reconcile with `main` on merge).
-- [ ] Named regression tests (in `tests/`): `cursor-tunnel.test.mjs` covering
+- [x] Named regression tests (in `tests/`): `cursor-tunnel.test.mjs` covering
   URL parse, key auth rejection of the legacy static key, view-model base-URL
   preference, and staleness on rotation.
 - [ ] `Not testable:` the live trycloudflare round-trip and Cursor's backend
@@ -496,6 +496,22 @@ due account rate limit (`429`, reset 7:10pm America/Los_Angeles).
 **Verification:** `npm run check && npm run lint && npm test` all green;
 manual end-to-end: real Cursor chat message succeeds through the tunnel;
 stopping the model kills `cloudflared` (verify with `pgrep cloudflared`).
+
+**Phase 5 status:** Blocked on 2026-07-01 for manual Cursor/Extension
+Development Host proof; repository artifacts and local automated verification
+are complete. Verification run: `npm run check`, `npm run lint`,
+`npm test` (108 tests), and
+`grep -rniE "private|local-only|local endpoint|fully local" README.md package.json src/ui src/cursor`.
+`README.md` now describes the opt-in Cursor tunnel,
+`cloudflared` prerequisite/manual URL override, and Cursor privacy framing.
+The field guide links back to this plan. `README/Notes/cursor-tunnel.md`
+records the proof matrix and the remaining manual gap. Not testable in this
+shell: real Cursor backend chat, Extension Development Host UI proof, and
+`pgrep cloudflared` after model stop. The CLI can open Cursor but cannot invoke
+Cursor chat or extension commands, and this machine already had unrelated
+`cloudflared` processes running. Completing this phase requires an interactive
+Cursor/VS Code Extension Development Host session; the note records that
+explicitly instead of claiming release proof.
 
 ## Executable Memory
 
