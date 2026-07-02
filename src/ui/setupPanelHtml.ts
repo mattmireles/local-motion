@@ -23,13 +23,13 @@ export function setupPanelHtml(nonce: string): string {
 
     <div id="stage" class="stage" role="status" aria-live="polite">
       <p id="headline" class="headline">Checking Local Motion…</p>
-      <p id="subline" class="subline">Runs a model on this Mac. Cursor setup uses an optional tunnel.</p>
+      <p id="subline" class="subline">Runs a coding model on this Mac for Cursor.</p>
     </div>
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
 
     <div id="connect" class="connect hidden">
-      <p id="connectLead" class="connect-lead">Connect Cursor to this local agent.</p>
-      <div id="fields" class="fields">
+      <p class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
+      <div class="fields">
         <div class="field">
           <label>Model name</label>
           <div class="field-row">
@@ -53,10 +53,8 @@ export function setupPanelHtml(nonce: string): string {
         </div>
       </div>
       <div class="row">
-        <button id="connectCursor" class="btn cta">Connect Cursor</button>
-        <button id="installCloudflared" class="btn ghost">Copy brew install cloudflared</button>
+        <button id="openCursor" class="btn cta">Open Cursor Settings</button>
       </div>
-      <p id="tunnelDisclosure" class="note disclosure">Cursor requires one manual paste in Settings > Models. Prompts sent from Cursor transit Cursor's backend and the tunnel before reaching this Mac.</p>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
     </div>
 
@@ -133,13 +131,10 @@ export function setupPanelHtml(nonce: string): string {
       progress: document.getElementById('progress'),
       progressFill: document.getElementById('progressFill'),
       connect: document.getElementById('connect'),
-      connectLead: document.getElementById('connectLead'),
-      fields: document.getElementById('fields'),
-      connectCursor: document.getElementById('connectCursor'),
-      installCloudflared: document.getElementById('installCloudflared'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
+      openCursor: document.getElementById('openCursor'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
       metaLine: document.getElementById('metaLine'),
@@ -180,20 +175,15 @@ export function setupPanelHtml(nonce: string): string {
         vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE}', key: button.dataset.key });
       });
     }
-    els.connectCursor.addEventListener('click', () => {
+    els.openCursor.addEventListener('click', () => {
       state.cursorConnectRunning = true;
       state.setupOperationRunning = true;
       state.progressPercent = undefined;
-      state.progressMessage = 'Connecting Cursor…';
-      state.connectMessage = 'Preparing a public Cursor endpoint, copying setup, and opening Cursor Settings.';
+      state.progressMessage = 'Opening Cursor Settings…';
+      state.connectMessage = 'Preparing Cursor setup and opening Cursor Settings.';
       render();
       setStatus(state.connectMessage);
       vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.CONNECT_CURSOR}' });
-    });
-    els.installCloudflared.addEventListener('click', () => {
-      state.connectMessage = 'Copied brew install cloudflared.';
-      render();
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.COPY_TUNNEL_INSTALL_COMMAND}' });
     });
     els.manageStorage.addEventListener('click', () => {
       state.storageOpen = !state.storageOpen;
@@ -433,7 +423,7 @@ export function setupPanelHtml(nonce: string): string {
 
     function renderOff() {
       els.headline.textContent = 'Local agent is off';
-      els.subline.textContent = 'Runs a model on this Mac. Cursor setup uses an optional tunnel.';
+      els.subline.textContent = 'Runs a coding model on this Mac for Cursor.';
       els.progress.classList.add('hidden');
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
@@ -475,8 +465,8 @@ export function setupPanelHtml(nonce: string): string {
       // "is using" is earned only by a real inbound request; otherwise the
       // honest claim is the softer "can use".
       els.subline.textContent = inUse
-        ? 'Cursor is using your local model - local compute, Cursor-routed prompts.'
-        : 'Cursor can use your local model - local compute, Cursor-routed prompts.';
+        ? 'Cursor is using your local model.'
+        : 'Cursor can use your local model.';
       els.progress.classList.add('hidden');
 
       // A clean symmetric on/off toggle, never a destructive-sounding morph.
@@ -499,21 +489,11 @@ export function setupPanelHtml(nonce: string): string {
         els.connect.classList.add('hidden');
       } else {
         const viewModel = state.cursorSetupViewModel || {};
-        const tunnel = (state.runtime && state.runtime.cursorTunnel) || {};
-        const cursorReady = Boolean(viewModel.isRunning);
         els.connect.classList.remove('hidden');
-        els.connectLead.textContent = cursorReady
-          ? 'Cursor Settings is open. In Models, click Add Custom Model and paste these values.'
-          : tunnel.error === 'binary-missing'
-            ? 'Install cloudflared once, then connect Cursor again.'
-            : "Cursor cannot use localhost directly. Local Motion will create a temporary public endpoint and open Cursor Settings.";
-        els.fields.style.display = cursorReady ? 'grid' : 'none';
-        els.connectCursor.textContent = cursorReady ? 'Copy Setup and Open Settings' : 'Connect Cursor';
-        els.connectCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
-        els.installCloudflared.style.display = tunnel.error === 'binary-missing' ? '' : 'none';
-        els.valModelId.textContent = cursorReady ? (viewModel.modelId || 'Local Motion') : '';
-        els.valApiKey.textContent = cursorReady ? (viewModel.apiKey || '') : '';
-        els.valBaseUrl.textContent = cursorReady ? (viewModel.baseUrl || '') : '';
+        els.openCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
+        els.valModelId.textContent = viewModel.modelId || 'Local Motion';
+        els.valApiKey.textContent = viewModel.apiKey || '';
+        els.valBaseUrl.textContent = viewModel.baseUrl || 'Preparing the Cursor endpoint…';
         els.connectNote.textContent = state.connectMessage || '';
         els.connectNote.style.display = state.connectMessage ? 'block' : 'none';
       }
@@ -572,7 +552,8 @@ export function setupPanelHtml(nonce: string): string {
       }
 
       els.storageSummary.classList.remove('hidden');
-      els.storageText.textContent = formatBytes(state.downloadedModelsSizeBytes) + ' downloaded in ' + models.length + ' model' + (models.length === 1 ? '' : 's');
+      const readyCount = models.filter(model => !model.partial).length;
+      els.storageText.textContent = readyCount + ' local model' + (readyCount === 1 ? '' : 's') + ' ready · ' + formatBytes(state.downloadedModelsSizeBytes);
       els.manageStorage.textContent = state.storageOpen ? 'Hide' : 'Manage';
       els.manageStorage.setAttribute('aria-expanded', state.storageOpen ? 'true' : 'false');
 
@@ -583,23 +564,25 @@ export function setupPanelHtml(nonce: string): string {
 
       els.storagePanel.classList.remove('hidden');
       els.storageList.innerHTML = models.map((model, index) => {
-        const labels = [
-          model.active ? 'Running' : '',
-          !model.active && model.installed ? 'Installed' : '',
-          model.partial ? 'Partial' : ''
-        ].filter(Boolean).join(' · ');
+        const badges = [
+          model.active ? '<span class="storage-badge active">Active</span>' : '',
+          !model.active && model.installed ? '<span class="storage-badge">Default</span>' : '',
+          model.partial ? '<span class="storage-badge">Partial</span>' : ''
+        ].filter(Boolean).join('');
         const disabled = state.setupOperationRunning ? ' disabled' : '';
         const runButton = model.active || model.partial
           ? ''
-          : '<button class="btn" data-index="' + index + '" data-action="run" aria-label="Run ' + esc(model.fileName) + '"' + disabled + '>Run</button>';
-        return '<div class="storage-item">' +
+          : '<button class="btn cta" data-index="' + index + '" data-action="run" aria-label="Switch to ' + esc(modelLabel(model.fileName)) + '"' + disabled + '>Switch</button>';
+        return '<div class="storage-item' + (model.active ? ' active' : '') + '">' +
           '<div>' +
-            '<div class="storage-name">' + esc(model.fileName) + '</div>' +
-            '<div class="storage-meta">' + esc(formatBytes(model.sizeBytes)) + (labels ? ' · ' + esc(labels) : '') + '</div>' +
+            '<div class="storage-name">' + esc(modelLabel(model.fileName)) + '</div>' +
+            '<div class="storage-meta">' + esc(formatBytes(model.sizeBytes)) + '</div>' +
+            '<div class="storage-file">' + esc(model.fileName) + '</div>' +
+            (badges ? '<div class="storage-badges">' + badges + '</div>' : '') +
           '</div>' +
           '<div class="storage-actions">' +
             runButton +
-            '<button class="btn danger" data-index="' + index + '" data-action="delete" aria-label="Delete ' + esc(model.fileName) + ', ' + esc(formatBytes(model.sizeBytes)) + '"' + disabled + '>Delete</button>' +
+            '<button class="btn danger" data-index="' + index + '" data-action="delete" aria-label="Remove ' + esc(modelLabel(model.fileName)) + ', ' + esc(formatBytes(model.sizeBytes)) + '"' + disabled + '>Remove</button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -621,6 +604,15 @@ export function setupPanelHtml(nonce: string): string {
           vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL}', id: model.id });
         });
       }
+    }
+
+    function modelLabel(fileName) {
+      const lower = String(fileName).toLowerCase();
+      if (lower.includes('qwen3-coder')) return 'Max: Qwen3-Coder-30B-A3B';
+      if (lower.includes('gemma-4-26b')) return 'Mini: Gemma 4 26B A4B';
+      if (lower.includes('gemma-4-31b')) return 'Gemma 4 31B';
+      if (lower.includes('qwen2.5-coder')) return 'Qwen2.5 Coder';
+      return String(fileName).replace(/\\.gguf(?:\\.part)?$/i, '').replace(/[-_]+/g, ' ');
     }
 
     function renderSearchResults(results) {

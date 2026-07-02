@@ -144,7 +144,7 @@
         "localMotion.defaultModelRepo": {
           "type": "string",
           "default": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
-          "description": "Default Hugging Face GGUF repository shown in Advanced Model Settings and tried first by Local Motion before its built-in, biggest-first fallback repositories. Defaults to a 30B mixture-of-experts coder; smaller Macs automatically fall through to the largest model that fits."
+          "description": "Default Hugging Face GGUF repository used by Local Motion's one-click setup. Defaults to the Qwen3-Coder 30B mixture-of-experts coder; one-click setup also downloads Gemma 4 26B A4B for switching. Qwen2.5 models are manual Advanced choices, not automatic downgrades."
         },
         "localMotion.openSetupOnStartup": {
           "type": "boolean",
@@ -154,7 +154,7 @@
         "localMotion.runAutomagicalSetupOnFirstStartup": {
           "type": "boolean",
           "default": false,
-          "description": "Run setup automatically once on first startup when no model has been installed. Off by default so Local Motion shows the local-agent switch before installing llama.cpp or downloading the first compatible GGUF model from the default or fallback repositories."
+          "description": "Run setup automatically once on first startup when no model has been installed. Off by default so Local Motion shows the local-agent switch before installing llama.cpp or downloading the best compatible GGUF quantization from Qwen3-Coder or its Gemma 4 26B fallback."
         },
         "localMotion.resumeAutomagicalSetupOnStartup": {
           "type": "boolean",

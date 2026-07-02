@@ -195,10 +195,6 @@ class SetupWebviewSession {
             }
           }
           break;
-        case SETUP_REQUEST_COMMAND.COPY_TUNNEL_INSTALL_COMMAND:
-          await this.controller.copyTunnelInstallCommand();
-          await this.postInitialRuntimeState();
-          break;
         case SETUP_REQUEST_COMMAND.CONNECT_CURSOR:
           await this.post(await this.controller.connectCursor());
           break;

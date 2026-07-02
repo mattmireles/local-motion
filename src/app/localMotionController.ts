@@ -121,6 +121,7 @@ export class LocalMotionController {
       }
     }
 
+    await this.ensureCursorTunnelForCursorSetup();
     const installed = await this.installAndStart(candidate, onProgress, onModelSelected);
     const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
 
@@ -138,6 +139,7 @@ export class LocalMotionController {
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
+    await this.ensureCursorTunnelForCursorSetup();
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
       if (installedModel) {
@@ -145,7 +147,7 @@ export class LocalMotionController {
           allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
         });
       } else {
-        await this.installAndStart(await this.automagicalCandidate(), onProgress, onModelSelected);
+        await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected);
       }
     }
 
@@ -192,8 +194,12 @@ export class LocalMotionController {
     return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
   }
 
-  async copyTunnelInstallCommand(): Promise<void> {
-    await vscode.env.clipboard.writeText("brew install cloudflared");
+  private async ensureCursorTunnelForCursorSetup(): Promise<void> {
+    const config = vscode.workspace.getConfiguration("localMotion");
+    const hasManualTunnel = config.get<string>("cursorTunnelUrl", "").trim().length > 0;
+    if (!hasManualTunnel && !config.get<boolean>("cursorTunnel", false)) {
+      await config.update("cursorTunnel", true, vscode.ConfigurationTarget.Global);
+    }
   }
 
   /**
@@ -389,11 +395,9 @@ export class LocalMotionController {
     return listQuantizations(repoId, machine, this.contextTokensSetting());
   }
 
-  private async automagicalCandidate(): Promise<CandidateQuantization> {
+  private async automagicalCandidates(): Promise<CandidateQuantization[]> {
     const attempts: string[] = [];
-    // The repos are ordered largest -> smallest, so the first one that fits at
-    // a healthy (>= 4-bit) quant is the most capable model this Mac can run.
-    let fallbackBelowFloor: CandidateQuantization | undefined;
+    const selected: CandidateQuantization[] = [];
     for (const repoId of this.automagicalRepos()) {
       try {
         const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
@@ -402,24 +406,58 @@ export class LocalMotionController {
           continue;
         }
         if (meetsAutomagicalQualityFloor(candidate.quantization)) {
-          return candidate;
+          selected.push(candidate);
+          continue;
         }
-        // This (larger) model only fits when crushed below 4-bit; prefer a
-        // smaller model at a healthier quant, but remember it as a last resort.
-        fallbackBelowFloor ??= candidate;
         attempts.push(`${repoId}: only ${candidate.quantization} fits, below the quality floor`);
       } catch (error) {
         attempts.push(`${repoId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    if (fallbackBelowFloor) {
-      return fallbackBelowFloor;
+    if (selected.length > 0) {
+      return selected;
     }
     throw new Error(`No compatible GGUF quantization found for this Mac. Tried ${attempts.join("; ")}.`);
   }
 
   private async installAndStart(
+    candidate: CandidateQuantization,
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
+  ): Promise<InstalledModel> {
+    const installed = await this.installCandidate(candidate, onProgress, onModelSelected);
+
+    await this.startInstalledModel(installed, {
+      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+    });
+    await this.state.setInstalledModel(installed);
+    this.provider.refresh();
+    return installed;
+  }
+
+  private async installAndStartAll(
+    candidates: CandidateQuantization[],
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
+  ): Promise<InstalledModel> {
+    const installedModels: InstalledModel[] = [];
+    for (const candidate of candidates) {
+      installedModels.push(await this.installCandidate(candidate, onProgress, onModelSelected));
+    }
+    const installed = installedModels[0];
+    if (!installed) {
+      throw new Error("No compatible GGUF quantization found for this Mac.");
+    }
+    await this.startInstalledModel(installed, {
+      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+    });
+    await this.state.setInstalledModel(installed);
+    this.provider.refresh();
+    return installed;
+  }
+
+  private async installCandidate(
     candidate: CandidateQuantization,
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
@@ -438,7 +476,7 @@ export class LocalMotionController {
       formatBytes(machine.availableMemoryBytes)
     );
     const modelPath = await this.download(candidate, onProgress);
-    const installed: InstalledModel = {
+    return {
       repoId: candidate.repoId,
       fileName: candidate.fileName,
       revision: candidate.revision,
@@ -448,13 +486,6 @@ export class LocalMotionController {
       displayName,
       contextTokens: this.contextTokensSetting()
     };
-
-    await this.startInstalledModel(installed, {
-      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
-    });
-    await this.state.setInstalledModel(installed);
-    this.provider.refresh();
-    return installed;
   }
 
   private async startInstalledModel(

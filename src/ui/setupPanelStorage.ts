@@ -39,6 +39,10 @@ export function setupPanelStorageStyles(): string {
       border-top: 1px solid var(--line);
       padding-top: 10px;
     }
+    .storage-item.active .storage-name {
+      color: var(--vscode-foreground);
+      font-weight: 600;
+    }
     .storage-item:first-child {
       border-top: none;
       padding-top: 0;
@@ -46,6 +50,7 @@ export function setupPanelStorageStyles(): string {
     .storage-actions {
       display: flex;
       gap: 6px;
+      align-items: center;
     }
     .storage-name {
       font-size: 13px;
@@ -57,6 +62,33 @@ export function setupPanelStorageStyles(): string {
       font-size: 12px;
       line-height: 1.4;
     }
+    .storage-file {
+      margin-top: 2px;
+      color: var(--faint);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+    .storage-badges {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .storage-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 11px;
+      line-height: 1;
+    }
+    .storage-badge.active {
+      color: var(--ok);
+      border-color: color-mix(in srgb, var(--ok) 44%, transparent);
+    }
   `;
 }
 
@@ -67,8 +99,8 @@ export function setupPanelStorageMarkup(): string {
       <button id="manageStorage" class="btn link" aria-expanded="false" aria-controls="storagePanel">Manage</button>
     </div>
 
-    <section id="storagePanel" class="storage-panel hidden" aria-label="Downloaded models">
-      <h2>Downloaded Models</h2>
+    <section id="storagePanel" class="storage-panel hidden" aria-label="Model library">
+      <h2>Model Library</h2>
       <div id="storageList" class="storage-list"></div>
     </section>
   `;

@@ -17,7 +17,6 @@ export const SETUP_REQUEST_COMMAND = {
   STOP: "stop",
   START_DOWNLOADED_MODEL: "startDownloadedModel",
   DELETE_DOWNLOADED_MODEL: "deleteDownloadedModel",
-  COPY_TUNNEL_INSTALL_COMMAND: "copyTunnelInstallCommand",
   CONNECT_CURSOR: "connectCursor",
   PREPARE_CURSOR: "prepareCursor",
   COPY_CURSOR_VALUE: "copyCursorValue"
@@ -49,7 +48,6 @@ export type SetupRequest =
   | { command: typeof SETUP_REQUEST_COMMAND.STOP }
   | { command: typeof SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL; id?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL; id?: string }
-  | { command: typeof SETUP_REQUEST_COMMAND.COPY_TUNNEL_INSTALL_COMMAND }
   | { command: typeof SETUP_REQUEST_COMMAND.CONNECT_CURSOR }
   | { command: typeof SETUP_REQUEST_COMMAND.PREPARE_CURSOR }
   | { command: typeof SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE; key?: CursorSetupValueKey };

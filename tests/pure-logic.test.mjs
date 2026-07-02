@@ -198,13 +198,7 @@ test("automagical setup tries the configured repo before the ladder", () => {
   );
 });
 
-test("curated ladder is a biggest-first coder ladder from allowlisted publishers", () => {
-  // Structural invariants only: the exact repo ids are maintained from the live
-  // ranking by scripts/refresh-model-ranking.mjs, so pinning them here would
-  // break on every refresh. See README/Notes/model-selection.md.
-  const ALLOWED_PUBLISHERS = new Set([
-    "unsloth", "lmstudio-community", "bartowski", "ggml-org", "ggerganov", "Qwen", "google", "mlx-community"
-  ]);
+test("curated one-click model stays on Qwen3 and does not downgrade to Qwen2.5", () => {
   const paramBillions = (repoId) => {
     const match = repoId.match(/(\d+(?:\.\d+)?)\s*B\b/i);
     return match ? Number(match[1]) : 0;
@@ -212,18 +206,18 @@ test("curated ladder is a biggest-first coder ladder from allowlisted publishers
   const sizes = AUTOMAGICAL_MODEL_REPOS.map(paramBillions);
 
   assert.equal(AUTOMAGICAL_MODEL_REPOS[0], DEFAULT_MODEL_REPO);
-  assert.ok(AUTOMAGICAL_MODEL_REPOS.length >= 4, "ladder should span several size tiers");
-  for (let i = 1; i < sizes.length; i += 1) {
-    assert.ok(sizes[i] <= sizes[i - 1], `ladder must be biggest-first near ${AUTOMAGICAL_MODEL_REPOS[i]}`);
-  }
+  assert.equal(DEFAULT_MODEL_REPO, "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF");
+  assert.deepEqual(AUTOMAGICAL_MODEL_REPOS, [
+    "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+    "unsloth/gemma-4-26B-A4B-it-GGUF"
+  ]);
   assert.ok(sizes[0] >= 20, `aggressive default should be a large model, got ${DEFAULT_MODEL_REPO}`);
-  assert.ok(sizes[sizes.length - 1] <= 2, "ladder should bottom out on a small model");
+  assert.ok(sizes[1] < sizes[0], `fallback should be smaller than Qwen3, got ${AUTOMAGICAL_MODEL_REPOS[1]}`);
   for (const repoId of AUTOMAGICAL_MODEL_REPOS) {
     assert.ok(repoId.includes("/"), repoId);
-    assert.ok(ALLOWED_PUBLISHERS.has(repoId.split("/")[0]), `non-allowlisted publisher: ${repoId}`);
-    assert.ok(/coder|code/i.test(repoId), `not a coder repo: ${repoId}`);
+    assert.equal(repoId.split("/")[0], "unsloth", `unexpected publisher: ${repoId}`);
+    assert.equal(/Qwen2\.5/i.test(repoId), false, `Qwen2.5 must not be an automatic default: ${repoId}`);
   }
-  // The stale non-coder fallback is gone.
   assert.equal(AUTOMAGICAL_MODEL_REPOS.includes("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"), false);
 });
 

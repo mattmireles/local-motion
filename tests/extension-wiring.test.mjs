@@ -9,17 +9,15 @@ import { test } from "node:test";
 // found (see "both were audit P0/P1 hazards"). Adding a DOM testing
 // dependency to close the gap is a separate decision, not a drive-by change.
 
-test("automagical setup settings describe fallback repositories", async () => {
+test("automagical setup settings keep Qwen3 as the one-click default", async () => {
   const packageJson = await readPackageJson();
   const properties = packageJson.contributes.configuration.properties;
-  // Structural, not exact: the default repo is maintained from the live ranking
-  // by scripts/refresh-model-ranking.mjs (see README/Notes/model-selection.md).
   const defaultRepo = properties["localMotion.defaultModelRepo"].default;
-  assert.match(defaultRepo, /^[^/]+\/.+-GGUF$/i);
-  assert.match(defaultRepo, /coder/i);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /tried first/);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /fallback repositories/);
-  assert.match(properties["localMotion.runAutomagicalSetupOnFirstStartup"].description, /default or fallback repositories/);
+  assert.equal(defaultRepo, "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF");
+  assert.match(properties["localMotion.defaultModelRepo"].description, /Qwen3-Coder/);
+  assert.match(properties["localMotion.defaultModelRepo"].description, /Gemma 4 26B A4B/);
+  assert.match(properties["localMotion.defaultModelRepo"].description, /not automatic downgrades/);
+  assert.match(properties["localMotion.defaultModelRepo"].description, /Qwen2\.5 models are manual Advanced choices/);
 });
 
 test("native language model provider config opens the local agent switch", async () => {
@@ -174,8 +172,10 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(storageSource, /id="manageStorage"/);
   assert.match(storageSource, /aria-expanded="false"/);
   assert.match(storageSource, /aria-controls="storagePanel"/);
+  assert.match(storageSource, /Model Library/);
+  assert.match(storageSource, /storage-badge/);
   assert.equal(storageSource.includes("function renderStorage"), false);
-  assert.match(panelSource, /aria-label="Delete /);
+  assert.match(panelSource, /aria-label="Remove /);
   assert.match(panelSource, /state\.setupOperationRunning \? ' disabled' : ''/);
   assert.match(panelSource, /setupOperationRunning: false/);
   assert.match(panelSource, /state\.setupOperationRunning = true/);
@@ -186,6 +186,10 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.DELETE_DOWNLOADED_MODEL\}'/);
   assert.match(panelSource, /function updateDownloadedStorage\(message\)/);
   assert.match(panelSource, /function renderStorage\(\)/);
+  assert.match(panelSource, /function modelLabel\(fileName\)/);
+  assert.match(panelSource, /Max: Qwen3-Coder-30B-A3B/);
+  assert.match(panelSource, /Mini: Gemma 4 26B A4B/);
+  assert.match(panelSource, />Switch<\/button>/);
 });
 
 test("downloaded models can be run directly from storage for manual switching", async () => {
@@ -212,11 +216,12 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.equal(switchStartCall < switchPersist, true);
 
   // The host serializes switching behind the same setup-operation guard as
-  // installs, and the webview offers Run only for complete, inactive files.
+  // installs, and the webview offers Switch only for complete, inactive files.
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL/);
   assert.match(panelHostSource, /Wait for setup to finish before switching models/);
   assert.match(panelSource, /model\.active \|\| model\.partial/);
   assert.match(panelSource, /data-action="run"/);
+  assert.match(panelSource, /Switch/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL\}', id: model\.id/);
 
   // A switch spans several runtime status changes, each pushing a STATE that
@@ -335,6 +340,24 @@ test("manual install and run prepares Cursor automatically", async () => {
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
 });
 
+test("one-click setup downloads Max and Mini before starting Max", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const defaultReposSource = await readText("../src/models/defaultRepos.ts");
+
+  assert.match(defaultReposSource, /Qwen3-Coder-30B-A3B-Instruct-GGUF/);
+  assert.match(defaultReposSource, /gemma-4-26B-A4B-it-GGUF/);
+  assert.match(controllerSource, /installAndStartAll\(await this\.automagicalCandidates\(\), onProgress, onModelSelected\)/);
+
+  const batchBody = controllerSource.slice(
+    controllerSource.indexOf("private async installAndStartAll"),
+    controllerSource.indexOf("private async installCandidate")
+  );
+  assert.match(batchBody, /for \(const candidate of candidates\)/);
+  assert.match(batchBody, /installedModels\.push\(await this\.installCandidate\(candidate, onProgress, onModelSelected\)\)/);
+  assert.match(batchBody, /const installed = installedModels\[0\]/);
+  assert.match(batchBody, /this\.startInstalledModel\(installed/);
+});
+
 test("installed model state is committed before provider refresh", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
   const setStateIndex = controllerSource.indexOf("await this.state.setInstalledModel(installed)");
@@ -370,14 +393,22 @@ test("free memory never blocks a model: advisory at load, honest error from llam
   assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace\(\)\)\.catch/);
   assert.match(controllerSource, /withMemoryHint\(error, cursorModel\.displayName\)/);
 
-  // In installAndStart, the download runs first; the memory advisory only
-  // fires afterwards, inside startInstalledModel.
+  // The download still runs before start; the memory advisory only fires
+  // afterwards, inside startInstalledModel.
   const installStart = controllerSource.indexOf("private async installAndStart");
-  const downloadIndex = controllerSource.indexOf("this.download(candidate", installStart);
+  const installCandidateCall = controllerSource.indexOf("this.installCandidate(candidate", installStart);
   const startIndex = controllerSource.indexOf("this.startInstalledModel(installed", installStart);
+  const installCandidateBody = controllerSource.slice(
+    controllerSource.indexOf("private async installCandidate"),
+    controllerSource.indexOf("private async startInstalledModel")
+  );
+  const downloadIndex = installCandidateBody.indexOf("this.download(candidate");
+  const warnIndex = installCandidateBody.indexOf("this.warnIfMemoryTight");
+  assert.notEqual(installCandidateCall, -1);
   assert.notEqual(downloadIndex, -1);
   assert.notEqual(startIndex, -1);
-  assert.equal(downloadIndex < startIndex, true);
+  assert.equal(installCandidateCall < startIndex, true);
+  assert.equal(warnIndex, -1);
 });
 
 test("startup resume does not prepare Cursor or expose a side-effectful controller method", async () => {
@@ -419,7 +450,7 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.equal(description.includes("prepare Cursor automatically"), false);
 });
 
-test("Cursor tunnel settings stay explicit while the UI offers one-step connection", async () => {
+test("Cursor tunnel plumbing stays hidden behind the restored one-step setup card", async () => {
   const packageJson = await readPackageJson();
   const extensionSource = await readText("../src/extension.ts");
   const controllerSource = await readText("../src/app/localMotionController.ts");
@@ -442,12 +473,16 @@ test("Cursor tunnel settings stay explicit while the UI offers one-step connecti
   assert.match(configSource, /manual\.url !== undefined/);
 
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
-  assert.match(panelSource, /id="connectCursor"/);
+  assert.match(panelSource, /id="openCursor"/);
+  assert.match(panelSource, /Open Cursor Settings/);
+  assert.match(panelSource, /In Cursor: Settings/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
+  assert.match(controllerSource, /ensureCursorTunnelForCursorSetup/);
   assert.equal(panelSource.includes("cursorTunnelEnabledNextStart"), false);
   assert.equal(panelSource.includes("Turn on Cursor tunnel"), false);
   assert.equal(panelSource.includes("Turn the local agent off and on"), false);
+  assert.equal(panelSource.includes("If you want Cursor native chat"), false);
 });
 
 test("runtime status surfaces the first real Cursor request", async () => {
@@ -507,24 +542,22 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // The earned, confident line appears only when a real request was observed.
-  assert.match(panelSource, /Cursor is using your local model - local compute, Cursor-routed prompts\./);
+  assert.match(panelSource, /Cursor is using your local model\./);
+  assert.match(panelSource, /Cursor can use your local model\./);
   assert.match(panelSource, /runtime\.clientObserved/);
-  assert.match(panelSource, /Prompts sent from Cursor transit Cursor's backend and the tunnel/);
-  assert.match(panelSource, /Connect Cursor/);
-  assert.match(panelSource, /Local Motion will create a temporary public endpoint and open Cursor Settings/);
-  assert.match(panelSource, /Cursor Settings is open\. In Models, click Add Custom Model and paste these values\./);
-  assert.match(panelSource, /Copy Setup and Open Settings/);
-  assert.match(panelSource, /Copy brew install cloudflared/);
+  assert.match(panelSource, /Runs a coding model on this Mac for Cursor\./);
+  assert.match(panelSource, /Open Cursor Settings/);
+  assert.match(panelSource, /Preparing Cursor setup and opening Cursor Settings\./);
+  assert.match(panelSource, /Preparing the Cursor endpoint/);
   assert.match(panelSource, /CONNECT_CURSOR/);
-  assert.match(panelSource, /COPY_TUNNEL_INSTALL_COMMAND/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
-  assert.match(protocolSource, /COPY_TUNNEL_INSTALL_COMMAND: "copyTunnelInstallCommand"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
-  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.COPY_TUNNEL_INSTALL_COMMAND/);
   assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
   assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
   assert.match(controllerSource, /this\.startInstalledModel\(active/);
-  assert.match(controllerSource, /writeText\("brew install cloudflared"\)/);
+  assert.equal(panelSource.includes("Connect Cursor"), false);
+  assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
+  assert.equal(panelSource.includes("Cursor-routed prompts"), false);
 
   // Once a real request is observed the connect card is dropped; until then it
   // stays visible. It must not vanish when Cursor Settings opens, so the old

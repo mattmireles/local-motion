@@ -12,28 +12,27 @@ download and run. This is a design/policy note, not a debug log.
 
 ### Summary
 
-Local Motion ships a curated, **biggest-capability-first** ladder of coder GGUF
-repositories. `automagicalCandidate()` walks the ladder and picks the first
-repo whose best compatible quantization clears a **4-bit quality floor**, so the
-model auto-scales to the Mac: a large Mac runs the 30B mixture-of-experts coder;
-smaller Macs fall through to the largest dense coder that still fits at Q4+. The
-user never picks a model, size, or quantization on the default surface.
+Local Motion ships a curated Qwen3-Coder default for one-click setup.
+`automagicalCandidate()` picks the best compatible quantization from that
+repository. The default path must not silently downgrade to the older Qwen2.5
+family. The only automatic fallback is Gemma 4 26B A4B, selected over Gemma 4
+31B because 31B is too close to Qwen3's memory class to be a useful fallback.
+One-click setup downloads both selected GGUFs when they fit, starts Qwen3, and
+leaves Gemma in Downloaded Models for switching. Smaller or older models are
+explicit Advanced choices.
 
 ### The ladder (source of truth)
 
 Defined in [`src/models/defaultRepos.ts`](src/models/defaultRepos.ts) between
-the `BEGIN/END curated-ladder` markers, largest → smallest:
+the `BEGIN/END curated-ladder` markers:
 
 1. `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF` — 30B MoE (3B active)
-2. `Qwen/Qwen2.5-Coder-14B-Instruct-GGUF`
-3. `Qwen/Qwen2.5-Coder-7B-Instruct-GGUF`
-4. `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF`
-5. `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF`
+2. `unsloth/gemma-4-26B-A4B-it-GGUF` — 26B MoE (4B active)
 
 (Resolved from the live ranking on 2026-06-17 by `npm run models:refresh`.)
 
 `DEFAULT_MODEL_REPO` (and the `localMotion.defaultModelRepo` package.json
-default) is ladder entry 1. A user override is tried first, then the ladder.
+default) is ladder entry 1. A user override is tried first.
 
 ### Source
 
@@ -46,14 +45,21 @@ counts** among reputable publishers, not by the blog post.
 ### Key decisions
 
 - **Aggressive default.** VS Code/Cursor extension users are power users; the
-  default is the most capable model the Mac can run, not a conservative pick.
+  default is Qwen3-Coder, not a conservative Qwen2.5 fallback.
+- **Gemma 4 26B fallback.** Gemma 4 31B and 26B are both available as GGUF.
+  31B is not useful as a fallback because it is effectively in the same memory
+  tier as Qwen3-Coder-30B-A3B. Gemma 4 26B A4B is the smaller current-generation
+  fallback.
+- **Download both.** The one-click path downloads the best compatible Qwen3
+  quant and the best compatible Gemma 4 26B quant, then starts Qwen3. The user
+  can switch to Gemma from Downloaded Models without another network wait.
 - **MoE memory math is already correct.** `classifyCompatibility` sizes on
   *total* parameters, which is right — all experts must be resident in unified
   memory even though only ~3B activate. (The `×1.32` runtime overhead is mildly
   conservative for MoE, since KV/compute scale with active params; safe.)
-- **4-bit quality floor.** `meetsAutomagicalQualityFloor` (Q4 = score 40) skips
-  a larger model that only fits when crushed to Q3/Q2, falling through to a
-  smaller model at a healthier quant. Manual installs from Advanced are exempt.
+- **4-bit quality floor.** `meetsAutomagicalQualityFloor` (Q4 = score 40) keeps
+  the one-click path from selecting a badly crushed quantization. Manual
+  installs from Advanced are exempt.
 - **Single-file only.** `isShardedGgufFileName` excludes multi-part shards
   (`*-00001-of-00002.gguf`); the target quants (Q4_K_M..Q8_0) for the shipped
   repos are single-file, so no multi-part download engine is needed. If a future

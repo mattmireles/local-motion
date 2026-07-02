@@ -65,12 +65,14 @@ is stopped, the command starts it first; then it verifies the endpoint, copies
 the setup block, and opens Cursor Models settings.
 
 `Turn On Local Agent` may install `llama.cpp` through Homebrew and download the
-best compatible GGUF quantization for this Mac. Local Motion ships a
-biggest-first coder ladder and picks the most capable model that fits at 4-bit
-or better: a 30B mixture-of-experts coder (Qwen3-Coder-30B-A3B) on capable Macs,
-falling through to smaller Qwen coders on machines with less unified memory.
-Override the first choice with
-`localMotion.defaultModelRepo`. Set `localMotion.runAutomagicalSetupOnFirstStartup`
+best compatible GGUF quantization for this Mac. The default path is Qwen3-Coder:
+a 30B mixture-of-experts coder (Qwen3-Coder-30B-A3B), with Gemma 4 26B A4B as
+the bundled fallback. Local Motion downloads both selected GGUFs when they fit,
+starts Qwen3, and leaves Gemma in Downloaded Models so you can switch with
+`Run`. It does not silently downgrade the one-click setup to older Qwen2.5
+models; choose those explicitly from Advanced when needed. Override the first
+choice with `localMotion.defaultModelRepo`. Set
+`localMotion.runAutomagicalSetupOnFirstStartup`
 to `true` only if you want that install/download to start automatically on first
 startup.
 
