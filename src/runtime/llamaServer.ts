@@ -1,5 +1,6 @@
 import * as childProcess from "node:child_process";
 import * as dns from "node:dns/promises";
+import { promisify } from "node:util";
 import * as vscode from "vscode";
 import { LOCAL_MOTION_MODEL_ID, type CursorTunnelStatus, type InstalledModel, type RuntimeSession, type RuntimeStatus } from "../types";
 import { findCloudflared, startQuickTunnel, type CloudflaredTunnel } from "./cloudflaredTunnel";
@@ -9,13 +10,19 @@ import { isStartStale } from "./runtimeGuards";
 import { OpenAiProxy } from "./openAiProxy";
 import { releasePortHolder, reserveLocalhostPort } from "./ports";
 
+const execFile = promisify(childProcess.execFile);
+
 export interface CursorTunnelConfig {
   enabled: boolean;
   manualUrl?: string;
   manualUrlInvalid?: boolean;
 }
 
-const TUNNEL_DNS_TIMEOUT_MS = 10_000;
+// Fresh trycloudflare hostnames can take up to ~90 seconds to propagate
+// through public DNS (observed during the Phase 2 spike for Plan 002). The
+// wait presents as "Preparing the Cursor endpoint…" in the setup panel, so a
+// long window here trades silent failure for visible patience.
+const TUNNEL_DNS_TIMEOUT_MS = 90_000;
 
 export class LlamaServerManager {
   private child: childProcess.ChildProcess | undefined;
@@ -248,7 +255,10 @@ export class LlamaServerManager {
     if (config.manualUrl) {
       return { enabled: true, source: "manual", url: config.manualUrl };
     }
-    const cloudflared = await findCloudflared();
+    // cloudflared is a runtime dependency of the Cursor path, installed on
+    // demand exactly like llama.cpp — the user clicked one button and should
+    // never meet a missing-binary dead end.
+    const cloudflared = await findCloudflared() ?? await this.installCloudflared();
     if (!cloudflared) {
       return { enabled: true, source: "managed", error: "binary-missing" };
     }
@@ -270,6 +280,30 @@ export class LlamaServerManager {
     }
   }
 
+  private async installCloudflared(): Promise<string | undefined> {
+    const brew = await commandPath("brew");
+    if (!brew) {
+      return undefined;
+    }
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Installing the Cursor connection helper (cloudflared)",
+          cancellable: false
+        },
+        async () => {
+          this.output.appendLine("cloudflared not found. Running brew install cloudflared.");
+          await execFile(brew, ["install", "cloudflared"], { timeout: 10 * 60 * 1000 });
+        }
+      );
+    } catch (error) {
+      this.output.appendLine(`brew install cloudflared failed: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+    return findCloudflared();
+  }
+
   private handleTunnelExit(tunnel: CloudflaredTunnel): void {
     if (this.tunnel !== tunnel) {
       return;
@@ -285,6 +319,15 @@ export class LlamaServerManager {
     const tunnel = this.tunnel;
     this.tunnel = undefined;
     await tunnel?.stop();
+  }
+}
+
+async function commandPath(command: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFile("/usr/bin/which", [command]);
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
   }
 }
 

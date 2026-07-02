@@ -43,7 +43,7 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
       modelId,
       isRunning: false,
       setupBlock: needsTunnel
-        ? "Enable the Cursor tunnel or set a public tunnel URL before preparing Cursor."
+        ? "The Cursor connection is not ready yet."
         : "Start a local model in Local Motion before preparing Cursor.",
       steps: needsTunnel
         ? cursorTunnelSteps(status.cursorTunnel)
@@ -90,15 +90,21 @@ function cursorTunnelSteps(tunnel: RuntimeStatus["cursorTunnel"]): string[] {
     return ["Set localMotion.cursorTunnelUrl to a public HTTPS tunnel URL.", "Localhost, private IPs, plain HTTP, and invalid URLs cannot be used with Cursor."];
   }
   if (tunnel?.error === "binary-missing") {
-    return ["Install cloudflared with brew install cloudflared.", "Restart the local model, or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."];
+    // Reached only when the automatic brew install could not run or failed.
+    return ["Local Motion could not install its connection helper (cloudflared).", "Install Homebrew, then turn the local agent off and on — or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."];
   }
   if (tunnel?.error === "start-timeout" || tunnel?.error === "dns-unresolved") {
-    return ["The managed tunnel did not become reachable.", "Set localMotion.cursorTunnelUrl to a public HTTPS tunnel and restart the local model."];
+    return ["The Cursor connection did not become reachable.", "Turn the local agent off and on to retry, or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."];
   }
   if (tunnel?.error === "exited") {
-    return ["The managed tunnel stopped.", "Restart the local model or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."];
+    return ["The Cursor connection stopped.", "Turn the local agent off and on to reconnect, or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."];
   }
-  return ["Cursor's backend cannot reach localhost.", "Enable localMotion.cursorTunnel or set localMotion.cursorTunnelUrl, then restart the local model."];
+  if (!tunnel?.enabled) {
+    // Real VS Code: the vscode.lm provider path is fully local and needs no
+    // connection values at all.
+    return ["This window is VS Code, where Local Motion runs fully local through the built-in model picker.", "To use Cursor's chat, open this setup inside Cursor."];
+  }
+  return ["Preparing the Cursor connection.", "This can take a minute the first time."];
 }
 
 function cursorTunnelStatusMessage(tunnel: RuntimeStatus["cursorTunnel"]): string {
@@ -106,15 +112,18 @@ function cursorTunnelStatusMessage(tunnel: RuntimeStatus["cursorTunnel"]): strin
     return "localMotion.cursorTunnelUrl must be a public HTTPS tunnel URL. Cursor's backend cannot reach localhost or private network URLs.";
   }
   if (tunnel?.error === "binary-missing") {
-    return 'cloudflared is not installed. Install it with "brew install cloudflared" or set localMotion.cursorTunnelUrl.';
+    return "Local Motion could not install its connection helper (cloudflared). Install Homebrew and turn the local agent off and on, or set localMotion.cursorTunnelUrl.";
   }
   if (tunnel?.error === "start-timeout" || tunnel?.error === "dns-unresolved") {
-    return "The managed Cursor tunnel did not become reachable. Set localMotion.cursorTunnelUrl to a public HTTPS tunnel.";
+    return "The Cursor connection did not become reachable. Turn the local agent off and on to retry, or set localMotion.cursorTunnelUrl.";
   }
   if (tunnel?.error === "exited") {
-    return "The managed Cursor tunnel stopped. Restart the local model or set localMotion.cursorTunnelUrl.";
+    return "The Cursor connection stopped. Turn the local agent off and on to reconnect, or set localMotion.cursorTunnelUrl.";
   }
-  return "Cursor's backend cannot reach a localhost Base URL. Enable the Cursor tunnel or set localMotion.cursorTunnelUrl.";
+  if (!tunnel?.enabled) {
+    return "Local Motion runs fully local in VS Code. Open this setup inside Cursor to connect Cursor's chat.";
+  }
+  return "Preparing the Cursor connection.";
 }
 
 export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSetupValueKey): string {

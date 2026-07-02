@@ -60,6 +60,11 @@ export function setupPanelHtml(nonce: string): string {
       <div class="row">
         <button id="openCursor" class="btn cta">Open Cursor Settings</button>
       </div>
+      <!-- The one fact about this product that belongs to the user. It is
+           permanent copy, not a dismissable notice, and it is the entire
+           privacy surface of the Cursor path — the mechanism stays invisible,
+           the consequence does not. -->
+      <p class="note">Model runs on this Mac. Cursor relays chats through its servers.</p>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
     </div>
 

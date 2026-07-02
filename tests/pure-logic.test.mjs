@@ -567,7 +567,7 @@ test("Cursor setup view model does not duplicate a tunnel v1 suffix", () => {
   assert.equal(viewModel.baseUrl, "https://public.example.com/v1");
 });
 
-test("Cursor setup view model refuses localhost without a tunnel", () => {
+test("Cursor setup view model refuses localhost and explains the VS Code path when no tunnel exists", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
@@ -577,8 +577,8 @@ test("Cursor setup view model refuses localhost without a tunnel", () => {
   });
   assert.equal(viewModel.isRunning, false);
   assert.equal(viewModel.baseUrl, "");
-  assert.match(viewModel.statusMessage, /localhost/);
-  assert.ok(viewModel.steps.some((line) => line.includes("cursorTunnel")));
+  assert.match(viewModel.statusMessage, /fully local in VS Code/);
+  assert.ok(viewModel.steps.some((line) => line.includes("inside Cursor")));
 });
 
 test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
@@ -613,10 +613,10 @@ test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
 test("Cursor setup view model explains tunnel error states while local runtime stays up", () => {
   const expected = [
     ["invalid-url", /must be a public HTTPS tunnel URL/, /private IPs/],
-    ["binary-missing", /cloudflared is not installed/, /brew install cloudflared/],
+    ["binary-missing", /could not install its connection helper/, /Install Homebrew/],
     ["start-timeout", /did not become reachable/, /public HTTPS tunnel/],
     ["dns-unresolved", /did not become reachable/, /public HTTPS tunnel/],
-    ["exited", /managed Cursor tunnel stopped/, /Restart the local model/]
+    ["exited", /Cursor connection stopped/, /off and on to reconnect/]
   ];
 
   for (const [error, statusPattern, stepPattern] of expected) {

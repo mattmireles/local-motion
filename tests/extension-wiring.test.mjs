@@ -226,9 +226,16 @@ test("downloaded models can be run directly from storage for manual switching", 
   const switchStart = controllerSource.indexOf("async startDownloadedModel");
   const switchStartCall = controllerSource.indexOf("this.startInstalledModel(installed", switchStart);
   const switchPersist = controllerSource.indexOf("await this.state.setInstalledModel(installed)", switchStart);
+  const switchBody = controllerSource.slice(switchStart, switchPersist);
   assert.notEqual(switchStartCall, -1);
   assert.notEqual(switchPersist, -1);
   assert.equal(switchStartCall < switchPersist, true);
+  assert.match(switchBody, /const slottedModel = this\.localModelPack\(\)/);
+  assert.match(switchBody, /this\.state\.modelSlot\(option\.id\)/);
+  assert.match(switchBody, /path\.resolve\(slot\.modelPath\) === path\.resolve\(modelPath\)/);
+  assert.match(switchBody, /\.\.\.slottedModel/);
+  assert.match(switchBody, /modelId: LOCAL_MOTION_MODEL_ID/);
+  assert.match(switchBody, /contextTokens: this\.contextTokensSetting\(\)/);
 
   // The host serializes switching behind the same setup-operation guard as
   // installs, and the webview offers Switch only for complete, inactive files.
@@ -317,7 +324,6 @@ test("Connect Cursor command is registered and uses the one-step connection path
   assert.equal(extensionSource.includes("localMotion.prepareCursor"), true);
   assert.match(extensionSource, /controller\.connectCursor\(\)/);
   assert.match(controllerSource, /async connectCursor\(\)/);
-  assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
   assert.match(controllerSource, /this\.runtime\.activeSession\(\)/);
   assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
   assert.match(controllerSource, /this\.startInstalledModel\(active/);
@@ -479,10 +485,11 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
   const panelHostSource = await readText("../src/ui/setupPanel.ts");
   const properties = packageJson.contributes.configuration.properties;
-  assert.equal(properties["localMotion.cursorTunnel"].default, false);
-  assert.match(properties["localMotion.cursorTunnel"].description, /Cloudflare Quick Tunnel/);
-  assert.match(properties["localMotion.cursorTunnel"].description, /prompts will transit Cursor's servers/);
-  assert.match(properties["localMotion.cursorTunnel"].description, /next model start/);
+  // The tunnel is a structural fact of the host app, not a preference: Cursor
+  // host => tunnel starts with the model, VS Code host => fully local
+  // vscode.lm path. A boolean setting existed briefly and setup silently
+  // flipped it — the honest design is no switch at all.
+  assert.equal("localMotion.cursorTunnel" in properties, false);
   assert.equal(properties["localMotion.cursorTunnelUrl"].default, "");
   assert.match(properties["localMotion.cursorTunnelUrl"].description, /user-managed tunnel/);
   assert.match(properties["localMotion.cursorTunnelUrl"].description, /instead of spawning a Quick Tunnel/);
@@ -491,6 +498,9 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   assert.match(controllerSource, /cursorTunnelConfigFromWorkspace\(\)/);
   assert.match(configSource, /normalizePublicHttpsTunnelUrl/);
   assert.match(configSource, /manual\.url !== undefined/);
+  assert.match(configSource, /isCursorHost\(\)/);
+  assert.match(configSource, /vscode\.env\.appName\.toLowerCase\(\)\.includes\("cursor"\)/);
+  assert.equal(configSource.includes('get<boolean>("cursorTunnel"'), false);
 
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelSource, /id="openCursor"/);
@@ -498,7 +508,10 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   assert.match(panelSource, /In Cursor: Settings/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
-  assert.match(controllerSource, /ensureCursorTunnelForCursorSetup/);
+  // Setup must never write tunnel state into the user's settings — the old
+  // ensureCursorTunnelForCursorSetup silently flipped a global config value.
+  assert.equal(controllerSource.includes("ensureCursorTunnelForCursorSetup"), false);
+  assert.equal(controllerSource.includes('update("cursorTunnel"'), false);
   assert.equal(panelSource.includes("cursorTunnelEnabledNextStart"), false);
   assert.equal(panelSource.includes("Turn on Cursor tunnel"), false);
   assert.equal(panelSource.includes("Turn the local agent off and on"), false);
@@ -546,6 +559,12 @@ test("runtime owns the Cursor tunnel next to the proxy and stops it on crashes",
   assert.match(runtimeSource, /tunnelDnsResolves/);
   assert.match(runtimeSource, /await tunnel\.stop\(\)/);
   assert.match(runtimeSource, /error: "binary-missing"/);
+  // cloudflared is installed on demand like llama.cpp; binary-missing is only
+  // reachable when Homebrew is absent or the install fails.
+  assert.match(runtimeSource, /await findCloudflared\(\) \?\? await this\.installCloudflared\(\)/);
+  assert.match(runtimeSource, /\["install", "cloudflared"\]/);
+  // Fresh trycloudflare hostnames can take ~90s to propagate through DNS.
+  assert.match(runtimeSource, /TUNNEL_DNS_TIMEOUT_MS = 90_000/);
   assert.match(runtimeSource, /error: "start-timeout"/);
   assert.match(runtimeSource, /error: "exited"/);
   assert.match(runtimeSource, /error: "dns-unresolved"/);
@@ -572,12 +591,16 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
-  assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
+  assert.match(controllerSource, /status\.cursorTunnel\?\.enabled && !status\.cursorTunnel\.url/);
   assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
   assert.match(controllerSource, /this\.startInstalledModel\(active/);
   assert.equal(panelSource.includes("Connect Cursor"), false);
   assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
   assert.equal(panelSource.includes("Cursor-routed prompts"), false);
+
+  // The permanent one-line disclosure is the entire privacy surface of the
+  // Cursor path: the mechanism stays invisible, the consequence does not.
+  assert.match(panelSource, /Model runs on this Mac\. Cursor relays chats through its servers\./);
 
   // Once a real request is observed the connect card is dropped; until then it
   // stays visible. It must not vanish when Cursor Settings opens, so the old

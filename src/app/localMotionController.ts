@@ -129,7 +129,6 @@ export class LocalMotionController {
       }
     }
 
-    await this.ensureCursorTunnelForCursorSetup();
     const installed = await this.installAndStart(candidate, onProgress, onModelSelected);
     const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
 
@@ -148,7 +147,6 @@ export class LocalMotionController {
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined,
     selectedModelOptionId: LocalModelOptionId = "max"
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    await this.ensureCursorTunnelForCursorSetup();
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModelForOption(selectedModelOptionId);
       if (installedModel) {
@@ -237,20 +235,6 @@ export class LocalMotionController {
     return this.initialState();
   }
 
-  async enableCursorTunnel(): Promise<RuntimeResponse> {
-    await vscode.workspace.getConfiguration("localMotion").update("cursorTunnel", true, vscode.ConfigurationTarget.Global);
-    const runtime = this.runtime.status();
-    return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
-  }
-
-  private async ensureCursorTunnelForCursorSetup(): Promise<void> {
-    const config = vscode.workspace.getConfiguration("localMotion");
-    const hasManualTunnel = config.get<string>("cursorTunnelUrl", "").trim().length > 0;
-    if (!hasManualTunnel && !config.get<boolean>("cursorTunnel", false)) {
-      await config.update("cursorTunnel", true, vscode.ConfigurationTarget.Global);
-    }
-  }
-
   /**
    * Manual model switch: run any fully downloaded GGUF from the Storage
    * list. Downloaded files persist after installs, so a user can keep a
@@ -333,8 +317,9 @@ export class LocalMotionController {
 
   async connectCursor(): Promise<CursorSetupPreparedResponse> {
     const status = this.runtime.status();
-    if (status.running && !status.cursorTunnel?.url) {
-      await this.enableCursorTunnel();
+    // A running session whose tunnel died (or never came up) can only be
+    // healed by a restart — the tunnel child spawns with the model.
+    if (status.running && status.cursorTunnel?.enabled && !status.cursorTunnel.url) {
       const active = this.runtime.activeSession();
       if (active) {
         await this.runtime.stop();

@@ -1,7 +1,9 @@
 # Honest Cursor Tunnel Handoff Plan
 
 **Date:** 2026-07-01
-**Status:** In-Progress
+**Status:** Complete — Phase 5 manual Cursor proof blocked on an interactive
+Extension Development Host session. Design amended 2026-07-02: see Debug
+Notes (tunnel is host-structural, no boolean setting).
 
 ## Executive Summary
 
@@ -630,6 +632,34 @@ explicitly instead of claiming release proof.
   `deactivate()`; SIGKILL fallback; verification step checks `pgrep`.
 - **Cursor backend timeout on slow models:** documented vendor budget (guide
   §3); status copy sets expectation; not fixable locally.
+
+### Debug Notes
+
+#### 2026-07-02 - Tunnel opt-in replaced by host-structural design
+
+**Problem:** Commit 464b059 made setup silently write
+`localMotion.cursorTunnel: true` to the user's global settings
+(`ensureCursorTunnelForCursorSetup`), and the simplified connect UI dropped
+the disclosure copy and the cloudflared install guidance. An audit flagged
+this as a violation of this plan's opt-in and copy-honesty contracts; product
+direction (seamless, automagical) rejected re-adding a consent ceremony.
+**Root Cause:** The boolean setting modeled the tunnel as a preference, but it
+is a structural fact of the host: inside Cursor the tunnel is the only working
+path; inside real VS Code it is pointless. A switch whose positions cannot
+both be honest invites silent flipping.
+**Fix:** Deleted the `localMotion.cursorTunnel` setting and all config writes.
+`cursorTunnelConfigFromWorkspace` now enables the tunnel when
+`vscode.env.appName` is a Cursor host or `localMotion.cursorTunnelUrl` is set.
+The privacy surface is one permanent line in the connect card ("Model runs on
+this Mac. Cursor relays chats through its servers."). cloudflared is installed
+on demand via Homebrew exactly like llama.cpp, removing the binary-missing
+dead end. `TUNNEL_DNS_TIMEOUT_MS` raised 10s → 90s to match observed
+trycloudflare DNS propagation. Guarded by updated assertions in
+`tests/extension-wiring.test.mjs` (setting absent, no `update("cursorTunnel"`,
+disclosure line present) and `tests/pure-logic.test.mjs` (new copy states).
+**Files:** `package.json`, `src/app/cursorTunnelConfig.ts`,
+`src/app/localMotionController.ts`, `src/runtime/llamaServer.ts`,
+`src/cursor/cursorIntegration.ts`, `src/ui/setupPanelHtml.ts`
 
 ---
 

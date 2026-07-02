@@ -12,7 +12,9 @@ frees the memory when you do not.
 - Keeps every downloaded model on disk and switches between them on demand,
   so you can run a maximum-size model normally and a lighter one when the
   Mac is busy.
-- Connects Cursor through an opt-in tunnel without writing Cursor private state.
+- Connects Cursor automatically when running inside Cursor — model stays on
+  this Mac, Cursor relays chats through its servers — without writing Cursor
+  private state.
 - Frees the loaded model from memory immediately when you are done.
 - Keeps the runtime bound to `127.0.0.1`.
 
@@ -31,8 +33,10 @@ frees the memory when you do not.
   only when setup or advanced model controls need them.
 - Downloads model files with resumable streaming.
 - Finds or installs `llama-server` through Homebrew.
-- Starts `llama-server`, a stable loopback OpenAI-compatible proxy, and an
-  opt-in Cursor tunnel when enabled.
+- Starts `llama-server`, a stable loopback OpenAI-compatible proxy, and —
+  inside Cursor only — the tunnel that makes the proxy reachable by Cursor's
+  backend. In real VS Code no tunnel starts and the `vscode.lm` path stays
+  fully local.
 - Registers the running model with the VS Code Language Model API, with the
   provider's manage action opening the local-agent switch.
 
@@ -47,8 +51,9 @@ frees the memory when you do not.
 - Localhost port `41434` available for the Cursor-facing proxy, or set
   `localMotion.proxyPort` to another port. If the preferred port is occupied,
   Local Motion falls back to an ephemeral port and shows updated setup values.
-- `cloudflared` when using the managed Cursor tunnel, or set
-  `localMotion.cursorTunnelUrl` to a public HTTPS tunnel URL you manage.
+- `cloudflared` for the Cursor connection; Local Motion installs it through
+  Homebrew on demand, or set `localMotion.cursorTunnelUrl` to a public HTTPS
+  tunnel URL you manage.
 
 ## Setup
 

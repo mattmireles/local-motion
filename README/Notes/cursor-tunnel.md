@@ -17,8 +17,12 @@ network block that forced it.
 
 Cursor custom-model requests originate from Cursor's backend, not the local
 machine, so `127.0.0.1` and private-network Base URLs fail with Cursor's SSRF
-guard. Local Motion now exposes Cursor setup through an opt-in public HTTPS
-tunnel while keeping `llama-server` and the proxy bound to loopback.
+guard. Local Motion now exposes Cursor setup through a public HTTPS tunnel
+that starts automatically with the model when the extension host is Cursor
+(never in real VS Code — the `vscode.lm` path stays fully local), while
+keeping `llama-server` and the proxy bound to loopback. There is no tunnel
+setting; `localMotion.cursorTunnelUrl` remains the manual override, and the
+privacy consequence is stated permanently in the connect card.
 
 ### Symptom
 
