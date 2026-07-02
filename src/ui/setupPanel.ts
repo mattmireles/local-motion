@@ -3,7 +3,8 @@ import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
 import type { LocalModelOptionId } from "../models/defaultRepos";
-import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE, type AutomagicalSetupCompleteResponse, type SetupRequest, type SetupResponse } from "../setupProtocol";
+import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE, type AutomagicalSetupCompleteResponse, type PostedSetupResponse, type SetupRequest, type SetupResponse } from "../setupProtocol";
+import { CANCELLED_START_MESSAGE } from "../runtime/runtimeGuards";
 import { setupPanelHtml } from "./setupPanelHtml";
 import type { DownloadProgress } from "../runtime/downloader";
 
@@ -122,10 +123,12 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
 }
 
 class SetupWebviewSession {
+  // No lock lives here. Serialization is the controller's job alone — a
+  // per-session flag once duplicated it and silently failed the moment two
+  // sessions (sidebar + editor panel) existed at once.
   private readonly readyPromise: Promise<void>;
   private resolveReady: (() => void) | undefined;
   private isReady = false;
-  private setupOperationActive = false;
 
   constructor(
     private readonly webview: vscode.Webview,
@@ -153,23 +156,12 @@ class SetupWebviewSession {
           await this.post(await this.controller.stop());
           break;
         case SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL:
-          if (this.setupOperationActive) {
-            throw new Error("Wait for setup to finish before switching models.");
-          }
           if (!message.id) {
             throw new Error("No downloaded model was selected.");
           }
-          {
-            const id = message.id;
-            await this.withSetupOperation(async () => {
-              await this.post(await this.controller.startDownloadedModel(id));
-            });
-          }
+          await this.post(await this.controller.startDownloadedModel(message.id));
           break;
         case SETUP_REQUEST_COMMAND.REPLACE_MODEL_OPTION:
-          if (this.setupOperationActive) {
-            throw new Error("Wait for setup to finish before replacing models.");
-          }
           if (message.modelOptionId !== "max" && message.modelOptionId !== "mini") {
             throw new Error("No model slot was selected.");
           }
@@ -177,18 +169,11 @@ class SetupWebviewSession {
             throw new Error("Paste a Hugging Face GGUF repository.");
           }
           {
-            const optionId = message.modelOptionId;
-            const repoId = message.repoId;
-            await this.withSetupOperation(async () => {
-              const { onProgress, onModelSelected } = this.installProgressCallbacks();
-              await this.post(await this.controller.replaceModelOption(optionId, repoId, onProgress, onModelSelected));
-            });
+            const { onProgress, onModelSelected } = this.installProgressCallbacks();
+            await this.post(await this.controller.replaceModelOption(message.modelOptionId, message.repoId, onProgress, onModelSelected));
           }
           break;
         case SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION:
-          if (this.setupOperationActive) {
-            throw new Error("Wait for setup to finish before changing quantization.");
-          }
           if (message.modelOptionId !== "max" && message.modelOptionId !== "mini") {
             throw new Error("No model slot was selected.");
           }
@@ -198,9 +183,6 @@ class SetupWebviewSession {
           await this.post(await this.controller.selectQuantization(message.modelOptionId, message.fileName));
           break;
         case SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL:
-          if (this.setupOperationActive) {
-            throw new Error("Wait for setup to finish before deleting downloaded models.");
-          }
           if (!message.id) {
             throw new Error("No downloaded model was selected.");
           }
@@ -213,9 +195,6 @@ class SetupWebviewSession {
           break;
         case SETUP_REQUEST_COMMAND.CONNECT_CURSOR:
           await this.post(await this.controller.connectCursor());
-          break;
-        case SETUP_REQUEST_COMMAND.PREPARE_CURSOR:
-          await this.post(await this.controller.prepareCursor());
           break;
         case SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE:
           if (!isCursorSetupValueKey(message.key)) {
@@ -239,15 +218,6 @@ class SetupWebviewSession {
     await this.post(await this.controller.initialState());
   }
 
-  private async withSetupOperation<T>(run: () => Promise<T>): Promise<T> {
-    this.setupOperationActive = true;
-    try {
-      return await run();
-    } finally {
-      this.setupOperationActive = false;
-    }
-  }
-
   private installProgressCallbacks(): {
     onProgress: (progress: DownloadProgress, modelName?: string) => void;
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void;
@@ -263,16 +233,14 @@ class SetupWebviewSession {
   }
 
   private async automagicalSetup(modelOptionId?: LocalModelOptionId): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    return this.withSetupOperation(async () => {
-      await this.waitUntilReady();
-      await this.post({ type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_STARTED });
-      const { onProgress, onModelSelected } = this.installProgressCallbacks();
-      const payload = await this.controller.automagicalSetup(onProgress, onModelSelected, modelOptionId);
-      if (payload) {
-        await this.post(payload);
-      }
-      return payload;
-    });
+    await this.waitUntilReady();
+    await this.post({ type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_STARTED });
+    const { onProgress, onModelSelected } = this.installProgressCallbacks();
+    const payload = await this.controller.automagicalSetup(onProgress, onModelSelected, modelOptionId);
+    if (payload) {
+      await this.post(payload);
+    }
+    return payload;
   }
 
   async hostStartedAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
@@ -289,7 +257,12 @@ class SetupWebviewSession {
     this.output.appendLine(messageText);
     await this.postInitialRuntimeState().catch(() => undefined);
     await this.post({ type: SETUP_RESPONSE_TYPE.ERROR, message: messageText });
-    void vscode.window.showErrorMessage(messageText);
+    // A cancelled start is the user's own Turn Off landing mid-operation —
+    // the webview renders it as a neutral off transition, and an alarming
+    // error toast on top of that would call their action a failure.
+    if (messageText !== CANCELLED_START_MESSAGE) {
+      void vscode.window.showErrorMessage(messageText);
+    }
   }
 
   private markReady(): void {
@@ -313,7 +286,10 @@ class SetupWebviewSession {
   }
 
   private async post(payload: SetupResponse): Promise<void> {
-    await this.webview.postMessage(payload);
+    // Stamped at send time, one site: terminal results post after the lock
+    // releases (busy false); concurrent refreshes mid-operation post true.
+    const stamped: PostedSetupResponse = { ...payload, setupBusy: this.controller.setupBusy() };
+    await this.webview.postMessage(stamped);
   }
 
   private html(): string {

@@ -9,6 +9,7 @@ import {
 } from "./onboarding";
 import { LocalMotionProvider } from "./provider/localMotionProvider";
 import { LlamaServerManager } from "./runtime/llamaServer";
+import { CANCELLED_START_MESSAGE } from "./runtime/runtimeGuards";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
 import { LocalMotionState } from "./state";
 import { SetupViewProvider } from "./ui/setupPanel";
@@ -29,7 +30,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void setupView?.refresh();
   });
   const resolver = new LlamaServerResolver(output);
-  provider = new LocalMotionProvider(context, runtime, resolver, () => state.installedModel());
+  provider = new LocalMotionProvider(context, runtime, () => state.installedModel());
   const controller = new LocalMotionController(context, state, runtime, resolver, provider);
   setupView = new SetupViewProvider(controller, output);
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
@@ -100,8 +101,11 @@ async function runAutomagicalSetupCommand(setupViewProvider: SetupViewProvider |
   setStatusBarBusy("Starting local agent...");
   try {
     const result = await setupViewProvider?.runAutomagicalSetup();
-    if (result) {
-      await vscode.window.showInformationMessage("Local Motion local agent is on. Use Connect Cursor when you want Cursor chat to use it.");
+    // "On" is earned by a running runtime, not by the operation finishing —
+    // a Turn Off mid-download deliberately suppresses the final start, and
+    // that completion must not toast a false success.
+    if (result?.runtime.running) {
+      void vscode.window.showInformationMessage("Local Motion local agent is on. Use Connect Cursor when you want Cursor chat to use it.");
     }
   } catch {
     // The setup side panel reports command-started automagical errors into the webview.
@@ -116,16 +120,29 @@ async function prepareCursorCommand(
   setupViewProvider: SetupViewProvider | undefined
 ): Promise<void> {
   await setupViewProvider?.show();
-  const result = await controller.connectCursor();
-  await setupViewProvider?.refresh();
-  refreshStatusBar();
-  output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
-  if (result.verification.ok && result.copy.ok && result.settings.ok) {
-    await vscode.window.showInformationMessage("Cursor setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
-    return;
+  try {
+    const result = await controller.connectCursor();
+    output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
+    if (result.verification.ok && result.copy.ok && result.settings.ok) {
+      void vscode.window.showInformationMessage("Cursor setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
+    } else {
+      void vscode.window.showWarningMessage([result.verification.message, result.copy.message, result.settings.message].join(" "));
+    }
+  } catch (error) {
+    // connectCursor holds the setup lock and throws an honest "already
+    // running" while another operation holds it — surface that message
+    // instead of VS Code's generic "command failed" toast. A cancelled
+    // start is the user's own Turn Off winning; that gets the log line
+    // only, never a warning about the outcome they chose.
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(message);
+    if (message !== CANCELLED_START_MESSAGE) {
+      void vscode.window.showWarningMessage(message);
+    }
+  } finally {
+    await setupViewProvider?.refresh();
+    refreshStatusBar();
   }
-
-  await vscode.window.showWarningMessage([result.verification.message, result.copy.message, result.settings.message].join(" "));
 }
 
 async function diagnoseSetupCommand(controller: LocalMotionController, output: vscode.OutputChannel): Promise<void> {
@@ -136,10 +153,10 @@ async function diagnoseSetupCommand(controller: LocalMotionController, output: v
   }
   output.show(true);
   if (result.status === "ready") {
-    await vscode.window.showInformationMessage(result.message);
+    void vscode.window.showInformationMessage(result.message);
     return;
   }
-  await vscode.window.showWarningMessage(result.message);
+  void vscode.window.showWarningMessage(result.message);
 }
 
 async function maybeOpenSetupOnboarding(
@@ -242,7 +259,7 @@ async function stopLocalAgent(provider: LocalMotionProvider, setupViewProvider: 
   provider.refresh();
   refreshStatusBar();
   await setupViewProvider?.refresh();
-  await vscode.window.showInformationMessage("Local Motion freed the model memory.");
+  void vscode.window.showInformationMessage("Local Motion freed the model memory.");
 }
 
 function refreshStatusBar(): void {

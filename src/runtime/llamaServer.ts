@@ -9,7 +9,7 @@ import { LOCAL_MOTION_MODEL_ID, type CursorTunnelStatus, type InstalledModel, ty
 import { findCloudflared, startQuickTunnel, type CloudflaredTunnel } from "./cloudflaredTunnel";
 import { waitForHealth } from "./llamaHealth";
 import { attachRuntimeChildExitHandler } from "./runtimeChildExit";
-import { isStartStale } from "./runtimeGuards";
+import { CANCELLED_START_MESSAGE, isStartStale } from "./runtimeGuards";
 import { OpenAiProxy } from "./openAiProxy";
 import { releasePortHolder, reserveLocalhostPort } from "./ports";
 
@@ -88,13 +88,22 @@ export class LlamaServerManager {
     return this.session;
   }
 
+  /**
+   * `requestedEpoch` is the {@link stopEpoch} the caller captured at its
+   * decision point. A stop landing anywhere between that decision and the
+   * spawn — a resolver PATH probe, a first-time brew install, the queue
+   * wait — makes this start stale and it aborts as cancelled, instead of
+   * capturing a fresh generation here and reversing the user's stop.
+   * Omitted, the epoch is captured at entry (the decision IS the call).
+   */
   async start(
     model: InstalledModel,
-    llamaServerPath: string,
+    llamaServerPath: string | (() => Promise<string>),
     token?: vscode.CancellationToken,
-    tunnelConfig?: CursorTunnelConfig
+    tunnelConfig?: CursorTunnelConfig,
+    requestedEpoch?: number
   ): Promise<RuntimeSession> {
-    const requestedGeneration = this.sessionGeneration;
+    const requestedGeneration = requestedEpoch ?? this.sessionGeneration;
     let release!: () => void;
     const previous = this.startQueue;
     const effectiveTunnelConfig = tunnelConfig ?? this.defaultTunnelConfig();
@@ -111,7 +120,7 @@ export class LlamaServerManager {
 
   private async startLocked(
     model: InstalledModel,
-    llamaServerPath: string,
+    llamaServerPath: string | (() => Promise<string>),
     token: vscode.CancellationToken | undefined,
     requestedGeneration: number,
     tunnelConfig: CursorTunnelConfig | undefined
@@ -120,20 +129,54 @@ export class LlamaServerManager {
     this.startAbort = startAbort;
     const abortIfNeeded = (): void => {
       if (isStartStale(requestedGeneration, this.sessionGeneration) || startAbort.signal.aborted || token?.isCancellationRequested) {
-        throw new Error("Local model startup was cancelled.");
+        throw new Error(CANCELLED_START_MESSAGE);
       }
     };
 
     try {
+      // Staleness first, reuse second: a start queued behind a stop must
+      // abort as cancelled, never hand back the session that stop is about
+      // to tear down.
+      abortIfNeeded();
       if (this.session?.modelPath === model.modelPath && this.child && this.session.baseUrl) {
-        return this.session;
+        // A demanded tunnel the running session lacks defeats reuse: Connect
+        // Cursor heals a dead or missing tunnel by respawning, because the
+        // tunnel child starts with the model. Keeping that respawn inside
+        // this serialized start (instead of a caller-side stop-then-start)
+        // means a Turn Off during the heal lands as a generation bump that
+        // cancels it, rather than being silently reversed.
+        //
+        // Accepted trade (2026-07-02 external audit): a tunnel-only repair
+        // costs a full model respawn. One start path and no separate tunnel
+        // lifecycle is the simplicity this repo buys with that reload; a
+        // config-invalid manual URL never reaches here (connectCursor
+        // rejects it before touching the runtime).
+        const tunnelSatisfied = !tunnelConfig?.enabled ||
+          // An invalid configured manual URL must surface its error via a
+          // respawn, never hide behind an old live tunnel.
+          (!tunnelConfig.manualUrlInvalid &&
+            Boolean(this.session.cursorTunnel?.enabled && this.session.cursorTunnel.url) &&
+            // A demanded manual URL must be THE tunnel in use — reusing a
+            // leftover quick-tunnel would copy an ephemeral URL the user
+            // just configured away from.
+            (!tunnelConfig.manualUrl || this.session.cursorTunnel?.url === tunnelConfig.manualUrl));
+        if (tunnelSatisfied) {
+          return this.session;
+        }
       }
 
+      abortIfNeeded();
+      // The binary is resolved lazily, only once reuse is off the table: a
+      // healthy reconnect (live session, satisfied tunnel) must not pay a
+      // PATH probe or a first-time brew install, and the resolver now runs
+      // inside this serialized start where a stop aborts it at the next
+      // checkpoint instead of racing it.
+      const resolvedServerPath = typeof llamaServerPath === "function" ? await llamaServerPath() : llamaServerPath;
       abortIfNeeded();
       await this.stopLocked();
 
       // The context fit lives where `-c` is written, so every start path —
-      // setup panel, model switch, provider lazy start, Connect Cursor
+      // setup panel, model switch, Connect Cursor
       // restart — gets the largest context the memory budget affords, capped
       // by the setting. Records persisted before this build carry whatever
       // context was fitted then; the value spawned here is the truth. When
@@ -177,8 +220,8 @@ export class LlamaServerManager {
 
       const spawnAndAwaitHealth = async (args: string[]): Promise<void> => {
         abortIfNeeded();
-        this.output.appendLine(`Starting llama-server: ${llamaServerPath} ${args.join(" ")}`);
-        const child = childProcess.spawn(llamaServerPath, args, {
+        this.output.appendLine(`Starting llama-server: ${resolvedServerPath} ${args.join(" ")}`);
+        const child = childProcess.spawn(resolvedServerPath, args, {
           stdio: ["ignore", "pipe", "pipe"],
           detached: false
         });
@@ -242,7 +285,12 @@ export class LlamaServerManager {
         abortIfNeeded();
         const proxyBaseUrl = await proxy.start(configuredProxyPort());
         this.proxy = proxy;
-        const cursorTunnel = await this.startCursorTunnel(tunnelConfig, proxyBaseUrl);
+        abortIfNeeded();
+        const cursorTunnel = await this.startCursorTunnel(tunnelConfig, proxyBaseUrl, abortIfNeeded, startAbort.signal);
+        // Last checkpoint before the session becomes visible: a stop that
+        // landed during the proxy or tunnel phase must not publish a
+        // session (and downstream success toasts) it is about to tear down.
+        abortIfNeeded();
         const session: RuntimeSession = {
           ...model,
           modelId: LOCAL_MOTION_MODEL_ID,
@@ -266,6 +314,17 @@ export class LlamaServerManager {
         this.startAbort = undefined;
       }
     }
+  }
+
+  /**
+   * Monotonic count of explicit stop() calls. A crash does NOT bump it —
+   * the child-exit handler clears state without touching the generation —
+   * so a setup operation can distinguish "the user turned the agent off
+   * while I downloaded" (abandon the final start) from "the old model died
+   * on its own" (the user still wants the model they asked for).
+   */
+  stopEpoch(): number {
+    return this.sessionGeneration;
   }
 
   async stop(): Promise<void> {
@@ -318,7 +377,9 @@ export class LlamaServerManager {
 
   private async startCursorTunnel(
     config: CursorTunnelConfig | undefined,
-    proxyBaseUrl: string
+    proxyBaseUrl: string,
+    abortIfNeeded: () => void = () => undefined,
+    abortSignal?: AbortSignal
   ): Promise<CursorTunnelStatus | undefined> {
     if (!config?.enabled) {
       return { enabled: false };
@@ -332,29 +393,46 @@ export class LlamaServerManager {
     // cloudflared is a runtime dependency of the Cursor path, installed on
     // demand exactly like llama.cpp — the user clicked one button and should
     // never meet a missing-binary dead end.
-    const cloudflared = await findCloudflared() ?? await this.installCloudflared();
+    abortIfNeeded();
+    const cloudflared = await findCloudflared() ?? await this.installCloudflared(abortSignal);
+    // Turn Off is an interrupt even here: the tunnel phase runs after the
+    // last health checkpoint and can otherwise pin stop() on the start
+    // queue for the brew install plus up to 90s of DNS retries.
+    abortIfNeeded();
     if (!cloudflared) {
       return { enabled: true, source: "managed", error: "binary-missing" };
     }
     try {
       const proxyPort = Number(new URL(proxyBaseUrl).port);
       const tunnel = await startQuickTunnel(cloudflared, proxyPort, {
-        onExit: () => this.handleTunnelExit(tunnel)
+        onExit: () => this.handleTunnelExit(tunnel),
+        abortSignal
       });
-      if (!await tunnelDnsResolves(tunnel.url)) {
-        this.output.appendLine(`cloudflared tunnel hostname did not resolve: ${new URL(tunnel.url).hostname}`);
+      try {
+        if (!await tunnelDnsResolves(tunnel.url, TUNNEL_DNS_TIMEOUT_MS, abortSignal)) {
+          this.output.appendLine(`cloudflared tunnel hostname did not resolve: ${new URL(tunnel.url).hostname}`);
+          await tunnel.stop();
+          abortIfNeeded();
+          return { enabled: true, source: "managed", error: "dns-unresolved" };
+        }
+        abortIfNeeded();
+      } catch (error) {
+        // A cancellation mid-DNS must not leak the tunnel child.
         await tunnel.stop();
-        return { enabled: true, source: "managed", error: "dns-unresolved" };
+        throw error;
       }
       this.tunnel = tunnel;
       return { enabled: true, source: "managed", url: tunnel.url };
     } catch (error) {
+      if (error instanceof Error && error.message === CANCELLED_START_MESSAGE) {
+        throw error;
+      }
       this.output.appendLine(`cloudflared tunnel failed: ${error instanceof Error ? error.message : String(error)}`);
       return { enabled: true, source: "managed", error: "start-timeout" };
     }
   }
 
-  private async installCloudflared(): Promise<string | undefined> {
+  private async installCloudflared(abortSignal?: AbortSignal): Promise<string | undefined> {
     const brew = await commandPath("brew");
     if (!brew) {
       return undefined;
@@ -368,7 +446,10 @@ export class LlamaServerManager {
         },
         async () => {
           this.output.appendLine("cloudflared not found. Running brew install cloudflared.");
-          await execFile(brew, ["install", "cloudflared"], { timeout: 10 * 60 * 1000 });
+          // The abort signal reaches the brew child itself, so Free Memory
+          // during a first-time install kills it instead of waiting behind
+          // it; the caller's abortIfNeeded then reports the cancellation.
+          await execFile(brew, ["install", "cloudflared"], { timeout: 10 * 60 * 1000, signal: abortSignal });
         }
       );
     } catch (error) {
@@ -409,10 +490,18 @@ function configuredProxyPort(): number {
   return vscode.workspace.getConfiguration("localMotion").get<number>("proxyPort", 41434);
 }
 
-async function tunnelDnsResolves(url: string, timeoutMs = TUNNEL_DNS_TIMEOUT_MS): Promise<boolean> {
+async function tunnelDnsResolves(url: string, timeoutMs = TUNNEL_DNS_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<boolean> {
   const hostname = new URL(url).hostname;
   const deadline = Date.now() + timeoutMs;
   do {
+    // Checked at the TOP of each tick: a stop that landed during the
+    // previous lookup or delay exits before another lookup is issued.
+    // (A single in-flight dns.lookup cannot be interrupted — Node's
+    // resolver takes no signal — so the residue is one OS resolver
+    // timeout, not the rest of the 90s window.)
+    if (abortSignal?.aborted) {
+      return false;
+    }
     try {
       await dns.lookup(hostname);
       return true;

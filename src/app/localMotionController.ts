@@ -41,6 +41,19 @@ import { isAppleSiliconHost, modelMemoryBudgetBytes, profileMachine } from "../s
 import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type DownloadedModelEntry, type InstalledModel, type RuntimeSession } from "../types";
 import { formatBytes, formatTokenWindow, modelDisplayName } from "../util/format";
 
+/**
+ * Facts a mutating operation decides by, minted ONCE at the lock boundary
+ * by withSetupOperation and threaded down. Per-call-site captures were how
+ * a pre-lock await (a Hugging Face listing, a resolver probe) kept slipping
+ * in front of the epoch and reversing an explicit stop.
+ */
+interface SetupIntent {
+  /** runtime.stopEpoch() at lock entry; a later bump means the user said stop. */
+  stopEpoch: number;
+  /** The quantization dropdown choices as they stood when the user acted. */
+  quantizationChoice: ReadonlyMap<LocalModelOptionId, string>;
+}
+
 export class LocalMotionController {
   private readonly cursorSetup: CursorSetupWorkflow;
   private modelOptionCandidates: Promise<Map<LocalModelOptionId, CandidateQuantization[] | Error>> | undefined;
@@ -109,15 +122,16 @@ export class LocalMotionController {
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined,
     selectedModelOptionId: LocalModelOptionId = "max"
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    return this.withSetupOperation(async () => {
+    return this.withSetupOperation(async (intent) => {
       const installedModel = await this.reusableInstalledModelForOption(selectedModelOptionId);
       if (!this.runtime.status().running || !this.isActiveInstalledModel(installedModel)) {
         if (installedModel) {
           await this.startInstalledModel(installedModel, {
-            allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+            allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+            stopEpoch: intent.stopEpoch
           });
         } else {
-          await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected, selectedModelOptionId);
+          await this.installAndStartAll(await this.automagicalCandidates(intent.quantizationChoice), onProgress, onModelSelected, selectedModelOptionId, intent.stopEpoch);
         }
       }
 
@@ -126,18 +140,27 @@ export class LocalMotionController {
   }
 
   async resumeAutomagicalRuntime(): Promise<RuntimeResponse | undefined> {
-    if (!this.runtime.status().running) {
-      const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
-      if (!installedModel) {
-        return undefined;
-      }
-      await this.startInstalledModel(installedModel, {
-        allowInstall: allowLlamaInstallForAutomagicalStart("startupResume")
-      });
+    // Startup resume is opportunistic: if an explicit setup is already
+    // running it yields silently instead of racing the start or surfacing
+    // a spurious "already running" error at window load.
+    if (this.setupOperation) {
+      return undefined;
     }
+    return this.withSetupOperation(async (intent) => {
+      if (!this.runtime.status().running) {
+        const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
+        if (!installedModel) {
+          return undefined;
+        }
+        await this.startInstalledModel(installedModel, {
+          allowInstall: allowLlamaInstallForAutomagicalStart("startupResume"),
+          stopEpoch: intent.stopEpoch
+        });
+      }
 
-    const runtime = this.runtime.status();
-    return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
+      const runtime = this.runtime.status();
+      return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
+    });
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
@@ -150,6 +173,9 @@ export class LocalMotionController {
     };
   }
 
+  // Turn Off is an interrupt, deliberately outside withSetupOperation (see
+  // the lock's contract). runtime.stop() aborts any in-flight start and
+  // awaits the runtime's own start queue, so it cannot corrupt a setup.
   async stop(): Promise<RuntimeResponse> {
     await this.runtime.stop();
     this.provider.refresh();
@@ -163,12 +189,13 @@ export class LocalMotionController {
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<SetupStateResponse> {
-    return this.withSetupOperation(async () => this.replaceModelOptionLocked(optionId, repoId, onProgress, onModelSelected));
+    return this.withSetupOperation(async (intent) => this.replaceModelOptionLocked(optionId, repoId, intent.stopEpoch, onProgress, onModelSelected));
   }
 
   private async replaceModelOptionLocked(
     optionId: LocalModelOptionId,
     repoId: string,
+    stopEpoch: number,
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<SetupStateResponse> {
@@ -178,6 +205,14 @@ export class LocalMotionController {
       throw new Error("Paste a Hugging Face GGUF repository like owner/model-GGUF.");
     }
 
+    // Intent at click plus an intact stop epoch (minted at lock entry)
+    // decide the restart: a user replacing the ACTIVE model wants the
+    // replacement running even if the old server crashes mid-download,
+    // while an explicit Turn Off at ANY point after the click bumps the
+    // epoch and wins.
+    const previous = this.state.modelSlot(optionId);
+    const previousActive = Boolean(previous && this.isActiveInstalledModel(previous));
+
     // Same decision logic as the pack options: automagical best, gated by
     // the Q4 quality floor, with the honest blocking reason on failure.
     const candidate = chooseOptionCandidate(await this.defaultQuantizations(normalizedRepo), undefined);
@@ -185,18 +220,16 @@ export class LocalMotionController {
       throw new Error(`${normalizedRepo}: ${candidate.message}`);
     }
 
-    const previous = this.state.modelSlot(optionId);
-    const active = this.runtime.activeSession();
-    const wasActive = Boolean(previous && active && path.resolve(previous.modelPath) === path.resolve(active.modelPath));
     const installed = await this.installCandidate(candidate, onProgress, onModelSelected);
 
     await vscode.workspace.getConfiguration("localMotion").update(option.settingKey, normalizedRepo, vscode.ConfigurationTarget.Global);
     this.modelOptionCandidates = undefined;
     await this.state.setModelSlot(optionId, installed);
 
-    if (wasActive) {
+    if (previousActive && this.runtime.stopEpoch() === stopEpoch) {
       await this.startInstalledModel(installed, {
-        allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+        allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+        stopEpoch
       });
     }
 
@@ -211,10 +244,10 @@ export class LocalMotionController {
    * server before spawning the new one.
    */
   async startDownloadedModel(id: string): Promise<SetupStateResponse> {
-    return this.withSetupOperation(async () => this.startDownloadedModelLocked(id));
+    return this.withSetupOperation(async (intent) => this.startDownloadedModelLocked(id, intent.stopEpoch));
   }
 
-  private async startDownloadedModelLocked(id: string): Promise<SetupStateResponse> {
+  private async startDownloadedModelLocked(id: string, stopEpoch: number): Promise<SetupStateResponse> {
     const downloaded = await this.downloadedModels();
     const model = downloaded.models.find((candidate) => candidate.id === id);
     if (!model) {
@@ -246,12 +279,19 @@ export class LocalMotionController {
     };
 
     await this.startInstalledModel(installed, {
-      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+      allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+      stopEpoch
     });
     return this.initialState();
   }
 
   async deleteDownloadedModel(id: string): Promise<SetupStateResponse | undefined> {
+    // Fail fast before the modal, but confirm OUTSIDE the lock — a user
+    // pondering a modal must never hold up an install. The mutation then
+    // takes the lock and re-derives every fact it acts on.
+    if (this.setupOperation) {
+      throw new Error("Local Motion setup is already running. Wait for the current setup to finish.");
+    }
     const downloaded = await this.downloadedModels();
     const model = downloaded.models.find((candidate) => candidate.id === id);
     if (!model) {
@@ -268,56 +308,74 @@ export class LocalMotionController {
       return undefined;
     }
 
-    if (model.active) {
-      await this.runtime.stop();
-    }
+    return this.withSetupOperation(async () => {
+      // Re-read inside the lock: the modal wait is unbounded, and activity
+      // can change while it sits open (a switch or stop that landed
+      // mid-modal). The pre-modal snapshot only made the confirmation copy.
+      const current = (await this.downloadedModels()).models.find((candidate) => candidate.id === id);
+      if (!current) {
+        return this.initialState();
+      }
+      // Every start path holds this lock (the provider serves only running
+      // sessions), so holding it here guarantees no start is in flight —
+      // a fresh "not active" really means the file is safe to unlink.
+      if (current.active) {
+        await this.runtime.stop();
+      }
 
-    const deletedPath = await deleteDownloadedModel(this.modelsRoot(), id);
-    await this.state.clearModelSlotIfPath(deletedPath);
-    const clearedInstalled = await this.state.clearInstalledModelIfPath(deletedPath);
-    if (clearedInstalled) {
-      await this.state.clearAutomagicalSetupCompletionIfModel(clearedInstalled.modelId);
-    }
-    this.provider.refresh();
-    return this.initialState();
-  }
-
-  async prepareCursor(): Promise<CursorSetupPreparedResponse> {
-    return this.cursorSetup.prepareCursor();
+      const deletedPath = await deleteDownloadedModel(this.modelsRoot(), id);
+      await this.state.clearModelSlotIfPath(deletedPath);
+      const clearedInstalled = await this.state.clearInstalledModelIfPath(deletedPath);
+      if (clearedInstalled) {
+        await this.state.clearAutomagicalSetupCompletionIfModel(clearedInstalled.modelId);
+      }
+      this.provider.refresh();
+      return this.initialState();
+    });
   }
 
   async connectCursor(): Promise<CursorSetupPreparedResponse> {
     // Serialized with installs/switches: a Connect fired from the command
     // palette mid-install would otherwise interleave a stop() with another
     // operation's start.
-    return this.withSetupOperation(async () => {
-      const status = this.runtime.status();
-      // A running session whose tunnel died (or never came up) can only be
-      // healed by a restart — the tunnel child spawns with the model.
-      if (status.running && (!status.cursorTunnel?.enabled || !status.cursorTunnel.url)) {
-        const active = this.runtime.activeSession();
-        if (active) {
-          await this.runtime.stop();
-          await this.startInstalledModel(active, {
-            allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
-            connectCursor: true
-          });
-        }
+    return this.withSetupOperation(async (intent) => {
+      // Pre-flight config validation, not tunnel-state inspection: an
+      // invalid localMotion.cursorTunnelUrl is a settings error no respawn
+      // can fix — erroring here keeps a healthy model running instead of
+      // paying a multi-GB reload to surface "invalid-url".
+      if (cursorTunnelConfigFromWorkspace({ forceCursor: true }).manualUrlInvalid) {
+        throw new Error("localMotion.cursorTunnelUrl is not a valid HTTPS URL. Fix or clear the setting, then run Connect Cursor again.");
+      }
+      const active = this.runtime.activeSession();
+      if (active) {
+        // The runtime is the single tunnel authority: its reuse check
+        // returns the session untouched when the demanded tunnel is already
+        // live, and respawns (inside its own serialized start, so a Turn
+        // Off cancels rather than being reversed) when the tunnel is
+        // missing, dead, invalid, or no longer the configured manual URL.
+        // Deciding "does this need healing" here as well was how a leftover
+        // quick-tunnel URL masked a newly configured manual one.
+        await this.startInstalledModel(active, {
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+          connectCursor: true,
+          stopEpoch: intent.stopEpoch
+        });
       }
 
-      return this.prepareCursorAfterStartingInstalledModel();
+      return this.prepareCursorAfterStartingInstalledModel(intent.stopEpoch);
     });
   }
 
   // Private on purpose: called only inside connectCursor's setup-operation
   // lock. A public entry here would start a model outside that serialization.
-  private async prepareCursorAfterStartingInstalledModel(): Promise<CursorSetupPreparedResponse> {
+  private async prepareCursorAfterStartingInstalledModel(stopEpoch: number): Promise<CursorSetupPreparedResponse> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();
       if (installedModel) {
         await this.startInstalledModel(installedModel, {
           allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
-          connectCursor: true
+          connectCursor: true,
+          stopEpoch
         });
       }
     }
@@ -426,12 +484,15 @@ export class LocalMotionController {
     return listQuantizations(repoId, machine, contextTokensCap());
   }
 
-  private async automagicalCandidates(): Promise<CandidateQuantization[]> {
+  private async automagicalCandidates(chosen: ReadonlyMap<LocalModelOptionId, string>): Promise<CandidateQuantization[]> {
+    // `chosen` is the lock-entry snapshot: selectQuantization is
+    // deliberately unlocked, so a choice posted from another setup surface
+    // mid-listing must not retarget a download already started.
     const attempts: string[] = [];
     const selected: CandidateQuantization[] = [];
     const candidates = await this.modelOptionCandidateMap();
     for (const option of this.localModelPack()) {
-      const candidate = this.optionCandidate(option.id, candidates.get(option.id));
+      const candidate = this.optionCandidate(option.id, candidates.get(option.id), chosen);
       if (candidate && !(candidate instanceof Error)) {
         selected.push(candidate);
       } else {
@@ -449,7 +510,8 @@ export class LocalMotionController {
     candidates: CandidateQuantization[],
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void,
-    selectedModelOptionId: LocalModelOptionId
+    selectedModelOptionId: LocalModelOptionId,
+    stopEpoch: number
   ): Promise<InstalledModel> {
     const installedModels: InstalledModel[] = [];
     for (const candidate of candidates) {
@@ -465,9 +527,16 @@ export class LocalMotionController {
     if (!installed) {
       throw new Error("No compatible GGUF quantization found for this Mac.");
     }
-    await this.startInstalledModel(installed, {
-      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
-    });
+    // The stop epoch — not a running snapshot — carries intent across the
+    // downloads: an explicit Turn Off / Free Memory bumps it and cancels
+    // this start; an old-model crash does not, so a crash cannot silently
+    // cancel the switch the user asked for.
+    if (this.runtime.stopEpoch() === stopEpoch) {
+      await this.startInstalledModel(installed, {
+        allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+        stopEpoch
+      });
+    }
     return installed;
   }
 
@@ -504,13 +573,32 @@ export class LocalMotionController {
 
   private async startInstalledModel(
     installed: InstalledModel,
-    options: { allowInstall: boolean; connectCursor?: boolean }
+    options: { allowInstall: boolean; connectCursor?: boolean; stopEpoch?: number }
   ): Promise<RuntimeSession> {
-    const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
+    // Intent is enforced at the start boundary: the epoch captured at the
+    // caller's decision (or here, when the decision is this call) rides
+    // into runtime.start(). The resolver goes along as a thunk — the
+    // runtime invokes it only after its reuse check fails, so a healthy
+    // reconnect never pays a PATH probe or brew install, and a Turn Off
+    // during resolution aborts the start instead of being reversed.
+    const stopEpoch = options.stopEpoch ?? this.runtime.stopEpoch();
     const tunnelConfig = options.connectCursor ? cursorTunnelConfigFromWorkspace({ forceCursor: true }) : undefined;
-    const session = await this.runtime.start(installed, llamaServerPath, undefined, tunnelConfig).catch((error: unknown) => {
+    const reusedSession = this.runtime.activeSession();
+    const session = await this.runtime.start(
+      installed,
+      () => this.resolver.resolve({ allowInstall: options.allowInstall }),
+      undefined,
+      tunnelConfig,
+      stopEpoch
+    ).catch((error: unknown) => {
       throw withMemoryHint(error, installed.displayName);
     });
+    if (session === reusedSession) {
+      // The runtime reused the running session untouched (same model, tunnel
+      // satisfied) — nothing changed, so nothing re-persists and no
+      // "is running" toast repeats on an already-connected reconnect.
+      return session;
+    }
     // Persist exactly what runs. The runtime owns the context fit (the -c it
     // spawned is in session.contextTokens); explicit picks keep session-only
     // fields like the bearer key out of globalState.
@@ -525,7 +613,11 @@ export class LocalMotionController {
       contextTokens: session.contextTokens
     });
     this.provider.refresh();
-    await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
+    // Fire-and-forget: a button-less toast's promise settles only when the
+    // user explicitly dismisses it — once it fades into the notification
+    // bell it stays pending forever. Awaiting it here held both setup locks
+    // after a successful start and froze model switching (2026-07-02).
+    void vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
     return session;
   }
 
@@ -534,11 +626,40 @@ export class LocalMotionController {
     return Boolean(installed && active && path.resolve(installed.modelPath) === path.resolve(active.modelPath));
   }
 
-  private async withSetupOperation<T>(operation: () => Promise<T>): Promise<T> {
+  /**
+   * The single serialization authority for mutating operations. Everything
+   * that installs, deletes, or starts a model takes this lock — the LM
+   * provider serves only already-running sessions and never starts one —
+   * and re-entry throws rather than queues so the user always gets an
+   * immediate, honest "already running". Deliberate exceptions:
+   * - stop() is an INTERRUPT, never locked — gating Turn Off on setup state
+   *   is what once made it a dead button. It is safe lock-free because the
+   *   runtime serializes internally: stop() bumps the session generation,
+   *   aborts any in-flight start, and awaits the start queue.
+   * - selectQuantization() writes a session-scoped preference map; a running
+   *   install already captured its candidates, so there is nothing to race.
+   * - Reads (initialState, diagnose) never lock.
+   * Nothing awaited under this lock may pend on user inaction — a
+   * button-less toast await once wedged it permanently (2026-07-02).
+   * Mid-operation user intent is read through runtime.stopEpoch(): an
+   * explicit stop bumps it, a crash does not. Capture the epoch at
+   * operation start and compare before a final start — a bare "is it
+   * running" snapshot cannot tell a Turn Off from a crash.
+   */
+  /** Host truth for the webview's busy rendering: is the lock held NOW? */
+  setupBusy(): boolean {
+    return this.setupOperation !== undefined;
+  }
+
+  private async withSetupOperation<T>(operation: (intent: SetupIntent) => Promise<T>): Promise<T> {
     if (this.setupOperation) {
       throw new Error("Local Motion setup is already running. Wait for the current setup to finish.");
     }
-    const running = operation();
+    const intent: SetupIntent = {
+      stopEpoch: this.runtime.stopEpoch(),
+      quantizationChoice: new Map(this.quantizationChoice)
+    };
+    const running = operation(intent);
     this.setupOperation = running;
     try {
       return await running;
@@ -735,12 +856,13 @@ export class LocalMotionController {
    */
   private optionCandidate(
     optionId: LocalModelOptionId,
-    quantizations: CandidateQuantization[] | Error | undefined
+    quantizations: CandidateQuantization[] | Error | undefined,
+    chosen: ReadonlyMap<LocalModelOptionId, string> = this.quantizationChoice
   ): CandidateQuantization | Error | undefined {
     if (!quantizations || quantizations instanceof Error) {
       return quantizations;
     }
-    return chooseOptionCandidate(quantizations, this.quantizationChoice.get(optionId));
+    return chooseOptionCandidate(quantizations, chosen.get(optionId));
   }
 
   /**

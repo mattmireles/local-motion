@@ -1,6 +1,7 @@
 import { setupPanelStorageMarkup } from "./setupPanelStorage";
 import { setupPanelStyles } from "./setupPanelStyles";
 import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE } from "../setupProtocol";
+import { CANCELLED_START_MESSAGE } from "../runtime/runtimeGuards";
 
 export function setupPanelHtml(nonce: string): string {
   return `<!DOCTYPE html>
@@ -155,6 +156,20 @@ export function setupPanelHtml(nonce: string): string {
       // Disabled is the single source of truth for "busy". Never gate the
       // toggle on a setup flag — that is what made Turn Off a dead button.
       if (els.primary.disabled) return;
+      // A switch install keeps Turn Off alive: stop is an interrupt by
+      // architecture, and the host suppresses the post-download restart.
+      // The download itself continues (cancellable from its notification).
+      // A Cursor-connect respawn gets the same escape hatch — a stalled
+      // tunnel heal (cloudflared install, DNS wait) must never strand the
+      // panel on Starting with no way out; stop cancels the heal cleanly.
+      if ((state.modelSwitchRunning && state.runtime && state.runtime.running) || state.cursorConnectRunning) {
+        els.primary.disabled = true;
+        els.primary.textContent = 'Turning Off…';
+        state.modelSwitchRunning = false;
+        state.cursorConnectRunning = false;
+        vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.STOP}' });
+        return;
+      }
       const option = selectedModelOption();
       // An unavailable option is almost always a transient listing failure,
       // not a verdict on this Mac — the primary action becomes a retry that
@@ -213,14 +228,22 @@ export function setupPanelHtml(nonce: string): string {
         updateModelOptions(message);
         updateDownloadedStorage(message);
         /* A model switch spans several runtime status changes (old model
-           stops, new one loads), each of which pushes a fresh STATE. The
-           switch is only over when a state arrives with the model running —
-           until then the surface must keep saying "starting", not "off". */
-        if (state.modelSwitchRunning && message.runtime && message.runtime.running) {
+           stops, new one loads), each of which pushes a fresh STATE. For a
+           switch to an already-downloaded model the old server stops first,
+           so a STATE with the model running means the NEW one is up — the
+           switch is over. During an install-backed switch the OLD model
+           keeps running through the download, so "running" proves nothing:
+           that path must wait for AUTOMAGICAL_SETUP_COMPLETE, or a mid-
+           download status refresh (a Cursor request hitting the old proxy)
+           would snap the panel to "on" and hide the switch progress. */
+        if (state.modelSwitchRunning && !state.automagicalSetupRunning && message.runtime && message.runtime.running) {
           state.modelSwitchRunning = false;
           state.progressMessage = '';
         }
-        state.setupOperationRunning = state.modelSwitchRunning || state.cursorConnectRunning;
+        // Anchored to host truth: a refresh landing mid-operation carries
+        // setupBusy=true (the lock is held), so the panel cannot revert to
+        // a clickable "off" while a from-off start or replace is in flight.
+        state.setupOperationRunning = state.modelSwitchRunning || state.cursorConnectRunning || message.setupBusy === true;
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -282,12 +305,8 @@ export function setupPanelHtml(nonce: string): string {
         setStatus(message.runtime.message);
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE}') {
-        state.automagicalSetupRunning = false;
-        state.setupOperationRunning = false;
+        endSetupOperation();
         state.errorMessage = '';
-        state.progressMessage = '';
-        state.progressPercent = undefined;
-        state.selectedModelName = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
         updateModelOptions(message);
@@ -325,13 +344,13 @@ export function setupPanelHtml(nonce: string): string {
         setStatus(message.message);
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.ERROR}') {
-        state.automagicalSetupRunning = false;
-        state.modelSwitchRunning = false;
-        state.cursorConnectRunning = false;
-        state.setupOperationRunning = false;
-        state.progressMessage = '';
-        state.progressPercent = undefined;
-        state.errorMessage = message.message || 'Something went wrong.';
+        endSetupOperation();
+        // A cancelled start is the user's own Turn Off winning mid-switch
+        // or mid-connect — that is the outcome they asked for, so it
+        // renders as a plain off state, never as "That did not work".
+        state.errorMessage = message.message === '${CANCELLED_START_MESSAGE}'
+          ? ''
+          : (message.message || 'Something went wrong.');
         render();
         setStatus(message.message);
       }
@@ -357,7 +376,14 @@ export function setupPanelHtml(nonce: string): string {
         : state.modelSwitchRunning ? 'starting'
         : running ? 'on'
         : state.cursorConnectRunning ? 'starting'
-        : busy ? 'starting' : 'off';
+        : busy ? 'starting'
+        // Any in-flight operation from "off" — a downloaded-model start, a
+        // replace download — is 'starting' too: rendering 'off' left the
+        // primary button clickable with its pre-click label (a second click
+        // hit the lock and flashed a false error card) and hid the progress
+        // bar of a live multi-GB replace download.
+        : state.setupOperationRunning ? 'starting'
+        : 'off';
       renderModelOptions();
       renderStorage();
 
@@ -430,9 +456,19 @@ export function setupPanelHtml(nonce: string): string {
         els.progress.removeAttribute('aria-valuenow');
       }
 
-      els.primary.textContent = 'Starting…';
+      // While a replacement downloads, the running model stays stoppable —
+      // the exact flow the interrupt architecture exists for — and a
+      // Cursor-connect heal keeps the same escape hatch while its tunnel
+      // work runs. A fresh start keeps the disabled 'Starting…': nothing
+      // is running to turn off.
+      if ((state.modelSwitchRunning && state.runtime && state.runtime.running) || state.cursorConnectRunning) {
+        els.primary.textContent = 'Turn Off Local Agent';
+        els.primary.disabled = false;
+      } else {
+        els.primary.textContent = 'Starting…';
+        els.primary.disabled = true;
+      }
       els.primary.removeAttribute('title');
-      els.primary.disabled = true;
     }
 
     function renderOn(inUse, entering) {
@@ -781,6 +817,21 @@ export function setupPanelHtml(nonce: string): string {
         state.copyResults = {};
         state.connectMessage = '';
       }
+    }
+
+    /* Every terminal message (completion or error) ends ALL operation
+       modes through this one chokepoint — a handler clearing its own
+       flags piecemeal once left modelSwitchRunning set after an
+       install-backed switch completed, freezing the panel at "Starting
+       local agent" until an unrelated status refresh. */
+    function endSetupOperation() {
+      state.automagicalSetupRunning = false;
+      state.modelSwitchRunning = false;
+      state.cursorConnectRunning = false;
+      state.setupOperationRunning = false;
+      state.progressMessage = '';
+      state.progressPercent = undefined;
+      state.selectedModelName = '';
     }
 
     function setStatus(text) {

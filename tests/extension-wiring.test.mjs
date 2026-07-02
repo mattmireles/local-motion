@@ -174,7 +174,34 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(controllerSource, /deleteDownloadedModel\(this\.modelsRoot\(\), id\)/);
   assert.match(controllerSource, /This will turn off the local agent first/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.DELETE_DOWNLOADED_MODEL/);
-  assert.match(panelHostSource, /Wait for setup to finish before deleting downloaded models/);
+  // Delete confirms outside the lock, then takes the controller lock for
+  // the mutation — the panel holds no gate of its own.
+  assert.match(controllerSource, /if \(answer !== "Delete"\) \{\s*return undefined;\s*\}\s*\n\s*return this\.withSetupOperation/);
+  // Regression (2026-07-02 external audit): the modal wait is unbounded, so
+  // a switch or stop can land while it sits open. The mutation must re-read
+  // the model inside the lock and act on the fresh `current.active`, never
+  // the pre-modal snapshot.
+  const deleteBody = controllerSource.slice(
+    controllerSource.indexOf("async deleteDownloadedModel"),
+    controllerSource.indexOf("async connectCursor(")
+  );
+  const lockedDeleteBody = deleteBody.slice(deleteBody.indexOf("return this.withSetupOperation"));
+  assert.match(lockedDeleteBody, /const current = \(await this\.downloadedModels\(\)\)\.models\.find/);
+  assert.equal(lockedDeleteBody.includes("model.active"), false);
+  assert.match(lockedDeleteBody, /if \(current\.active\)/);
+
+  // Regression (2026-07-02 external audit rounds 2 and 7): the restart
+  // decision after replace's multi-GB download is intent at click plus an
+  // intact stop epoch — a bare "is it running" snapshot either reversed an
+  // explicit mid-download Turn Off (round 2) or let an old-model crash
+  // silently cancel the replacement the user asked for (round 7).
+  assert.equal(controllerSource.includes("wasActive"), false);
+  const replaceBody = controllerSource.slice(
+    controllerSource.indexOf("private async replaceModelOptionLocked"),
+    controllerSource.indexOf("async startDownloadedModel")
+  );
+  assert.match(replaceBody, /const previousActive = Boolean\(previous && this\.isActiveInstalledModel\(previous\)\)/);
+  assert.match(replaceBody, /if \(previousActive && this\.runtime\.stopEpoch\(\) === stopEpoch\)/);
   assert.match(panelHostSource, /postInitialRuntimeState\(\)\.catch/);
 
   const storageIndex = panelSource.indexOf("setupPanelStorageMarkup()");
@@ -253,7 +280,6 @@ test("downloaded models can be run directly from storage for manual switching", 
   // The host serializes switching behind the same setup-operation guard as
   // installs, and the webview offers Switch only for complete, inactive files.
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL/);
-  assert.match(panelHostSource, /Wait for setup to finish before switching models/);
   assert.match(panelSource, /model\.active \|\| model\.partial/);
   assert.match(panelSource, /data-action="run"/);
   assert.match(panelSource, /Switch/);
@@ -261,14 +287,18 @@ test("downloaded models can be run directly from storage for manual switching", 
 
   // A switch spans several runtime status changes, each pushing a STATE that
   // resets setupOperationRunning. The switch flag must outlive those resets
-  // (surface keeps saying "starting", buttons stay disabled) and clear only
-  // when a STATE arrives with the new model actually running — or on error.
+  // and clear on STATE-with-running only for downloaded-model switches
+  // (where the old server stops before the new one loads, so "running"
+  // means the new model). An install-backed switch keeps the OLD model
+  // running through the download — there, only AUTOMAGICAL_SETUP_COMPLETE
+  // ends the switch, or a mid-download status refresh would snap the panel
+  // to "on" and hide the progress (2026-07-02 external audit round 6).
   assert.match(panelSource, /state\.modelSwitchRunning = true;/);
   assert.match(panelSource, /state\.modelSwitchRunning \? 'starting'/);
-  assert.match(panelSource, /state\.setupOperationRunning = state\.modelSwitchRunning \|\| state\.cursorConnectRunning;/);
+  assert.match(panelSource, /state\.setupOperationRunning = state\.modelSwitchRunning \|\| state\.cursorConnectRunning \|\| message\.setupBusy === true;/);
   assert.match(
     panelSource,
-    /if \(state\.modelSwitchRunning && message\.runtime && message\.runtime\.running\) \{\s*state\.modelSwitchRunning = false;/
+    /if \(state\.modelSwitchRunning && !state\.automagicalSetupRunning && message\.runtime && message\.runtime\.running\) \{\s*state\.modelSwitchRunning = false;/
   );
   const errorHandler = panelSource.slice(panelSource.indexOf("SETUP_RESPONSE_TYPE.ERROR}'"));
   assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
@@ -281,8 +311,8 @@ test("the runtime owns the context fit; no start path can pass the raw setting t
   const manifest = JSON.parse(await readText("../package.json"));
 
   // The fit happens where -c is written, so the setup panel, model switch,
-  // provider lazy start, and Connect Cursor restart all get it by
-  // construction — there is no second fit site to drift from.
+  // and Connect Cursor restart all get it by construction — there is no
+  // second fit site to drift from.
   assert.match(llamaSource, /fitContextTokens\(sizeBytes, modelMemoryBudgetBytes\(\)/);
   assert.match(llamaSource, /String\(contextTokens\)/);
   assert.equal(llamaSource.includes("String(model.contextTokens)"), false);
@@ -389,7 +419,6 @@ test("Connect Cursor command is registered and uses the one-step connection path
   assert.match(extensionSource, /controller\.connectCursor\(\)/);
   assert.match(controllerSource, /async connectCursor\(\)/);
   assert.match(controllerSource, /this\.runtime\.activeSession\(\)/);
-  assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
   assert.match(controllerSource, /this\.startInstalledModel\(active/);
   assert.match(controllerSource, /prepareCursorAfterStartingInstalledModel/);
   assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
@@ -444,7 +473,7 @@ test("one-click setup downloads Max and Mini before starting Max", async () => {
 
   assert.match(defaultReposSource, /Qwen3-Coder-30B-A3B-Instruct-GGUF/);
   assert.match(defaultReposSource, /gemma-4-26B-A4B-it-GGUF/);
-  assert.match(controllerSource, /installAndStartAll\(await this\.automagicalCandidates\(\), onProgress, onModelSelected, selectedModelOptionId\)/);
+  assert.match(controllerSource, /installAndStartAll\(await this\.automagicalCandidates\(intent\.quantizationChoice\), onProgress, onModelSelected, selectedModelOptionId, intent\.stopEpoch\)/);
   assert.match(defaultReposSource, /LOCAL_MODEL_PACK/);
   assert.match(defaultReposSource, /label: "Max"/);
   assert.match(defaultReposSource, /modelName: "Qwen3-Coder-30B-A3B"/);
@@ -507,7 +536,11 @@ test("model cards show the fitted context window and offer a quantization choose
   assert.match(compatibilitySource, /export function chooseOptionCandidate/);
   assert.match(compatibilitySource, /export function chooserQuantizations/);
   assert.match(compatibilitySource, /export function isChooserEligibleQuantization/);
-  assert.match(controllerSource, /this\.quantizationChoice\.get\(optionId\)/);
+  // The stored choice flows through a snapshot parameter so an in-flight
+  // install cannot be retargeted by a choice posted mid-listing.
+  assert.match(controllerSource, /chosen: ReadonlyMap<LocalModelOptionId, string> = this\.quantizationChoice/);
+  assert.match(controllerSource, /chooseOptionCandidate\(quantizations, chosen\.get\(optionId\)\)/);
+  assert.match(controllerSource, /quantizationChoice: new Map\(this\.quantizationChoice\)/);
   assert.match(controllerSource, /chooserQuantizations\(quantizations\)\.some\(\(candidate\) => candidate\.fileName === fileName\)/);
   assert.match(controllerSource, /That quantization is not available for this model\./);
   assert.match(controllerSource, /formatTokenWindow\(candidate\.compatibility\.fittedContextTokens\)/);
@@ -531,6 +564,9 @@ test("model cards show the fitted context window and offer a quantization choose
   // and "Not installed" echoes are deleted outright.
   assert.match(panelSource, /class="model-radio" aria-hidden="true"/);
   assert.match(stylesSource, /\.model-option\.selected \.model-radio::after/);
+  // Selection accent derives from the button color; focusBorder is a
+  // keyboard-ring token many themes tune near-invisible.
+  assert.match(stylesSource, /--accent: var\(--vscode-button-background, var\(--vscode-focusBorder\)\)/);
   assert.match(panelSource, /data-replace-toggle/);
   assert.match(panelSource, /state\.replaceOpen\[optionId\] = !state\.replaceOpen\[optionId\]/);
   assert.match(panelSource, /choices \? '' : option\.quantization/);
@@ -548,9 +584,6 @@ test("model cards show the fitted context window and offer a quantization choose
   );
   assert.equal(payloadBody.indexOf("if (downloaded)") < payloadBody.indexOf("candidates.get(option.id)"), true);
 
-  // The chooser command respects the same setup-operation gate as its
-  // sibling mutating commands.
-  assert.match(panelHostSource, /Wait for setup to finish before changing quantization\./);
 
   // Card copy states the consequence, and the chooser only renders while
   // there is a real choice to make (pre-download, more than one level).
@@ -605,7 +638,16 @@ test("free memory never blocks a model: advisory at load, honest error from llam
   // The honest out-of-memory signal is llama-server itself failing to start;
   // that failure is caught and explained with a way out.
   assert.match(controllerSource, /const tunnelConfig = options\.connectCursor \? cursorTunnelConfigFromWorkspace\(\{ forceCursor: true \}\) : undefined/);
-  assert.match(controllerSource, /runtime\.start\(installed, llamaServerPath, undefined, tunnelConfig\)\.catch/);
+  // The resolver rides into runtime.start as a thunk: a healthy reconnect
+  // (reuse) never pays a PATH probe or brew install, and resolution runs
+  // inside the serialized start behind the staleness checkpoints.
+  assert.match(controllerSource, /\(\) => this\.resolver\.resolve\(\{ allowInstall: options\.allowInstall \}\)/);
+  const llamaStartBody = (await readText("../src/runtime/llamaServer.ts"));
+  const reuseIdx = llamaStartBody.indexOf("if (this.session?.modelPath === model.modelPath");
+  const resolveIdx = llamaStartBody.indexOf("typeof llamaServerPath === \"function\" ? await llamaServerPath()");
+  assert.notEqual(reuseIdx, -1);
+  assert.notEqual(resolveIdx, -1);
+  assert.equal(reuseIdx < resolveIdx, true);
   assert.match(controllerSource, /withMemoryHint\(error, installed\.displayName\)/);
 
   // The download still runs before start.
@@ -666,16 +708,6 @@ test("command palette messages do not claim Cursor is connected before a real re
   assert.equal(extensionSource.includes("Local Motion is connected"), false);
   assert.match(extensionSource, /local agent is on/);
   assert.match(extensionSource, /Cursor setup is ready/);
-});
-
-test("controller serializes setup operations before downloads and model switches", async () => {
-  const controllerSource = await readText("../src/app/localMotionController.ts");
-  assert.match(controllerSource, /private setupOperation: Promise<unknown> \| undefined/);
-  assert.match(controllerSource, /private async withSetupOperation/);
-  assert.match(controllerSource, /setup is already running/);
-  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => \{/);
-  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.replaceModelOptionLocked/);
-  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.startDownloadedModelLocked/);
 });
 
 test("downloads single-flight by target GGUF path", async () => {
@@ -771,7 +803,7 @@ test("runtime owns the Cursor tunnel next to the proxy and stops it on crashes",
   assert.match(runtimeSource, /error: "binary-missing"/);
   // cloudflared is installed on demand like llama.cpp; binary-missing is only
   // reachable when Homebrew is absent or the install fails.
-  assert.match(runtimeSource, /await findCloudflared\(\) \?\? await this\.installCloudflared\(\)/);
+  assert.match(runtimeSource, /await findCloudflared\(\) \?\? await this\.installCloudflared\(abortSignal\)/);
   assert.match(runtimeSource, /\["install", "cloudflared"\]/);
   // Fresh trycloudflare hostnames can take ~90s to propagate through DNS.
   assert.match(runtimeSource, /TUNNEL_DNS_TIMEOUT_MS = 90_000/);
@@ -801,9 +833,24 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
-  assert.match(controllerSource, /!status\.cursorTunnel\?\.enabled \|\| !status\.cursorTunnel\.url/);
-  assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
-  assert.match(controllerSource, /this\.startInstalledModel\(active/);
+  // The runtime is the single tunnel authority: connectCursor routes every
+  // running session through the locked start and never inspects tunnel
+  // health itself — deciding that in two places let a leftover quick-tunnel
+  // URL mask a newly configured manual one.
+  {
+    const connectSlice = controllerSource.slice(
+      controllerSource.indexOf("async connectCursor("),
+      controllerSource.indexOf("private async prepareCursorAfterStartingInstalledModel")
+    );
+    // No tunnel-STATE reads (status/session) — the runtime owns those.
+    // Config pre-flight (cursorTunnelConfigFromWorkspace) is allowed: an
+    // invalid manual URL is a settings error rejected before any respawn.
+    assert.equal(connectSlice.includes("status.cursorTunnel"), false);
+    assert.equal(connectSlice.includes("cursorTunnel?.url"), false);
+    assert.match(connectSlice, /cursorTunnelConfigFromWorkspace\(\{ forceCursor: true \}\)\.manualUrlInvalid/);
+    assert.match(connectSlice, /this\.startInstalledModel\(active/);
+    assert.match(connectSlice, /connectCursor: true/);
+  }
   assert.equal(panelSource.includes("Connect Cursor"), false);
   assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
   assert.equal(panelSource.includes("Cursor-routed prompts"), false);

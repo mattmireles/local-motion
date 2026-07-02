@@ -3,6 +3,7 @@
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import { promisify } from "node:util";
+import { CANCELLED_START_MESSAGE } from "./runtimeGuards";
 
 const execFile = promisify(childProcess.execFile);
 const TRYCLOUDFLARE_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
@@ -37,6 +38,12 @@ export interface StartQuickTunnelOptions {
   startupTimeoutMs?: number;
   killTimeoutMs?: number;
   onExit?: (exit: CloudflaredTunnelExit) => void;
+  /**
+   * A stop mid-spawn kills the child and rejects immediately instead of
+   * pinning the caller for the rest of the startup timeout — Turn Off is
+   * an interrupt through every tunnel substep, not just the DNS wait.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface FindCloudflaredOptions {
@@ -85,6 +92,22 @@ export async function startQuickTunnel(
       void stopChild(child, options.killTimeoutMs);
       reject(new Error(`cloudflared did not print a trycloudflare URL within ${options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS} ms. Output: ${output || "(none)"}`));
     }, options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
+
+    const onAbort = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      stopping = true;
+      clearTimeout(timer);
+      void stopChild(child, options.killTimeoutMs);
+      reject(new Error(CANCELLED_START_MESSAGE));
+    };
+    if (options.abortSignal?.aborted) {
+      onAbort();
+      return;
+    }
+    options.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
     const append = (chunk: unknown): void => {
       output = trimOutput(output + String(chunk));

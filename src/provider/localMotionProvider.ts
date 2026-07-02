@@ -3,8 +3,7 @@ import { LOCAL_MOTION_MODEL_ID, type InstalledModel } from "../types";
 import type { OpenAiMessage } from "../runtime/openAiChat";
 import { streamChatCompletion } from "../runtime/openAiStream";
 import { LlamaServerManager, parallelRequestsSetting } from "../runtime/llamaServer";
-import { LlamaServerResolver } from "../runtime/llamaServerResolver";
-import { NO_INSTALLED_MODEL_MESSAGE } from "./providerMessages";
+import { LOCAL_AGENT_OFF_MESSAGE, NO_INSTALLED_MODEL_MESSAGE } from "./providerMessages";
 
 export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vscode.LanguageModelChatInformation> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -13,7 +12,6 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly runtime: LlamaServerManager,
-    private readonly resolver: LlamaServerResolver,
     private readonly readInstalledModel: () => InstalledModel | undefined
   ) {}
 
@@ -73,8 +71,15 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
       throw new Error(NO_INSTALLED_MODEL_MESSAGE);
     }
 
-    const llamaServerPath = await this.resolver.resolve({ allowInstall: false, token });
-    const running = await this.runtime.start(installed, llamaServerPath, token);
+    // Serve only a running session — never start one. A lazy start here was
+    // the one start path outside the setup lock: it could resurrect a model
+    // the user just switched away from, and it silently reversed an explicit
+    // Turn Off / Free Memory by reloading tens of GB on a chat request. Off
+    // means off; the honest answer is an error that says how to turn it on.
+    const running = this.runtime.activeSession();
+    if (!running) {
+      throw new Error(LOCAL_AGENT_OFF_MESSAGE);
+    }
     await streamChatCompletion(
       running.upstreamBaseUrl ?? running.baseUrl ?? "",
       model.id,

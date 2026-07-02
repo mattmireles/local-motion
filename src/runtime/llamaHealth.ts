@@ -1,4 +1,5 @@
 import type * as childProcess from "node:child_process";
+import { CANCELLED_START_MESSAGE } from "./runtimeGuards";
 
 export async function waitForHealth(
   port: number,
@@ -14,10 +15,10 @@ export async function waitForHealth(
 
   const throwIfCancelled = (): void => {
     if (options?.token?.isCancellationRequested) {
-      throw new Error("Local model startup was cancelled.");
+      throw new Error(CANCELLED_START_MESSAGE);
     }
     if (options?.abortSignal?.aborted) {
-      throw new Error("Local model startup was cancelled.");
+      throw new Error(CANCELLED_START_MESSAGE);
     }
   };
 
@@ -26,8 +27,12 @@ export async function waitForHealth(
   while (Date.now() < deadline) {
     throwIfCancelled();
     try {
+      // The probe itself races the start abort: a Turn Off mid-fetch kills
+      // the request now instead of waiting out the 5s probe timeout.
       const healthCheck = fetch(`http://127.0.0.1:${port}/health`, {
-        signal: AbortSignal.timeout(5000)
+        signal: options?.abortSignal
+          ? AbortSignal.any([AbortSignal.timeout(5000), options.abortSignal])
+          : AbortSignal.timeout(5000)
       });
       const response = childFailure ? await Promise.race([healthCheck, childFailure]) : await healthCheck;
       if (response.ok) {

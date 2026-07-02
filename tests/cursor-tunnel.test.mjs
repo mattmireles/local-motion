@@ -57,6 +57,41 @@ test("findCloudflared checks Homebrew fallbacks when PATH misses", async () => {
   assert.deepEqual(seen, ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]);
 });
 
+test("startQuickTunnel abort kills the child, rejects as cancellation, and suppresses onExit", async () => {
+  // Regression (2026-07-02 external audit round 7): the spawn wait must be
+  // a real interrupt point — a stop mid-spawn rejects immediately instead
+  // of pinning the caller for the 30s startup timeout.
+  const child = new FakeChild();
+  const exits = [];
+  const abort = new AbortController();
+  const tunnelPromise = startQuickTunnel("/bin/cloudflared", 41434, {
+    spawn: () => child,
+    startupTimeoutMs: 5_000,
+    abortSignal: abort.signal,
+    onExit: (exit) => exits.push(exit)
+  });
+
+  abort.abort();
+  await assert.rejects(tunnelPromise, /Local model startup was cancelled\./);
+  assert.equal(child.killedSignals.length > 0, true);
+  child.exit(1, null);
+  assert.deepEqual(exits, []);
+
+  // An already-aborted signal never waits at all.
+  const preAborted = new AbortController();
+  preAborted.abort();
+  const instantChild = new FakeChild();
+  await assert.rejects(
+    startQuickTunnel("/bin/cloudflared", 41434, {
+      spawn: () => instantChild,
+      startupTimeoutMs: 5_000,
+      abortSignal: preAborted.signal
+    }),
+    /Local model startup was cancelled\./
+  );
+  assert.equal(instantChild.killedSignals.length > 0, true);
+});
+
 test("startQuickTunnel parses trycloudflare URL from noisy stderr", async () => {
   const child = new FakeChild();
   const spawned = [];

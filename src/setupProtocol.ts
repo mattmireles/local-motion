@@ -18,7 +18,6 @@ export const SETUP_REQUEST_COMMAND = {
   SELECT_QUANTIZATION: "selectQuantization",
   DELETE_DOWNLOADED_MODEL: "deleteDownloadedModel",
   CONNECT_CURSOR: "connectCursor",
-  PREPARE_CURSOR: "prepareCursor",
   COPY_CURSOR_VALUE: "copyCursorValue"
 } as const;
 
@@ -45,7 +44,6 @@ export type SetupRequest =
   | { command: typeof SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION; modelOptionId?: LocalModelOptionId; fileName?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL; id?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.CONNECT_CURSOR }
-  | { command: typeof SETUP_REQUEST_COMMAND.PREPARE_CURSOR }
   | { command: typeof SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE; key?: CursorSetupValueKey };
 
 export interface CursorActionResult {
@@ -158,6 +156,16 @@ export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, Se
   runtime: RuntimeStatus;
   cursor?: CursorSetupPreparedResponse;
 }
+
+/**
+ * Every message the panel host posts is stamped with `setupBusy` at SEND
+ * time — whether the controller's setup lock is held at that moment. The
+ * webview anchors its busy rendering to this host truth instead of
+ * guessing from locally-maintained flags: an operation's terminal result
+ * posts after the lock releases (busy false), while any concurrent refresh
+ * mid-operation posts busy true.
+ */
+export type PostedSetupResponse = SetupResponse & { setupBusy: boolean };
 
 export type SetupResponse =
   | SetupStateResponse

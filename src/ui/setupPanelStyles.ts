@@ -11,6 +11,9 @@ export function setupPanelStyles(): string {
       --bad: var(--vscode-testing-iconFailed, var(--vscode-errorForeground, #c94f4f));
       --busy: var(--vscode-progressBar-background, var(--vscode-focusBorder));
       --panel: color-mix(in srgb, var(--vscode-editor-background) 96%, var(--vscode-foreground));
+      /* Selection accent = the primary button's color. focusBorder exists
+         for keyboard rings, and many themes tune it near-invisible. */
+      --accent: var(--vscode-button-background, var(--vscode-focusBorder));
     }
     * { box-sizing: border-box; }
     body {
@@ -101,8 +104,8 @@ export function setupPanelStyles(): string {
       background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
     }
     .model-option.selected {
-      border-color: var(--vscode-focusBorder);
-      background: color-mix(in srgb, var(--vscode-focusBorder) 9%, transparent);
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
     }
     .model-option.active .model-status {
       color: var(--ok);
@@ -130,13 +133,13 @@ export function setupPanelStyles(): string {
       align-self: center;
       transition: border-color 160ms ease;
     }
-    .model-option.selected .model-radio { border-color: var(--vscode-focusBorder); }
+    .model-option.selected .model-radio { border-color: var(--accent); }
     .model-option.selected .model-radio::after {
       content: '';
       position: absolute;
       inset: 2.5px;
       border-radius: 50%;
-      background: var(--vscode-focusBorder);
+      background: var(--accent);
     }
     .model-title strong {
       font-size: 14px;
