@@ -1,4 +1,4 @@
-import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
+import type { CandidateQuantization, GgufFile, MachineProfile } from "../types";
 import { parseContentLengthHeader } from "../runtime/runtimeGuards";
 import { classifyCompatibility, compareQuantizationPreference, isAuxiliaryGgufFileName, isShardedGgufFileName, quantizationFromFileName } from "./compatibility";
 
@@ -16,31 +16,6 @@ interface HuggingFaceModel {
     size?: number;
     lfs?: { size?: number; oid?: string };
   }>;
-}
-
-export async function searchModels(query: string): Promise<ModelSearchResult[]> {
-  const params = new URLSearchParams({
-    search: query,
-    limit: "25",
-    sort: "downloads",
-    direction: "-1"
-  });
-  const response = await fetchWithTimeout(`https://huggingface.co/api/models?${params.toString()}`, {
-    headers: { accept: "application/json" }
-  });
-  if (!response.ok) {
-    throw new Error(`Hugging Face search failed: ${response.status} ${response.statusText}`);
-  }
-
-  const models = (await response.json()) as HuggingFaceModel[];
-  return models
-    .map((model) => ({
-      repoId: model.modelId ?? model.id ?? "",
-      downloads: model.downloads,
-      likes: model.likes,
-      tags: model.tags ?? []
-    }))
-    .filter((model) => model.repoId.includes("/") && looksLikeGgufModel(model));
 }
 
 export async function listQuantizations(
@@ -128,7 +103,3 @@ function repoPath(repoId: string): string {
   return repoId.split("/").map(encodeURIComponent).join("/");
 }
 
-function looksLikeGgufModel(model: ModelSearchResult): boolean {
-  const haystack = `${model.repoId} ${model.tags.join(" ")}`.toLowerCase();
-  return haystack.includes("gguf");
-}

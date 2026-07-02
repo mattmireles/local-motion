@@ -16,13 +16,8 @@ export function setupPanelHtml(nonce: string): string {
 </head>
 <body>
   <main>
-    <div class="brand">
-      <span id="brandDot" class="dot off" aria-hidden="true"></span>
-      <h1>Local Motion</h1>
-    </div>
-
     <div id="stage" class="stage" role="status" aria-live="polite">
-      <p id="headline" class="headline">Checking Local Motion…</p>
+      <h1 id="headline" class="headline">Checking Local Motion…</h1>
       <p id="subline" class="subline">Runs a coding model on this Mac for Cursor.</p>
     </div>
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
@@ -87,21 +82,6 @@ export function setupPanelHtml(nonce: string): string {
       <summary>Advanced</summary>
       <div class="advanced-body">
         <section class="advanced-block">
-          <h2>Model</h2>
-          <label for="repo">Hugging Face GGUF repository</label>
-          <div class="row">
-            <input id="repo" spellcheck="false">
-            <button id="load" class="btn ghost">Load</button>
-            <button id="search" class="btn ghost">Search</button>
-          </div>
-          <div id="searchResults" class="list"></div>
-          <div id="quantizations" class="list"></div>
-          <div class="actions">
-            <button id="install" class="btn ghost" disabled>Install and Turn On</button>
-          </div>
-        </section>
-
-        <section class="advanced-block">
           <h2>This Mac</h2>
           <div id="machine" class="grid"></div>
         </section>
@@ -117,7 +97,6 @@ export function setupPanelHtml(nonce: string): string {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const state = {
-      selected: undefined,
       installed: undefined,
       runtime: undefined,
       machine: undefined,
@@ -130,6 +109,7 @@ export function setupPanelHtml(nonce: string): string {
       settings: undefined,
       modelOptions: [],
       selectedModelOptionId: 'max',
+      replaceOpen: {},
       copyResults: {},
       automagicalSetupRunning: false,
       modelSwitchRunning: false,
@@ -143,7 +123,6 @@ export function setupPanelHtml(nonce: string): string {
     };
 
     const els = {
-      brandDot: document.getElementById('brandDot'),
       stage: document.getElementById('stage'),
       headline: document.getElementById('headline'),
       subline: document.getElementById('subline'),
@@ -166,13 +145,7 @@ export function setupPanelHtml(nonce: string): string {
       manageStorage: document.getElementById('manageStorage'),
       storagePanel: document.getElementById('storagePanel'),
       storageList: document.getElementById('storageList'),
-      repo: document.getElementById('repo'),
-      load: document.getElementById('load'),
-      search: document.getElementById('search'),
       machine: document.getElementById('machine'),
-      searchResults: document.getElementById('searchResults'),
-      quantizations: document.getElementById('quantizations'),
-      install: document.getElementById('install'),
       status: document.getElementById('status')
     };
 
@@ -231,22 +204,9 @@ export function setupPanelHtml(nonce: string): string {
       renderStorage();
     });
 
-    els.load.addEventListener('click', () => {
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.QUANTIZATIONS}', repoId: els.repo.value });
-    });
-    els.search.addEventListener('click', () => {
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.SEARCH}', query: els.repo.value });
-    });
-    els.install.addEventListener('click', () => {
-      state.setupOperationRunning = true;
-      render();
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.INSTALL_RUN}', candidate: state.selected });
-    });
-
     window.addEventListener('message', event => {
       const message = event.data;
       if (message.type === '${SETUP_RESPONSE_TYPE.STATE}') {
-        els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
         state.machine = message.machine;
@@ -269,8 +229,6 @@ export function setupPanelHtml(nonce: string): string {
         render();
         setStatus(state.modelSwitchRunning ? state.progressMessage : 'Ready.');
       }
-      if (message.type === '${SETUP_RESPONSE_TYPE.SEARCH_RESULTS}') renderSearchResults(message.results);
-      if (message.type === '${SETUP_RESPONSE_TYPE.QUANTIZATIONS}') renderQuantizations(message.quantizations);
       if (message.type === '${SETUP_RESPONSE_TYPE.INSTALL_PROGRESS}') {
         state.setupOperationRunning = true;
         state.errorMessage = '';
@@ -306,31 +264,8 @@ export function setupPanelHtml(nonce: string): string {
         state.progressPercent = undefined;
         state.selectedModelName = '';
         state.progressMessage = 'Preparing Max and Mini for this Mac…';
-        els.install.disabled = true;
         render();
         setStatus('Selecting compatible Max and Mini downloads, starting the selected model, and preparing Cursor.');
-      }
-      if (message.type === '${SETUP_RESPONSE_TYPE.INSTALLED}') {
-        state.installed = message.installed;
-        state.runtime = message.runtime;
-        updateModelOptions(message);
-        updateDownloadedStorage(message);
-        state.errorMessage = '';
-        resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
-        state.cursorSetupViewModel = message.cursorSetupViewModel;
-        state.cursorSetupFreshness = message.cursorSetupFreshness;
-        state.verification = message.cursor && message.cursor.verification;
-        state.settings = message.cursor && message.cursor.settings;
-        if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
-        state.automagicalSetupRunning = false;
-        state.setupOperationRunning = false;
-        state.progressMessage = '';
-        state.progressPercent = undefined;
-        state.selectedModelName = '';
-        render();
-        setStatus(message.cursor
-          ? [state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' ')
-          : 'Running ' + message.installed.displayName);
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.RUNTIME}') {
         state.runtime = message.runtime;
@@ -363,7 +298,6 @@ export function setupPanelHtml(nonce: string): string {
         state.verification = message.cursor && message.cursor.verification;
         state.settings = message.cursor && message.cursor.settings;
         if (message.cursor && message.cursor.copy) state.copyResults.setupBlock = message.cursor.copy;
-        els.install.disabled = !state.selected;
         render();
         setStatus([state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' '));
       }
@@ -398,7 +332,6 @@ export function setupPanelHtml(nonce: string): string {
         state.progressMessage = '';
         state.progressPercent = undefined;
         state.errorMessage = message.message || 'Something went wrong.';
-        els.install.disabled = !state.selected;
         render();
         setStatus(message.message);
       }
@@ -427,9 +360,6 @@ export function setupPanelHtml(nonce: string): string {
         : busy ? 'starting' : 'off';
       renderModelOptions();
       renderStorage();
-
-      // Brand status dot: off / busy / on.
-      els.brandDot.className = 'dot ' + (running ? 'on' : busy ? 'busy' : 'off');
 
       // A failed turn-on speaks in place, replacing the headline.
       if (phase === 'error') {
@@ -586,7 +516,7 @@ export function setupPanelHtml(nonce: string): string {
     }
 
     /* ------------------------------------------------------------------ */
-    /* Advanced surface: model controls, Mac details, activity log.        */
+    /* Advanced surface: Mac details and the activity log.                 */
     /* ------------------------------------------------------------------ */
 
     function renderMachine(machine) {
@@ -621,30 +551,48 @@ export function setupPanelHtml(nonce: string): string {
         const selected = option.id === state.selectedModelOptionId;
         const unavailable = option.status === 'unavailable';
         const active = option.status === 'running';
-        const detail = [
-          option.summary,
-          option.quantization,
-          option.contextWindow ? option.contextWindow + ' context' : '',
-          option.downloadSize ? option.downloadSize + ' download' : ''
-        ].filter(Boolean).join(' · ');
+        const disabled = state.setupOperationRunning ? ' disabled' : '';
         // The chooser appears only while there is a real choice to make —
-        // before download, with more than one compatible level. Each entry
-        // states its consequence (size, context) so the trade is legible
-        // without leaving the card.
+        // before download, with more than one compatible level.
         const choices = (!option.downloadedModelId && Array.isArray(option.quantizationChoices) && option.quantizationChoices.length > 1)
           ? option.quantizationChoices : undefined;
+        // Each fact appears exactly once: memory reads against the budget it
+        // must fit inside ("uses X of Y"); quantization and download size
+        // live in the chooser when there is one, in the meta line when not.
+        const budget = state.machine && state.machine.budget;
+        const detail = [
+          option.contextWindow ? option.contextWindow + ' context' : '',
+          option.requiredMemory ? 'uses ' + option.requiredMemory + (budget ? ' of ' + budget : '') : '',
+          choices ? '' : option.quantization,
+          choices ? '' : (option.downloadSize ? option.downloadSize + ' download' : '')
+        ].filter(Boolean).join(' · ');
         const chooser = choices
-          ? '<span class="model-quant"><select data-quant-option="' + esc(option.id) + '" aria-label="Quantization for ' + esc(option.label) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>' +
+          ? '<span class="model-quant"><select data-quant-option="' + esc(option.id) + '" aria-label="Quantization for ' + esc(option.label) + '"' + disabled + '>' +
               choices.map(choice => '<option value="' + esc(choice.fileName) + '"' + (choice.fileName === option.fileName ? ' selected' : '') + '>' + esc(choice.label) + '</option>').join('') +
             '</select></span>'
           : '';
+        // Status speaks only when it says something the primary button does
+        // not: Running, Ready, or why the option is unavailable. The reason
+        // takes the meta slot so it can wrap instead of clipping.
+        const statusChip = !unavailable && option.statusText
+          ? '<span class="model-status">' + esc(option.statusText) + '</span>'
+          : '';
+        const meta = unavailable
+          ? (option.statusText || 'The model list could not be loaded.')
+          : (detail || option.repoId);
+        // Replace is a rare act; it hides behind a quiet swap icon and only
+        // then spends a row on an input.
+        const replaceOpen = Boolean(state.replaceOpen[option.id]);
         return '<div class="model-option' + (selected ? ' selected' : '') + (active ? ' active' : '') + '" data-option-id="' + esc(option.id) + '" role="radio" tabindex="0" aria-checked="' + (selected ? 'true' : 'false') + '"' + (unavailable ? ' title="' + esc(option.statusText) + '"' : '') + '>' +
-          '<span class="model-title"><strong>' + esc(option.label) + '</strong><span>' + esc(option.modelName) + '</span></span>' +
-          '<span class="model-meta">' + esc(detail || option.repoId) + '</span>' +
-          '<span class="model-status">' + esc(option.statusText) + '</span>' +
+          '<span class="model-title"><span class="model-radio" aria-hidden="true"></span><strong>' + esc(option.label) + '</strong><span>' + esc(option.modelName) + '</span></span>' +
+          statusChip +
+          '<span class="model-meta">' + esc(meta) + '</span>' +
           chooser +
-          '<span class="model-repo">' + esc(option.repoId) + '</span>' +
-          '<span class="model-replace"><input data-repo-input="' + esc(option.id) + '" value="' + esc(option.repoId) + '" aria-label="Hugging Face repository for ' + esc(option.label) + '"><button class="btn ghost" data-replace-option="' + esc(option.id) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>Replace</button></span>' +
+          '<span class="model-repo-row"><span class="model-repo">' + esc(option.repoId) + '</span>' +
+            '<button class="btn icon" data-replace-toggle="' + esc(option.id) + '" aria-expanded="' + (replaceOpen ? 'true' : 'false') + '" aria-label="Replace ' + esc(option.label) + ' with another Hugging Face repository" title="Replace model"' + disabled + '>' + swapIcon() + '</button></span>' +
+          (replaceOpen
+            ? '<span class="model-replace"><input data-repo-input="' + esc(option.id) + '" value="' + esc(option.repoId) + '" aria-label="Hugging Face repository for ' + esc(option.label) + '"><button class="btn ghost" data-replace-option="' + esc(option.id) + '"' + disabled + '>Replace</button></span>'
+            : '') +
         '</div>';
       }).join('');
 
@@ -659,6 +607,18 @@ export function setupPanelHtml(nonce: string): string {
           event.preventDefault();
           state.selectedModelOptionId = optionEl.dataset.optionId;
           render();
+        });
+      }
+      for (const button of els.modelOptions.querySelectorAll('button[data-replace-toggle]')) {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          const optionId = button.dataset.replaceToggle;
+          state.replaceOpen[optionId] = !state.replaceOpen[optionId];
+          render();
+          if (state.replaceOpen[optionId]) {
+            const input = els.modelOptions.querySelector('input[data-repo-input="' + optionId + '"]');
+            if (input) input.focus();
+          }
         });
       }
       for (const button of els.modelOptions.querySelectorAll('button[data-replace-option]')) {
@@ -704,6 +664,7 @@ export function setupPanelHtml(nonce: string): string {
         return;
       }
       state.setupOperationRunning = true;
+      state.replaceOpen[optionId] = false;
       state.progressPercent = undefined;
       state.progressMessage = 'Replacing ' + optionId + ' with ' + cleanRepo + '…';
       render();
@@ -795,54 +756,12 @@ export function setupPanelHtml(nonce: string): string {
       return String(fileName).replace(/\\.gguf(?:\\.part)?$/i, '').replace(/[-_]+/g, ' ');
     }
 
-    function renderSearchResults(results) {
-      els.searchResults.innerHTML = results.map(result =>
-        '<button class="item" data-repo="' + esc(result.repoId) + '"><strong>' + esc(result.repoId) + '</strong><span class="meta">' +
-        esc(String(result.downloads || 0)) + ' downloads</span></button>'
-      ).join('');
-      for (const item of els.searchResults.querySelectorAll('.item')) {
-        item.addEventListener('click', () => {
-          els.repo.value = item.dataset.repo;
-          vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.QUANTIZATIONS}', repoId: item.dataset.repo });
-        });
-      }
-    }
-
-    function renderQuantizations(items) {
-      state.selected = undefined;
-      els.install.disabled = true;
-      els.quantizations.innerHTML = items.map((item, index) => {
-        const ok = item.compatibility.status === 'compatible';
-        const name = candidateDisplayName(item);
-        return '<button class="item" data-index="' + index + '">' +
-          '<strong>' + esc(name) + '</strong>' +
-          '<span class="status ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'Compatible' : 'Not compatible') + '</span>' +
-          '<span class="meta">' + esc(item.quantization) + ' · ' + esc(formatBytes(item.sizeBytes)) + ' file · ' + esc(formatBytes(item.compatibility.requiredMemoryBytes)) + ' runtime memory</span>' +
-          '<span class="meta">' + esc(item.compatibility.reasons.join(' ')) + '</span>' +
-          '</button>';
-      }).join('');
-      const buttons = Array.from(els.quantizations.querySelectorAll('.item'));
-      buttons.forEach((button, index) => {
-        button.addEventListener('click', () => {
-          buttons.forEach(b => b.classList.remove('selected'));
-          button.classList.add('selected');
-          state.selected = items[index];
-          els.install.disabled = state.automagicalSetupRunning;
-        });
-      });
-      const firstCompatible = items.findIndex(item => item.compatibility.status === 'compatible');
-      if (firstCompatible >= 0 && buttons[firstCompatible]) buttons[firstCompatible].click();
-      if (state.automagicalSetupRunning) {
-        els.install.disabled = true;
-        return;
-      }
-      setStatus(items.length ? 'Compatible quantization selected. Turn on the local agent or install manually.' : 'No GGUF files found in this repository.');
-    }
-
-    function candidateDisplayName(item) {
-      const repoName = String(item.repoId || '').split('/').pop() || String(item.repoId || '');
-      const fileName = String(item.fileName || '').replace(/\\.gguf$/i, '');
-      return (repoName && fileName) ? repoName + ' ' + fileName : (fileName || repoName || String(item.quantization || 'Model'));
+    /* A 🔁-shaped swap glyph in currentColor — crisp at 14px where an emoji
+       would not be, and it inherits the theme instead of fighting it. */
+    function swapIcon() {
+      return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M12.8 5.6A5.4 5.4 0 0 0 3.5 6.3"/><path d="M12.9 2.5v3.1h-3.1"/>' +
+        '<path d="M3.2 10.4a5.4 5.4 0 0 0 9.3-.7"/><path d="M3.1 13.5v-3.1h3.1"/></svg>';
     }
 
     function modelProgressName() {

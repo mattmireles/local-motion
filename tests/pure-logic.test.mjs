@@ -44,10 +44,7 @@ import {
   shouldResumeAutomagicalSetup,
   shouldRunFirstStartupAutomagicalSetup
 } from "../out/onboarding.js";
-import {
-  allowLlamaInstallForAutomagicalStart,
-  shouldPostInitialQuantizations
-} from "../out/setupPolicy.js";
+import { allowLlamaInstallForAutomagicalStart } from "../out/setupPolicy.js";
 import {
   isAutomagicalSetupCompletion,
   isInstalledModel,
@@ -1122,11 +1119,6 @@ test("provider no-model error points to the local agent switch", () => {
 test("startup resume does not install missing llama dependency", () => {
   assert.equal(allowLlamaInstallForAutomagicalStart("explicit"), true);
   assert.equal(allowLlamaInstallForAutomagicalStart("startupResume"), false);
-});
-
-test("setup panel does not load default quantizations before advanced controls ask", () => {
-  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: false }), false);
-  assert.equal(shouldPostInitialQuantizations({ setupOperationActive: true }), false);
 });
 
 test("state validators reject stale persisted setup shapes", () => {

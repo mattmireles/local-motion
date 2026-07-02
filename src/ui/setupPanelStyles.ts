@@ -29,41 +29,6 @@ export function setupPanelStyles(): string {
       gap: 0;
     }
 
-    /* Chrome: the product mark whispers. */
-    .brand {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-      margin-bottom: 26px;
-    }
-    .brand h1 {
-      font-size: 17px;
-      line-height: 1.2;
-      margin: 0;
-      font-weight: 600;
-      letter-spacing: 0;
-      color: var(--muted);
-    }
-    .brand .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--faint);
-      flex: 0 0 auto;
-      transform: translateY(1px);
-      transition: background-color 240ms ease;
-    }
-    .brand .dot.on { background: var(--ok); }
-    .brand .dot.off { background: var(--faint); }
-    .brand .dot.busy {
-      background: var(--busy);
-      animation: pulse 1.4s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: translateY(1px) scale(1); }
-      50% { opacity: 0.4; transform: translateY(1px) scale(0.78); }
-    }
-
     /* The live state is the loudest thing on screen. */
     .stage { padding: 4px 0 6px; }
     .headline {
@@ -153,6 +118,26 @@ export function setupPanelStyles(): string {
       align-items: baseline;
       overflow-wrap: anywhere;
     }
+    /* Selection is a visible radio, not a caption change three inches away.
+       Hollow when unselected, filled when the primary button will act here. */
+    .model-radio {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid var(--faint);
+      flex: 0 0 auto;
+      align-self: center;
+      transition: border-color 160ms ease;
+    }
+    .model-option.selected .model-radio { border-color: var(--vscode-focusBorder); }
+    .model-option.selected .model-radio::after {
+      content: '';
+      position: absolute;
+      inset: 2.5px;
+      border-radius: 50%;
+      background: var(--vscode-focusBorder);
+    }
     .model-title strong {
       font-size: 14px;
       font-weight: 650;
@@ -172,14 +157,47 @@ export function setupPanelStyles(): string {
       color: var(--faint);
       font-size: 12px;
       white-space: nowrap;
+      justify-self: end;
+    }
+    /* Running earns a quiet pill; selected-vs-running stay two signals. */
+    .model-option.active .model-status {
+      border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent);
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+    .model-repo-row {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
     }
     .model-repo {
-      grid-column: 1 / -1;
+      flex: 1;
+      min-width: 0;
       color: var(--faint);
       font-family: var(--vscode-editor-font-family, monospace);
       font-size: 11px;
       line-height: 1.4;
       overflow-wrap: anywhere;
+    }
+    /* Replace is rare: a bare glyph that only earns an input row on demand. */
+    .btn.icon {
+      width: 26px;
+      min-height: 24px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      background: transparent;
+      border: none;
+      color: var(--faint);
+      border-radius: 4px;
+    }
+    .btn.icon:hover:not(:disabled) {
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
     }
     /* The quantization chooser sits quietly between status and repo: the
        same input treatment as the replace field, no added chrome. */
@@ -243,7 +261,6 @@ export function setupPanelStyles(): string {
     .btn:disabled { opacity: 0.5; cursor: default; }
     /* Keyboard focus must be visible inside the webview, not left to UA defaults. */
     .btn:focus-visible,
-    .item:focus-visible,
     .model-option:focus-visible,
     input:focus-visible,
     summary:focus-visible {
@@ -413,54 +430,6 @@ export function setupPanelStyles(): string {
       font-family: var(--vscode-font-family);
       font-size: 13px;
     }
-    .actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-      flex-wrap: wrap;
-    }
-    .list {
-      margin-top: 12px;
-      display: grid;
-      gap: 8px;
-    }
-    .item {
-      width: 100%;
-      text-align: left;
-      padding: 10px;
-      color: var(--vscode-foreground);
-      background: transparent;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: var(--vscode-font-family);
-      font-size: 13px;
-    }
-    .item.selected {
-      border-color: var(--vscode-focusBorder);
-      background: color-mix(in srgb, var(--vscode-focusBorder) 12%, transparent);
-    }
-    .item strong {
-      display: block;
-      margin-bottom: 4px;
-      overflow-wrap: anywhere;
-    }
-    .item .meta {
-      display: block;
-      color: var(--faint);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-    .status {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 11px;
-      border: 1px solid var(--line);
-    }
-    .status.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
-    .status.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -515,12 +484,11 @@ export function setupPanelStyles(): string {
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .brand .dot.busy { animation: none; }
+      .model-radio { transition: none; }
       .progress > .fill { transition: none; }
       .settle { animation: none; }
       details.advanced > summary::before { transition: none; }
       .btn.primary { transition: none; }
-      .brand .dot { transition: none; }
     }
   `;
 }

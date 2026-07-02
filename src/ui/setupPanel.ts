@@ -4,10 +4,8 @@ import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
 import type { LocalModelOptionId } from "../models/defaultRepos";
 import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE, type AutomagicalSetupCompleteResponse, type SetupRequest, type SetupResponse } from "../setupProtocol";
-import { shouldPostInitialQuantizations } from "../setupPolicy";
 import { setupPanelHtml } from "./setupPanelHtml";
 import type { DownloadProgress } from "../runtime/downloader";
-import type { CandidateQuantization } from "../types";
 
 export class SetupPanel {
   private static current: SetupPanel | undefined;
@@ -147,21 +145,6 @@ class SetupWebviewSession {
         case SETUP_REQUEST_COMMAND.READY:
           await this.postInitialRuntimeState();
           this.markReady();
-          if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
-            await this.postDefaultQuantizations();
-          }
-          break;
-        case SETUP_REQUEST_COMMAND.SEARCH:
-          await this.post(await this.controller.search(message.query ?? ""));
-          break;
-        case SETUP_REQUEST_COMMAND.QUANTIZATIONS:
-          await this.post(await this.controller.quantizations(message.repoId ?? this.controller.defaultRepo()));
-          break;
-        case SETUP_REQUEST_COMMAND.INSTALL_RUN:
-          if (!message.candidate) {
-            throw new Error("No quantization was selected.");
-          }
-          await this.installRun(message.candidate);
           break;
         case SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP:
           await this.automagicalSetup(message.modelOptionId);
@@ -250,17 +233,10 @@ class SetupWebviewSession {
 
   async postInitialState(): Promise<void> {
     await this.postInitialRuntimeState();
-    if (shouldPostInitialQuantizations({ setupOperationActive: this.setupOperationActive })) {
-      await this.postDefaultQuantizations();
-    }
   }
 
   private async postInitialRuntimeState(): Promise<void> {
     await this.post(await this.controller.initialState());
-  }
-
-  private async postDefaultQuantizations(): Promise<void> {
-    await this.post(await this.controller.quantizations(this.controller.defaultRepo()));
   }
 
   private async withSetupOperation<T>(run: () => Promise<T>): Promise<T> {
@@ -284,18 +260,6 @@ class SetupWebviewSession {
         void this.post({ type: SETUP_RESPONSE_TYPE.INSTALL_MODEL_SELECTED, modelName, requiredMemory, availableMemory });
       }
     };
-  }
-
-  private async installRun(candidate: CandidateQuantization): Promise<void> {
-    await this.withSetupOperation(async () => {
-      const { onProgress, onModelSelected } = this.installProgressCallbacks();
-      const payload = await this.controller.installRun(candidate, onProgress, onModelSelected);
-      if (payload) {
-        await this.post(payload);
-      } else {
-        await this.postInitialRuntimeState();
-      }
-    });
   }
 
   private async automagicalSetup(modelOptionId?: LocalModelOptionId): Promise<AutomagicalSetupCompleteResponse | undefined> {

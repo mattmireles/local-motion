@@ -1,7 +1,7 @@
 import type { CursorSetupFreshness, CursorSetupValueKey, CursorSetupViewModel } from "./cursor/cursorIntegration";
 import type { LocalModelOptionId } from "./models/defaultRepos";
 import type { DownloadProgress } from "./runtime/downloader";
-import type { CandidateQuantization, DownloadedModelEntry, ModelSearchResult, RuntimeStatus } from "./types";
+import type { DownloadedModelEntry, RuntimeStatus } from "./types";
 
 // Single source of truth for the webview <-> extension-host message protocol.
 // setupPanelHtml.ts's inline webview script cannot import this module (it
@@ -11,9 +11,6 @@ import type { CandidateQuantization, DownloadedModelEntry, ModelSearchResult, Ru
 // renaming a key produces a TypeScript compile error at every call site.
 export const SETUP_REQUEST_COMMAND = {
   READY: "ready",
-  SEARCH: "search",
-  QUANTIZATIONS: "quantizations",
-  INSTALL_RUN: "installRun",
   AUTOMAGICAL_SETUP: "automagicalSetup",
   STOP: "stop",
   START_DOWNLOADED_MODEL: "startDownloadedModel",
@@ -27,9 +24,6 @@ export const SETUP_REQUEST_COMMAND = {
 
 export const SETUP_RESPONSE_TYPE = {
   STATE: "state",
-  SEARCH_RESULTS: "searchResults",
-  QUANTIZATIONS: "quantizations",
-  INSTALLED: "installed",
   RUNTIME: "runtime",
   AUTOMAGICAL_SETUP_COMPLETE: "automagicalSetupComplete",
   CURSOR_SETUP_PREPARED: "cursorSetupPrepared",
@@ -44,9 +38,6 @@ export const SETUP_RESPONSE_TYPE = {
 
 export type SetupRequest =
   | { command: typeof SETUP_REQUEST_COMMAND.READY }
-  | { command: typeof SETUP_REQUEST_COMMAND.SEARCH; query?: string }
-  | { command: typeof SETUP_REQUEST_COMMAND.QUANTIZATIONS; repoId?: string }
-  | { command: typeof SETUP_REQUEST_COMMAND.INSTALL_RUN; candidate?: CandidateQuantization }
   | { command: typeof SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP; modelOptionId?: LocalModelOptionId }
   | { command: typeof SETUP_REQUEST_COMMAND.STOP }
   | { command: typeof SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL; id?: string }
@@ -110,7 +101,6 @@ export interface SetupModelOptionView {
   id: LocalModelOptionId;
   label: string;
   modelName: string;
-  summary: string;
   repoId: string;
   status: "checking" | "available" | "downloaded" | "running" | "unavailable";
   fileName?: string;
@@ -122,6 +112,11 @@ export interface SetupModelOptionView {
   /** Compatible quantizations to choose from; present only before download. */
   quantizationChoices?: SetupQuantizationChoiceView[];
   downloadedModelId?: string;
+  /**
+   * Rendered only when it carries a fact the primary button does not:
+   * "Running", "Ready", or an unavailable reason. Empty for a plain
+   * available card — "Not installed" restating the Install button was noise.
+   */
   statusText: string;
 }
 
@@ -147,28 +142,9 @@ export interface SetupInstalledModelView {
 
 export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
   type: typeof SETUP_RESPONSE_TYPE.STATE;
-  defaultRepo: string;
   machine: SetupMachineView;
   installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;
-}
-
-export interface SearchResultsResponse {
-  type: typeof SETUP_RESPONSE_TYPE.SEARCH_RESULTS;
-  results: ModelSearchResult[];
-}
-
-export interface QuantizationsResponse {
-  type: typeof SETUP_RESPONSE_TYPE.QUANTIZATIONS;
-  repoId: string;
-  quantizations: CandidateQuantization[];
-}
-
-export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
-  type: typeof SETUP_RESPONSE_TYPE.INSTALLED;
-  installed: SetupInstalledModelView;
-  runtime: RuntimeStatus;
-  cursor?: CursorSetupPreparedResponse;
 }
 
 export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
@@ -185,9 +161,6 @@ export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, Se
 
 export type SetupResponse =
   | SetupStateResponse
-  | SearchResultsResponse
-  | QuantizationsResponse
-  | InstalledResponse
   | RuntimeResponse
   | AutomagicalSetupCompleteResponse
   | CursorSetupPreparedResponse

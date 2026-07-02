@@ -16,8 +16,6 @@ test("automagical setup settings keep Qwen3 as the one-click default", async () 
   assert.equal(defaultRepo, "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF");
   assert.match(properties["localMotion.defaultModelRepo"].description, /Qwen3-Coder/);
   assert.match(properties["localMotion.defaultModelRepo"].description, /Gemma 4 26B A4B/);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /not automatic downgrades/);
-  assert.match(properties["localMotion.defaultModelRepo"].description, /Qwen2\.5 models are manual Advanced choices/);
 });
 
 test("security-sensitive settings are machine scoped", async () => {
@@ -49,7 +47,7 @@ test("local agent is contributed as a visible Activity Bar side panel", async ()
   assert.equal(packageJson.activationEvents.includes("onView:localMotion.agentView"), true);
 
   const view = packageJson.contributes.views.localMotion.find((candidate) => candidate.id === "localMotion.agentView");
-  assert.equal(view?.name, "Local Agent");
+  assert.equal(view?.name, "Local Motion");
   assert.equal(view?.type, "webview");
 
   const extensionSource = await readText("../out/extension.js");
@@ -313,7 +311,7 @@ test("the runtime owns the context fit; no start path can pass the raw setting t
   // The controller's only fit use is the display-only card helper; the
   // start path never computes a context of its own.
   assert.equal(startBody.includes("fitContextTokens"), false);
-  assert.match(controllerSource, /private fittedWindowForSize\(sizeBytes: number\)/);
+  assert.match(controllerSource, /private diskFit\(sizeBytes: number\)/);
 
   // The provider advertises what one llama-server slot can actually hold:
   // the running session's -c (not a possibly stale record) divided across
@@ -412,21 +410,30 @@ test("diagnose setup command is registered and contributed", async () => {
   assert.match(controllerSource, /setupDiagnosticSummary/);
 });
 
-test("manual install and run starts local compute without preparing Cursor automatically", async () => {
+test("the Advanced manual install surface stays deleted; model cards are the only install path", async () => {
+  // The Advanced repo box duplicated the per-card Replace flow, and its
+  // initial-quantizations path had already been hardwired off. Guard the
+  // deletion end to end so no dead protocol command or handler creeps back.
   const protocolSource = await readText("../src/setupProtocol.ts");
   const controllerSource = await readText("../src/app/localMotionController.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
   const panelHtmlSource = await readText("../out/ui/setupPanelHtml.js");
 
+  assert.equal(protocolSource.includes("INSTALL_RUN"), false);
+  assert.equal(protocolSource.includes("SEARCH_RESULTS"), false);
+  assert.equal(protocolSource.includes("QUANTIZATIONS"), false);
+  assert.equal(controllerSource.includes("installRunLocked"), false);
+  assert.equal(controllerSource.includes("searchModels"), false);
+  assert.equal(panelHostSource.includes("INSTALL_RUN"), false);
+  assert.equal(panelHtmlSource.includes("Install and Turn On"), false);
+  assert.equal(panelHtmlSource.includes("renderQuantizations"), false);
+
+  // The INSTALLED response died with its only producer (manual install);
+  // the optional Cursor payload lives on through automagical completion,
+  // and the webview still consumes it there.
+  assert.equal(protocolSource.includes("INSTALLED"), false);
+  assert.equal(panelHtmlSource.includes("SETUP_RESPONSE_TYPE.INSTALLED}"), false);
   assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
-  const installRunBody = controllerSource.slice(
-    controllerSource.indexOf("private async installRunLocked"),
-    controllerSource.indexOf("async automagicalSetup")
-  );
-  assert.equal(installRunBody.includes("prepareCursorAndMarkCompleted"), false);
-  assert.equal(installRunBody.includes("cursor"), false);
-  // Compiled output keeps the qualified import reference (setupProtocol_1.*)
-  // rather than the bare constant name used in the TS source.
-  assert.match(panelHtmlSource, /message\.type === '\$\{setupProtocol_1\.SETUP_RESPONSE_TYPE\.INSTALLED\}'/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.verification/);
   assert.match(panelHtmlSource, /message\.cursor && message\.cursor\.settings/);
 });
@@ -509,7 +516,27 @@ test("model cards show the fitted context window and offer a quantization choose
   // best candidate — a downloaded Q4 must not masquerade as "Q8 · 128k".
   assert.match(controllerSource, /quantization: quantizationFromFileName\(downloaded\.fileName\)/);
   assert.match(controllerSource, /downloadSize: formatBytes\(downloaded\.sizeBytes\)/);
-  assert.match(controllerSource, /contextWindow: this\.fittedWindowForSize\(downloaded\.sizeBytes\)/);
+  assert.match(controllerSource, /\.\.\.this\.diskFit\(downloaded\.sizeBytes\)/);
+
+  // Every card states its runtime memory against this Mac's budget — the
+  // fact the user decides by — derived from the same formula the spawn
+  // uses, for listing candidates and on-disk files alike.
+  assert.match(compatibilitySource, /export function fitRequiredMemoryBytes/);
+  assert.match(controllerSource, /formatBytes\(fitRequiredMemoryBytes\(sizeBytes, isAppleSiliconHost\(\), fitted\)\)/);
+  assert.match(panelSource, /'uses ' \+ option\.requiredMemory \+ \(budget \? ' of ' \+ budget : ''\)/);
+
+  // Selection is a visible radio on the card itself, Replace hides behind
+  // an icon toggle, and no card fact is stated twice: quantization and
+  // download size live in the chooser when one renders, and the summary
+  // and "Not installed" echoes are deleted outright.
+  assert.match(panelSource, /class="model-radio" aria-hidden="true"/);
+  assert.match(stylesSource, /\.model-option\.selected \.model-radio::after/);
+  assert.match(panelSource, /data-replace-toggle/);
+  assert.match(panelSource, /state\.replaceOpen\[optionId\] = !state\.replaceOpen\[optionId\]/);
+  assert.match(panelSource, /choices \? '' : option\.quantization/);
+  assert.equal(panelSource.includes("option.summary"), false);
+  assert.equal(controllerSource.includes('"Not installed"'), false);
+  assert.match(controllerSource, /statusText: unavailableReason \?\? ""/);
 
   // Disk facts need no network: a fully-downloaded setup renders without
   // awaiting the Hugging Face listing, so an offline Mac with both models
@@ -620,7 +647,6 @@ test("host-started automagical setup hydrates base state before progress", async
   assert.notEqual(runtimeStateIndex, -1);
   assert.notEqual(readyIndex, -1);
   assert.equal(runtimeStateIndex < readyIndex, true);
-  assert.equal(panelSource.includes("shouldPostInitialQuantizations"), true);
   assert.equal(panelSource.includes("setupPanelHtml"), true);
   assert.equal(panelHtmlSource.includes("automagicalSetupRunning"), true);
 });
@@ -647,7 +673,6 @@ test("controller serializes setup operations before downloads and model switches
   assert.match(controllerSource, /private setupOperation: Promise<unknown> \| undefined/);
   assert.match(controllerSource, /private async withSetupOperation/);
   assert.match(controllerSource, /setup is already running/);
-  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.installRunLocked/);
   assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => \{/);
   assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.replaceModelOptionLocked/);
   assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.startDownloadedModelLocked/);

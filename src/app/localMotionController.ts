@@ -5,7 +5,7 @@ import { cursorTunnelConfigFromWorkspace } from "./cursorTunnelConfig";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
-import { chooseOptionCandidate, chooserQuantizations, fitContextTokens, MINIMUM_USABLE_CONTEXT_TOKENS, quantizationFromFileName } from "../models/compatibility";
+import { chooseOptionCandidate, chooserQuantizations, fitContextTokens, fitRequiredMemoryBytes, MINIMUM_USABLE_CONTEXT_TOKENS, quantizationFromFileName } from "../models/compatibility";
 import {
   DEFAULT_MODEL_REPO,
   LOCAL_MODEL_PACK,
@@ -13,7 +13,7 @@ import {
   type LocalModelOptionId
 } from "../models/defaultRepos";
 import { deleteDownloadedModel, listDownloadedModels, resolveDownloadedModelId } from "../models/downloadedModels";
-import { listQuantizations, searchModels } from "../models/huggingFace";
+import { listQuantizations } from "../models/huggingFace";
 import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
 import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
@@ -27,12 +27,9 @@ import {
   type CursorEndpointVerification,
   type CursorSetupPayload,
   type CursorSetupPreparedResponse,
-  type InstalledResponse,
   type SetupModelOptionsPayload,
   type SetupModelOptionView,
-  type QuantizationsResponse,
   type RuntimeResponse,
-  type SearchResultsResponse,
   type SetupInstalledModelView,
   type SetupQuantizationChoiceView,
   type SetupStoragePayload,
@@ -91,7 +88,6 @@ export class LocalMotionController {
 
     return {
       type: SETUP_RESPONSE_TYPE.STATE,
-      defaultRepo: this.defaultRepo(),
       machine: {
         cpu: machine.cpuBrand,
         arch: machine.arch,
@@ -103,50 +99,6 @@ export class LocalMotionController {
         appleSilicon: machine.isAppleSilicon
       },
       installed: this.optionalInstalledModelView(this.state.installedModel()),
-      runtime,
-      ...await this.responseEnvelope(runtime)
-    };
-  }
-
-  async search(query: string): Promise<SearchResultsResponse> {
-    const results = await searchModels(query.trim() || this.defaultRepo());
-    return { type: SETUP_RESPONSE_TYPE.SEARCH_RESULTS, results };
-  }
-
-  async quantizations(repoId: string): Promise<QuantizationsResponse> {
-    const quantizations = await this.defaultQuantizations(repoId.trim());
-    return { type: SETUP_RESPONSE_TYPE.QUANTIZATIONS, repoId, quantizations };
-  }
-
-  async installRun(
-    candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress, modelName?: string) => void,
-    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
-  ): Promise<InstalledResponse | undefined> {
-    return this.withSetupOperation(async () => this.installRunLocked(candidate, onProgress, onModelSelected));
-  }
-
-  private async installRunLocked(
-    candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress, modelName?: string) => void,
-    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
-  ): Promise<InstalledResponse | undefined> {
-    if (candidate.compatibility.status !== "compatible") {
-      const answer = await vscode.window.showWarningMessage(
-        "This quantization is marked not compatible for this Mac. Continue anyway?",
-        "Continue",
-        "Cancel"
-      );
-      if (answer !== "Continue") {
-        return undefined;
-      }
-    }
-
-    const installed = await this.installAndStart(candidate, onProgress, onModelSelected);
-    const runtime = this.runtime.status();
-    return {
-      type: SETUP_RESPONSE_TYPE.INSTALLED,
-      installed: this.installedModelView(installed),
       runtime,
       ...await this.responseEnvelope(runtime)
     };
@@ -403,7 +355,7 @@ export class LocalMotionController {
     });
   }
 
-  defaultRepo(): string {
+  private defaultRepo(): string {
     return normalizeHuggingFaceRepoId(vscode.workspace
       .getConfiguration("localMotion")
       .get<string>("defaultModelRepo", DEFAULT_MODEL_REPO)
@@ -491,19 +443,6 @@ export class LocalMotionController {
       return selected;
     }
     throw new Error(`Local Motion could not prepare the full Max + Mini pack. Tried ${attempts.join("; ")}.`);
-  }
-
-  private async installAndStart(
-    candidate: CandidateQuantization,
-    onProgress: (progress: DownloadProgress, modelName?: string) => void,
-    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
-  ): Promise<InstalledModel> {
-    const installed = await this.installCandidate(candidate, onProgress, onModelSelected);
-
-    await this.startInstalledModel(installed, {
-      allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
-    });
-    return installed;
   }
 
   private async installAndStartAll(
@@ -711,13 +650,12 @@ export class LocalMotionController {
             id: option.id,
             label: option.label,
             modelName: isDefaultRepo ? option.modelName : option.repoId,
-            summary: isDefaultRepo ? option.summary : "Custom model",
             repoId: option.repoId,
             status: active ? "running" : "downloaded",
             fileName: downloaded.fileName,
             quantization: quantizationFromFileName(downloaded.fileName),
             downloadSize: formatBytes(downloaded.sizeBytes),
-            contextWindow: this.fittedWindowForSize(downloaded.sizeBytes),
+            ...this.diskFit(downloaded.sizeBytes),
             downloadedModelId: downloaded.id,
             statusText: active ? "Running" : "Ready"
           };
@@ -730,7 +668,6 @@ export class LocalMotionController {
           id: option.id,
           label: option.label,
           modelName: isDefaultRepo ? option.modelName : option.repoId,
-          summary: isDefaultRepo ? option.summary : "Custom model",
           repoId: option.repoId,
           status,
           fileName: candidate instanceof Error ? slot?.fileName : candidate?.fileName ?? slot?.fileName,
@@ -743,7 +680,7 @@ export class LocalMotionController {
           quantizationChoices: quantizations && !(quantizations instanceof Error)
             ? this.quantizationChoiceViews(quantizations)
             : undefined,
-          statusText: unavailableReason ?? "Not installed"
+          statusText: unavailableReason ?? ""
         };
       })
     };
@@ -813,10 +750,15 @@ export class LocalMotionController {
    * offer the ladder the product stands behind, not the whole warehouse.
    */
   private quantizationChoiceViews(quantizations: CandidateQuantization[]): SetupQuantizationChoiceView[] {
-    return chooserQuantizations(quantizations).map((candidate) => ({
+    const choices = chooserQuantizations(quantizations);
+    // Context joins the label only when the levels actually trade it away;
+    // when every level fits the same window, repeating it per entry is noise.
+    const contextVaries = new Set(choices.map((candidate) => candidate.compatibility.fittedContextTokens)).size > 1;
+    return choices.map((candidate) => ({
       fileName: candidate.fileName,
       quantization: candidate.quantization,
-      label: `${candidate.quantization} · ${formatBytes(candidate.sizeBytes)} · ${formatTokenWindow(candidate.compatibility.fittedContextTokens)} context`
+      label: `${candidate.quantization} · ${formatBytes(candidate.sizeBytes)} download` +
+        (contextVaries ? ` · ${formatTokenWindow(candidate.compatibility.fittedContextTokens)} context` : "")
     }));
   }
 
@@ -837,14 +779,20 @@ export class LocalMotionController {
   }
 
   /**
-   * Display-only: the window the runtime would fit for a file already on
-   * disk, from the same formula the spawn uses so the card and the server
-   * agree. Never feeds a start — startInstalledModel persists what the
-   * runtime actually spawned.
+   * Display-only: the context window and runtime memory this Mac gets for a
+   * file already on disk, from the same formulas the spawn uses so the card
+   * and the server agree. Never feeds a start — startInstalledModel persists
+   * what the runtime actually spawned.
    */
-  private fittedWindowForSize(sizeBytes: number): string | undefined {
+  private diskFit(sizeBytes: number): Pick<SetupModelOptionView, "contextWindow" | "requiredMemory"> {
     const fitted = fitContextTokens(sizeBytes, modelMemoryBudgetBytes(), isAppleSiliconHost(), contextTokensCap());
-    return fitted > 0 ? formatTokenWindow(fitted) : undefined;
+    if (fitted <= 0) {
+      return {};
+    }
+    return {
+      contextWindow: formatTokenWindow(fitted),
+      requiredMemory: formatBytes(fitRequiredMemoryBytes(sizeBytes, isAppleSiliconHost(), fitted))
+    };
   }
 
   private installedModelView(installed: InstalledModel): SetupInstalledModelView {

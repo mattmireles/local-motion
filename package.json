@@ -90,7 +90,7 @@
       "localMotion": [
         {
           "id": "localMotion.agentView",
-          "name": "Local Agent",
+          "name": "Local Motion",
           "type": "webview"
         }
       ]
@@ -142,7 +142,7 @@
           "type": "string",
           "default": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
           "scope": "machine",
-          "description": "Default Hugging Face GGUF repository shown in Advanced. One-click setup installs the fixed Max + Mini pack: Qwen3-Coder-30B-A3B and Gemma 4 26B A4B. Qwen2.5 models are manual Advanced choices, not automatic downgrades."
+          "description": "Hugging Face GGUF repository treated as the default Max model when checking whether an installed model can be reused. One-click setup installs the fixed Max + Mini pack: Qwen3-Coder-30B-A3B and Gemma 4 26B A4B."
         },
         "localMotion.maxModelRepo": {
           "type": "string",

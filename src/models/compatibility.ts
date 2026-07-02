@@ -45,6 +45,16 @@ function baseMemoryBytes(sizeBytes: number, isAppleSilicon: boolean): number {
 }
 
 /**
+ * Runtime memory for a file at a fitted context — the number the card shows
+ * beside the machine's budget. Compatibility classification and the on-disk
+ * model cards must both derive it here, or the panel learns to quote two
+ * different costs for the same file.
+ */
+export function fitRequiredMemoryBytes(sizeBytes: number, isAppleSilicon: boolean, fittedContextTokens: number): number {
+  return baseMemoryBytes(sizeBytes, isAppleSilicon) + fittedContextTokens * KV_CACHE_BYTES_PER_TOKEN;
+}
+
+/**
  * The one context-fit formula in the codebase. Returns the largest context
  * the memory budget affords for a model file, capped by `requestedTokens`,
  * or 0 when even min(requested, {@link MINIMUM_USABLE_CONTEXT_TOKENS})
@@ -99,7 +109,7 @@ export function classifyCompatibility(
   const memoryFits = fitted > 0;
   const fittedContextTokens = memoryFits ? fitted : floorTokens;
 
-  const requiredMemoryBytes = baseMemoryBytes(file.sizeBytes, machine.isAppleSilicon) + fittedContextTokens * KV_CACHE_BYTES_PER_TOKEN;
+  const requiredMemoryBytes = fitRequiredMemoryBytes(file.sizeBytes, machine.isAppleSilicon, fittedContextTokens);
   const requiredDiskBytes = Math.ceil(file.sizeBytes * 1.08 + 1 * GIB);
   const blockingReasons: string[] = [];
   const advisories: string[] = [];

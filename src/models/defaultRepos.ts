@@ -28,7 +28,6 @@ export const LOCAL_MODEL_PACK = [
     id: "max",
     label: "Max",
     modelName: "Qwen3-Coder-30B-A3B",
-    summary: "Best quality",
     settingKey: "maxModelRepo",
     repoId: CURATED_CODER_REPOS[0]
   },
@@ -36,7 +35,6 @@ export const LOCAL_MODEL_PACK = [
     id: "mini",
     label: "Mini",
     modelName: "Gemma 4 26B A4B",
-    summary: "Lighter fallback",
     settingKey: "miniModelRepo",
     repoId: CURATED_CODER_REPOS[1]
   }

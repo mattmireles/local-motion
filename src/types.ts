@@ -25,13 +25,6 @@ export interface GgufFile {
   downloadUrl: string;
 }
 
-export interface ModelSearchResult {
-  repoId: string;
-  downloads?: number;
-  likes?: number;
-  tags: string[];
-}
-
 export interface CompatibilityResult {
   status: CompatibilityStatus;
   requiredMemoryBytes: number;
