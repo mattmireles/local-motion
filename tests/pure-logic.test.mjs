@@ -16,6 +16,7 @@ import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
   classifyCompatibility,
   effectiveMemoryBudget,
+  isAuxiliaryGgufFileName,
   isShardedGgufFileName,
   meetsAutomagicalQualityFloor,
   parameterCountFromText,
@@ -241,6 +242,17 @@ test("automagical quality floor accepts 4-bit and better, rejects 3-bit and belo
 test("sharded GGUF part files are detected so only single-file quants are offered", () => {
   assert.equal(isShardedGgufFileName("Qwen3-Coder-30B-A3B-Instruct-BF16-00001-of-00002.gguf"), true);
   assert.equal(isShardedGgufFileName("Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"), false);
+});
+
+test("auxiliary GGUF sidecars are excluded so a projector never becomes the model", () => {
+  // mmproj-F32 is ~1GB of F32 — left in the list it beats every real quant
+  // on both quality score and memory tiebreak (observed with
+  // unsloth/gemma-4-26B-A4B-it-GGUF, where it was selected over Q8_0).
+  assert.equal(isAuxiliaryGgufFileName("mmproj-F32.gguf"), true);
+  assert.equal(isAuxiliaryGgufFileName("mmproj-BF16.gguf"), true);
+  assert.equal(isAuxiliaryGgufFileName("MTP/gemma-4-26B-A4B-it-Q8_0-MTP.gguf"), true);
+  assert.equal(isAuxiliaryGgufFileName("gemma-4-26B-A4B-it-Q8_0.gguf"), false);
+  assert.equal(isAuxiliaryGgufFileName("Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"), false);
 });
 
 test("setup diagnostics distinguish ready setup from required action", () => {

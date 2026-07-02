@@ -1,6 +1,6 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
 import { parseContentLengthHeader } from "../runtime/runtimeGuards";
-import { classifyCompatibility, compareQuantizationPreference, isShardedGgufFileName, parameterCountFromText, quantizationFromFileName } from "./compatibility";
+import { classifyCompatibility, compareQuantizationPreference, isAuxiliaryGgufFileName, isShardedGgufFileName, parameterCountFromText, quantizationFromFileName } from "./compatibility";
 
 const HF_TIMEOUT_MS = 30_000;
 
@@ -52,7 +52,9 @@ export async function listQuantizations(
   const files = await Promise.all((model.siblings ?? [])
     .filter((sibling) => {
       const fileName = sibling.rfilename ?? "";
-      return fileName.toLowerCase().endsWith(".gguf") && !isShardedGgufFileName(fileName);
+      return fileName.toLowerCase().endsWith(".gguf") &&
+        !isShardedGgufFileName(fileName) &&
+        !isAuxiliaryGgufFileName(fileName);
     })
     .map(async (sibling): Promise<GgufFile> => {
       const fileName = sibling.rfilename ?? "";
@@ -79,7 +81,10 @@ export async function listQuantizations(
 }
 
 async function fetchModelInfo(repoId: string): Promise<HuggingFaceModel> {
-  const response = await fetchWithTimeout(`https://huggingface.co/api/models/${repoPath(repoId)}`, {
+  // blobs=true makes the API include per-file size + lfs metadata, so one
+  // request replaces a HEAD probe per GGUF file (~30 per repo). Fewer
+  // requests means faster panel loads and far fewer transient failures.
+  const response = await fetchWithTimeout(`https://huggingface.co/api/models/${repoPath(repoId)}?blobs=true`, {
     headers: { accept: "application/json" }
   });
   if (!response.ok) {

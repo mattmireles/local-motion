@@ -724,15 +724,29 @@ export class LocalMotionController {
     if (!this.modelOptionCandidates) {
       this.modelOptionCandidates = this.loadModelOptionCandidates();
     }
-    return this.modelOptionCandidates;
+    const candidates = await this.modelOptionCandidates;
+    // Never cache a failure. A transient Hugging Face hiccup at panel open
+    // must not brand this Mac "incompatible" until the window reloads — the
+    // next state request retries from scratch.
+    if ([...candidates.values()].some((candidate) => candidate instanceof Error)) {
+      this.modelOptionCandidates = undefined;
+    }
+    return candidates;
   }
 
   private async loadModelOptionCandidates(): Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> {
     const entries = await Promise.all(this.localModelPack().map(async (option): Promise<[LocalModelOptionId, CandidateQuantization | Error]> => {
       try {
-        const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(option.repoId));
+        const quantizations = await this.defaultQuantizations(option.repoId);
+        if (quantizations.length === 0) {
+          return [option.id, new Error("Hugging Face returned no model files — likely a network hiccup. Try again.")];
+        }
+        const candidate = selectBestCompatibleQuantization(quantizations);
         if (!candidate) {
-          return [option.id, new Error("No compatible quantization found")];
+          // All candidates were classified not-compatible; say why, using the
+          // smallest one's blocking reason instead of a generic verdict.
+          const reason = quantizations[0]?.compatibility.reasons[0];
+          return [option.id, new Error(reason ?? "No compatible quantization found")];
         }
         if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
           return [option.id, new Error(`Only ${candidate.quantization} fits, below the Q4 floor`)];

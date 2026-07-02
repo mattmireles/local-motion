@@ -384,6 +384,30 @@ test("one-click setup downloads Max and Mini before starting Max", async () => {
   assert.match(batchBody, /this\.startInstalledModel\(installed/);
 });
 
+test("transient model-listing failures retry instead of dead-ending the panel", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const huggingFaceSource = await readText("../src/models/huggingFace.ts");
+
+  // One metadata request with sizes instead of a HEAD probe per GGUF file —
+  // fewer requests, fewer transient failures at panel open.
+  assert.match(huggingFaceSource, /\?blobs=true/);
+  // Auxiliary sidecars (mmproj projectors, MTP heads) never enter selection.
+  assert.match(huggingFaceSource, /isAuxiliaryGgufFileName/);
+
+  // A failed candidate load is never cached; the next state request retries.
+  assert.match(controllerSource, /candidate instanceof Error/);
+  assert.match(controllerSource, /this\.modelOptionCandidates = undefined/);
+  // The failure copy names the real cause, not a fake incompatibility verdict.
+  assert.match(controllerSource, /Hugging Face returned no model files/);
+  assert.match(controllerSource, /quantizations\[0\]\?\.compatibility\.reasons\[0\]/);
+
+  // The unavailable state offers Try Again instead of a disabled dead end.
+  assert.match(panelSource, /if \(option\.status === 'unavailable'\) return 'Try Again';/);
+  assert.match(panelSource, /option\.status === 'unavailable'\) \{\s*els\.primary\.disabled = true;\s*els\.primary\.textContent = 'Checking…';\s*vscode\.postMessage\(\{ command: '\$\{SETUP_REQUEST_COMMAND\.READY\}' \}\);/);
+  assert.equal(panelSource.includes("' Unavailable'"), false);
+});
+
 test("installed model state is committed before provider refresh", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
   const setStateIndex = controllerSource.indexOf("await this.state.setInstalledModel(installed)");

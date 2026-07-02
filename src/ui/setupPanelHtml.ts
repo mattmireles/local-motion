@@ -174,6 +174,15 @@ export function setupPanelHtml(nonce: string): string {
       // toggle on a setup flag — that is what made Turn Off a dead button.
       if (els.primary.disabled) return;
       const option = selectedModelOption();
+      // An unavailable option is almost always a transient listing failure,
+      // not a verdict on this Mac — the primary action becomes a retry that
+      // re-requests state (the host does not cache failed candidate loads).
+      if (option && option.status === 'unavailable') {
+        els.primary.disabled = true;
+        els.primary.textContent = 'Checking…';
+        vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.READY}' });
+        return;
+      }
       if (state.runtime && state.runtime.running) {
         if (option && option.status !== 'running') {
           startModelOption(option);
@@ -451,16 +460,19 @@ export function setupPanelHtml(nonce: string): string {
 
     function renderOff() {
       const option = selectedModelOption();
+      const unavailable = option && option.status === 'unavailable';
       els.headline.textContent = 'Local agent is off';
-      els.subline.textContent = option
-        ? 'Choose the local model Cursor will use.'
-        : 'Runs a coding model on this Mac for Cursor.';
+      els.subline.textContent = unavailable
+        ? (option.statusText || 'The model list could not be loaded.')
+        : option
+          ? 'Choose the local model Cursor will use.'
+          : 'Runs a coding model on this Mac for Cursor.';
       els.progress.classList.add('hidden');
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
       els.primary.textContent = primaryActionText(option, false);
       els.primary.removeAttribute('title');
-      els.primary.disabled = option && option.status === 'unavailable';
+      els.primary.disabled = false;
     }
 
     function renderStarting() {
@@ -505,7 +517,7 @@ export function setupPanelHtml(nonce: string): string {
       const option = selectedModelOption();
       els.primary.textContent = primaryActionText(option, true);
       els.primary.title = option && option.status !== 'running' ? 'Stops the current model and starts the selected one' : 'Frees the model from memory';
-      els.primary.disabled = option && option.status === 'unavailable';
+      els.primary.disabled = false;
 
       // A post-start failure (copy, verify, open settings) surfaces in place
       // while the agent itself stays on, instead of hiding in the activity log.
@@ -548,7 +560,7 @@ export function setupPanelHtml(nonce: string): string {
 
     function primaryActionText(option, running) {
       if (!option) return running ? 'Turn Off Local Agent' : 'Turn On Local Agent';
-      if (option.status === 'unavailable') return option.label + ' Unavailable';
+      if (option.status === 'unavailable') return 'Try Again';
       if (running && option.status !== 'running') return option.downloadedModelId ? 'Switch to ' + option.label : 'Install Max + Mini, Switch to ' + option.label;
       if (running) return 'Turn Off Local Agent';
       return option.downloadedModelId ? 'Start ' + option.label : 'Install Max + Mini, Start ' + option.label;

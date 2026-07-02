@@ -119,6 +119,20 @@ export function isShardedGgufFileName(fileName: string): boolean {
   return /-\d{5}-of-\d{5}\.gguf$/i.test(fileName);
 }
 
+/**
+ * True for auxiliary GGUF files that are not standalone chat models:
+ * `mmproj-*` multimodal projectors (CLIP-style vision encoders shipped next
+ * to vision models) and `*-MTP.gguf` multi-token-prediction heads. These are
+ * small, high-precision files (e.g. mmproj-F32 at ~1GB), so left in the
+ * candidate list they beat the real model on both quality score and memory
+ * tiebreaks — and Local Motion would download and boot a projector as the
+ * coding model.
+ */
+export function isAuxiliaryGgufFileName(fileName: string): boolean {
+  const base = fileName.split("/").pop() ?? fileName;
+  return /mmproj/i.test(base) || /-mtp\.gguf$/i.test(base);
+}
+
 export function parameterCountFromText(text: string): number | undefined {
   const match = text.match(/(\d+(?:\.\d+)?)\s*B\b/i);
   if (!match) {
