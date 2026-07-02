@@ -20,6 +20,20 @@ test("automagical setup settings keep Qwen3 as the one-click default", async () 
   assert.match(properties["localMotion.defaultModelRepo"].description, /Qwen2\.5 models are manual Advanced choices/);
 });
 
+test("security-sensitive settings are machine scoped", async () => {
+  const packageJson = await readPackageJson();
+  const properties = packageJson.contributes.configuration.properties;
+  for (const key of [
+    "localMotion.llamaServerPath",
+    "localMotion.cursorTunnelUrl",
+    "localMotion.defaultModelRepo",
+    "localMotion.maxModelRepo",
+    "localMotion.miniModelRepo"
+  ]) {
+    assert.equal(properties[key].scope, "machine", key);
+  }
+});
+
 test("native language model provider config opens the local agent switch", async () => {
   const packageJson = await readPackageJson();
   const provider = packageJson.contributes.languageModelChatProviders.find((candidate) => candidate.vendor === "local-motion");
@@ -301,7 +315,7 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   assert.match(cursorSource, /Cursor Settings > Models/);
   assert.equal(cursorSource.includes("Add or enable an OpenAI-compatible model"), false);
   assert.match(panelSource, /Add Custom Model/);
-  assert.match(panelSource, /running \? 'on'\s*: busy \? 'starting'/);
+  assert.match(panelSource, /running \? 'on'\s*: state\.cursorConnectRunning \? 'starting'/);
 });
 
 test("runtime status changes refresh provider and native switch", async () => {
@@ -330,7 +344,7 @@ test("Connect Cursor command is registered and uses the one-step connection path
   assert.match(controllerSource, /prepareCursorAfterStartingInstalledModel/);
   assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
   assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
-  assert.match(controllerSource, /return this\.prepareCursor\(\)/);
+  assert.match(controllerSource, /return this\.cursorSetup\.prepareCursorAndMarkCompleted\(\)/);
 });
 
 test("diagnose setup command is registered and contributed", async () => {
@@ -346,14 +360,18 @@ test("diagnose setup command is registered and contributed", async () => {
   assert.match(controllerSource, /setupDiagnosticSummary/);
 });
 
-test("manual install and run prepares Cursor automatically", async () => {
+test("manual install and run starts local compute without preparing Cursor automatically", async () => {
   const protocolSource = await readText("../src/setupProtocol.ts");
   const controllerSource = await readText("../src/app/localMotionController.ts");
   const panelHtmlSource = await readText("../out/ui/setupPanelHtml.js");
 
   assert.match(protocolSource, /cursor\?: CursorSetupPreparedResponse/);
-  assert.match(controllerSource, /const cursor = await this\.cursorSetup\.prepareCursorAndMarkCompleted\(\)/);
-  assert.match(controllerSource, /cursor\s*[,}]/);
+  const installRunBody = controllerSource.slice(
+    controllerSource.indexOf("private async installRunLocked"),
+    controllerSource.indexOf("async automagicalSetup")
+  );
+  assert.equal(installRunBody.includes("prepareCursorAndMarkCompleted"), false);
+  assert.equal(installRunBody.includes("cursor"), false);
   // Compiled output keeps the qualified import reference (setupProtocol_1.*)
   // rather than the bare constant name used in the TS source.
   assert.match(panelHtmlSource, /message\.type === '\$\{setupProtocol_1\.SETUP_RESPONSE_TYPE\.INSTALLED\}'/);
@@ -440,7 +458,8 @@ test("free memory never blocks a model: advisory at load, honest error from llam
 
   // The honest out-of-memory signal is llama-server itself failing to start;
   // that failure is caught and explained with a way out.
-  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace\(\)\)\.catch/);
+  assert.match(controllerSource, /const tunnelConfig = options\.connectCursor \? cursorTunnelConfigFromWorkspace\(\{ forceCursor: true \}\) : undefined/);
+  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath, undefined, tunnelConfig\)\.catch/);
   assert.match(controllerSource, /withMemoryHint\(error, cursorModel\.displayName\)/);
 
   // The download still runs before start; the memory advisory only fires
@@ -500,6 +519,32 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.equal(description.includes("prepare Cursor automatically"), false);
 });
 
+test("command palette messages do not claim Cursor is connected before a real request", async () => {
+  const extensionSource = await readText("../src/extension.ts");
+  assert.equal(extensionSource.includes("Local Motion is connected"), false);
+  assert.match(extensionSource, /local agent is on/);
+  assert.match(extensionSource, /Cursor setup is ready/);
+});
+
+test("controller serializes setup operations before downloads and model switches", async () => {
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  assert.match(controllerSource, /private setupOperation: Promise<unknown> \| undefined/);
+  assert.match(controllerSource, /private async withSetupOperation/);
+  assert.match(controllerSource, /setup is already running/);
+  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.installRunLocked/);
+  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => \{/);
+  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.replaceModelOptionLocked/);
+  assert.match(controllerSource, /return this\.withSetupOperation\(async \(\) => this\.startDownloadedModelLocked/);
+});
+
+test("downloads single-flight by target GGUF path", async () => {
+  const downloaderSource = await readText("../src/runtime/downloader.ts");
+  assert.match(downloaderSource, /const inFlightDownloads = new Map<string, Promise<string>>\(\)/);
+  assert.match(downloaderSource, /inFlightDownloads\.get\(targetPath\)/);
+  assert.match(downloaderSource, /inFlightDownloads\.set\(targetPath, download\)/);
+  assert.match(downloaderSource, /inFlightDownloads\.delete\(targetPath\)/);
+});
+
 test("Cursor tunnel plumbing stays hidden behind the restored one-step setup card", async () => {
   const packageJson = await readPackageJson();
   const extensionSource = await readText("../src/extension.ts");
@@ -509,27 +554,27 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
   const panelHostSource = await readText("../src/ui/setupPanel.ts");
   const properties = packageJson.contributes.configuration.properties;
-  // The tunnel is a structural fact of the host app, not a preference: Cursor
-  // host => tunnel starts with the model, VS Code host => fully local
-  // vscode.lm path. A boolean setting existed briefly and setup silently
-  // flipped it — the honest design is no switch at all.
+  // The tunnel is not part of local model start. It exists only for the
+  // explicit Cursor handoff, and remains hidden from the main setup path.
   assert.equal("localMotion.cursorTunnel" in properties, false);
   assert.equal(properties["localMotion.cursorTunnelUrl"].default, "");
   assert.match(properties["localMotion.cursorTunnelUrl"].description, /user-managed tunnel/);
-  assert.match(properties["localMotion.cursorTunnelUrl"].description, /instead of spawning a Quick Tunnel/);
-  assert.match(properties["localMotion.cursorTunnelUrl"].description, /next model start/);
-  assert.match(extensionSource, /new LlamaServerManager\([\s\S]*cursorTunnelConfigFromWorkspace/);
-  assert.match(controllerSource, /cursorTunnelConfigFromWorkspace\(\)/);
+  assert.match(properties["localMotion.cursorTunnelUrl"].description, /when you connect Cursor/);
+  assert.equal(extensionSource.includes("cursorTunnelConfigFromWorkspace"), false);
+  assert.match(controllerSource, /cursorTunnelConfigFromWorkspace\(\{ forceCursor: true \}\)/);
   assert.match(configSource, /normalizePublicHttpsTunnelUrl/);
   assert.match(configSource, /manual\.url !== undefined/);
-  assert.match(configSource, /isCursorHost\(\)/);
-  assert.match(configSource, /vscode\.env\.appName\.toLowerCase\(\)\.includes\("cursor"\)/);
+  assert.match(configSource, /forceCursor/);
+  assert.equal(configSource.includes("isCursorHost"), false);
+  assert.equal(configSource.includes("vscode.env.appName"), false);
   assert.equal(configSource.includes('get<boolean>("cursorTunnel"'), false);
 
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelSource, /id="openCursor"/);
   assert.match(panelSource, /Open Cursor Settings/);
   assert.match(panelSource, /In Cursor: Settings/);
+  assert.match(panelSource, /data-key="setupBlock"/);
+  assert.match(panelSource, /Copy Updated Setup/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
   // Setup must never write tunnel state into the user's settings — the old
@@ -611,16 +656,19 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.match(panelSource, /Runs a coding model on this Mac for Cursor\./);
   assert.match(panelSource, /Open Cursor Settings/);
   assert.match(panelSource, /Preparing Cursor setup and opening Cursor Settings\./);
-  assert.match(panelSource, /Preparing the Cursor endpoint/);
+  assert.match(panelSource, /Cursor connection is not ready/);
   assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
-  assert.match(controllerSource, /status\.cursorTunnel\?\.enabled && !status\.cursorTunnel\.url/);
+  assert.match(controllerSource, /!status\.cursorTunnel\?\.enabled \|\| !status\.cursorTunnel\.url/);
   assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
   assert.match(controllerSource, /this\.startInstalledModel\(active/);
   assert.equal(panelSource.includes("Connect Cursor"), false);
   assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
   assert.equal(panelSource.includes("Cursor-routed prompts"), false);
+  assert.match(panelSource, /viewModel\.isRunning === true/);
+  assert.match(panelSource, /button\.disabled = cursorDisabled/);
+  assert.match(panelSource, /els\.openCursor\.disabled = state\.cursorConnectRunning \|\| state\.setupOperationRunning/);
 
   // The permanent one-line disclosure is the entire privacy surface of the
   // Cursor path: the mechanism stays invisible, the consequence does not.

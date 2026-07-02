@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { cursorTunnelConfigFromWorkspace } from "./app/cursorTunnelConfig";
 import { LocalMotionController } from "./app/localMotionController";
 import {
   hasCompletedAutomagicalSetupForInstalledModel,
@@ -28,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     provider.refresh();
     refreshStatusBar();
     void setupView?.refresh();
-  }, cursorTunnelConfigFromWorkspace);
+  });
   const resolver = new LlamaServerResolver(output);
   provider = new LocalMotionProvider(context, runtime, resolver, () => state.installedModel());
   const controller = new LocalMotionController(context, state, runtime, resolver, provider);
@@ -102,7 +101,7 @@ async function runAutomagicalSetupCommand(setupViewProvider: SetupViewProvider |
   try {
     const result = await setupViewProvider?.runAutomagicalSetup();
     if (result) {
-      await vscode.window.showInformationMessage("Local Motion is connected. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
+      await vscode.window.showInformationMessage("Local Motion local agent is on. Use Connect Cursor when you want Cursor chat to use it.");
     }
   } catch {
     // The setup side panel reports command-started automagical errors into the webview.
@@ -122,7 +121,7 @@ async function prepareCursorCommand(
   refreshStatusBar();
   output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
   if (result.verification.ok && result.copy.ok && result.settings.ok) {
-    await vscode.window.showInformationMessage("Local Motion is connected. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
+    await vscode.window.showInformationMessage("Cursor setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
     return;
   }
 
@@ -156,8 +155,8 @@ async function maybeOpenSetupOnboarding(
     return;
   }
 
-  await state.markSetupOnboardingOpened();
   await setupViewProvider?.show();
+  await state.markSetupOnboardingOpened();
 }
 
 async function maybeResumeAutomagicalSetup(
@@ -229,9 +228,8 @@ async function maybeRunFirstStartupAutomagicalSetup(
     return false;
   }
 
-  await state.markSetupOnboardingOpened();
   setStatusBarBusy("Starting local agent...");
-  void setupViewProvider?.runAutomagicalSetup()
+  void setupViewProvider?.runAutomagicalSetup(() => state.markSetupOnboardingOpened())
     .catch(() => undefined)
     .finally(() => {
       refreshStatusBar();

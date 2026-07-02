@@ -33,10 +33,10 @@ frees the memory when you do not.
   only when setup or advanced model controls need them.
 - Downloads model files with resumable streaming.
 - Finds or installs `llama-server` through Homebrew.
-- Starts `llama-server`, a stable loopback OpenAI-compatible proxy, and —
-  inside Cursor only — the tunnel that makes the proxy reachable by Cursor's
-  backend. In real VS Code no tunnel starts and the `vscode.lm` path stays
-  fully local.
+- Starts `llama-server` and a stable loopback OpenAI-compatible proxy.
+  `Connect Cursor to Local Agent` starts the tunnel that makes the proxy
+  reachable by Cursor's backend. In real VS Code no tunnel starts and the
+  `vscode.lm` path stays fully local.
 - Registers the running model with the VS Code Language Model API, with the
   provider's manage action opening the local-agent switch.
 
@@ -51,9 +51,9 @@ frees the memory when you do not.
 - Localhost port `41434` available for the Cursor-facing proxy, or set
   `localMotion.proxyPort` to another port. If the preferred port is occupied,
   Local Motion falls back to an ephemeral port and shows updated setup values.
-- `cloudflared` for the Cursor connection; Local Motion installs it through
-  Homebrew on demand, or set `localMotion.cursorTunnelUrl` to a public HTTPS
-  tunnel URL you manage.
+- `cloudflared` for the Cursor connection; when you connect Cursor, Local
+  Motion installs it through Homebrew on demand, or set
+  `localMotion.cursorTunnelUrl` to a public HTTPS tunnel URL you manage.
 
 ## Setup
 
@@ -104,11 +104,12 @@ Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
 model file, local runtime, proxy verification, copied Cursor values, and the
 remaining Cursor picker verification step.
 
-After the local agent is connected once, Local Motion can restart the installed
-model automatically on future editor startups without downloading a new model,
+After Cursor setup succeeds once, Local Motion can restart the installed model
+automatically on future editor startups without downloading a new model,
 opening the setup panel, opening Cursor settings, or replacing the clipboard.
-Cursor tunnel URLs can rotate across model restarts, so the setup panel marks
-previously copied Cursor values stale when the active Base URL changes. Disable
+The Cursor tunnel still starts only when you run `Connect Cursor to Local Agent`.
+Tunnel URLs can rotate across handoffs, so the setup panel marks previously
+copied Cursor values stale when the active Base URL changes. Disable
 `localMotion.resumeAutomagicalSetupOnStartup` to turn automatic local model
 restart off.
 
@@ -116,8 +117,9 @@ For advanced manual control:
 
 1. Load a Hugging Face GGUF repository.
 2. Pick a quantization marked `Compatible`.
-3. Click `Install and Turn On`; Local Motion starts the model, verifies the Cursor
-   endpoint, copies the setup block, and opens Cursor Models settings.
+3. Click `Install and Turn On`; Local Motion installs the quantization and starts
+   the local model. Use `Connect Cursor to Local Agent` when you want Cursor chat
+   to use it.
 
 `Connect Cursor to Local Agent` verifies `GET /v1/models` through the
 Cursor-facing tunnel with the current session key, copies the full setup block,
@@ -158,10 +160,11 @@ is best-effort. Treat setup as proven only for the Cursor surface you manually
 test, such as `Cmd+L` chat. Do not assume Agent, Composer, Inline Edit, or Tab
 autocomplete use the tunnel until verified in your Cursor build.
 
-Local Motion keeps Cursor's Base URL stable across restarts by preferring
-`http://127.0.0.1:41434/v1` for the local proxy. If that port is occupied and
-Local Motion falls back to a different port, the setup panel marks previously
-copied Cursor values stale and offers `Copy Updated Setup`.
+Local Motion keeps the loopback proxy stable by preferring
+`http://127.0.0.1:41434/v1`, but Cursor must use the active public tunnel Base
+URL shown by `Connect Cursor to Local Agent`. If that URL changes, the setup
+panel marks previously copied Cursor values stale and offers `Copy Updated
+Setup`.
 
 ## Privacy
 

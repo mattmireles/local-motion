@@ -32,6 +32,7 @@ const MAX_CONCURRENCY = 32;
 const DEFAULT_CHUNK_SIZE_BYTES = 64 * 1024 * 1024;
 const PARALLEL_MIN_BYTES = 16 * 1024 * 1024;
 const CHUNK_RETRY_BACKOFF_MS = 500;
+const inFlightDownloads = new Map<string, Promise<string>>();
 
 export interface DownloadOptions {
   concurrency?: number;
@@ -64,6 +65,37 @@ export async function downloadGguf(
   await fs.promises.mkdir(targetDir, { recursive: true });
 
   const targetPath = path.join(targetDir, path.basename(file.fileName));
+  if (await exists(targetPath)) {
+    await validateExistingFile(targetPath, file.sizeBytes, file.sha256);
+    if (!file.sha256) {
+      warnMissingChecksum(file.repoId, file.fileName, options.onChecksumWarning);
+    }
+    return targetPath;
+  }
+
+  const active = inFlightDownloads.get(targetPath);
+  if (active) {
+    return active;
+  }
+
+  const download = downloadGgufExclusive(file, targetPath, onProgress, signal, options);
+  inFlightDownloads.set(targetPath, download);
+  try {
+    return await download;
+  } finally {
+    if (inFlightDownloads.get(targetPath) === download) {
+      inFlightDownloads.delete(targetPath);
+    }
+  }
+}
+
+async function downloadGgufExclusive(
+  file: GgufFile,
+  targetPath: string,
+  onProgress: (progress: DownloadProgress) => void,
+  signal: AbortSignal,
+  options: DownloadOptions
+): Promise<string> {
   const partialPath = `${targetPath}.part`;
   if (await exists(targetPath)) {
     await validateExistingFile(targetPath, file.sizeBytes, file.sha256);

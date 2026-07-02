@@ -46,6 +46,7 @@ import { formatBytes, modelDisplayName } from "../util/format";
 export class LocalMotionController {
   private readonly cursorSetup: CursorSetupWorkflow;
   private modelOptionCandidates: Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> | undefined;
+  private setupOperation: Promise<unknown> | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -118,6 +119,14 @@ export class LocalMotionController {
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
   ): Promise<InstalledResponse | undefined> {
+    return this.withSetupOperation(async () => this.installRunLocked(candidate, onProgress, onModelSelected));
+  }
+
+  private async installRunLocked(
+    candidate: CandidateQuantization,
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
+  ): Promise<InstalledResponse | undefined> {
     if (candidate.compatibility.status !== "compatible") {
       const answer = await vscode.window.showWarningMessage(
         "This quantization is marked not compatible for this Mac. Continue anyway?",
@@ -130,15 +139,12 @@ export class LocalMotionController {
     }
 
     const installed = await this.installAndStart(candidate, onProgress, onModelSelected);
-    const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
-
     const runtime = this.runtime.status();
     return {
       type: SETUP_RESPONSE_TYPE.INSTALLED,
       installed: this.installedModelView(installed),
       runtime,
-      ...await this.responseEnvelope(runtime),
-      cursor
+      ...await this.responseEnvelope(runtime)
     };
   }
 
@@ -147,18 +153,20 @@ export class LocalMotionController {
     onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined,
     selectedModelOptionId: LocalModelOptionId = "max"
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
-    if (!this.runtime.status().running) {
+    return this.withSetupOperation(async () => {
       const installedModel = await this.reusableInstalledModelForOption(selectedModelOptionId);
-      if (installedModel) {
-        await this.startInstalledModel(installedModel, {
-          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
-        });
-      } else {
-        await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected, selectedModelOptionId);
+      if (!this.runtime.status().running || !this.isActiveInstalledModel(installedModel)) {
+        if (installedModel) {
+          await this.startInstalledModel(installedModel, {
+            allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+          });
+        } else {
+          await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected, selectedModelOptionId);
+        }
       }
-    }
 
-    return this.completeAutomagicalSetup();
+      return this.completeAutomagicalSetup();
+    });
   }
 
   async resumeAutomagicalRuntime(): Promise<RuntimeResponse | undefined> {
@@ -177,14 +185,12 @@ export class LocalMotionController {
   }
 
   private async completeAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse> {
-    const cursor = await this.cursorSetup.prepareCursorAndMarkCompleted();
     const runtime = this.runtime.status();
     return {
       type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE,
       installed: this.optionalInstalledModelView(this.state.installedModel()),
       runtime,
-      ...await this.responseEnvelope(runtime),
-      cursor
+      ...await this.responseEnvelope(runtime)
     };
   }
 
@@ -196,6 +202,15 @@ export class LocalMotionController {
   }
 
   async replaceModelOption(
+    optionId: LocalModelOptionId,
+    repoId: string,
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
+  ): Promise<SetupStateResponse> {
+    return this.withSetupOperation(async () => this.replaceModelOptionLocked(optionId, repoId, onProgress, onModelSelected));
+  }
+
+  private async replaceModelOptionLocked(
     optionId: LocalModelOptionId,
     repoId: string,
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
@@ -243,6 +258,10 @@ export class LocalMotionController {
    * server before spawning the new one.
    */
   async startDownloadedModel(id: string): Promise<SetupStateResponse> {
+    return this.withSetupOperation(async () => this.startDownloadedModelLocked(id));
+  }
+
+  private async startDownloadedModelLocked(id: string): Promise<SetupStateResponse> {
     const downloaded = await this.downloadedModels();
     const model = downloaded.models.find((candidate) => candidate.id === id);
     if (!model) {
@@ -319,12 +338,13 @@ export class LocalMotionController {
     const status = this.runtime.status();
     // A running session whose tunnel died (or never came up) can only be
     // healed by a restart — the tunnel child spawns with the model.
-    if (status.running && status.cursorTunnel?.enabled && !status.cursorTunnel.url) {
+    if (status.running && (!status.cursorTunnel?.enabled || !status.cursorTunnel.url)) {
       const active = this.runtime.activeSession();
       if (active) {
         await this.runtime.stop();
         await this.startInstalledModel(active, {
-          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+          connectCursor: true
         });
       }
     }
@@ -337,12 +357,13 @@ export class LocalMotionController {
       const installedModel = await this.reusableInstalledModel();
       if (installedModel) {
         await this.startInstalledModel(installedModel, {
-          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+          connectCursor: true
         });
       }
     }
 
-    return this.prepareCursor();
+    return this.cursorSetup.prepareCursorAndMarkCompleted();
   }
 
   async copyCursorValue(key: CursorSetupValueKey): Promise<CursorCopyResult> {
@@ -459,10 +480,10 @@ export class LocalMotionController {
       }
     }
 
-    if (selected.length > 0) {
+    if (selected.length === this.localModelPack().length) {
       return selected;
     }
-    throw new Error(`No compatible GGUF quantization found for this Mac. Tried ${attempts.join("; ")}.`);
+    throw new Error(`Local Motion could not prepare the full Max + Mini pack. Tried ${attempts.join("; ")}.`);
   }
 
   private async installAndStart(
@@ -541,7 +562,7 @@ export class LocalMotionController {
 
   private async startInstalledModel(
     installed: InstalledModel,
-    options: { allowInstall: boolean }
+    options: { allowInstall: boolean; connectCursor?: boolean }
   ): Promise<RuntimeSession> {
     const cursorModel = {
       ...installed,
@@ -550,7 +571,8 @@ export class LocalMotionController {
     };
     await this.warnIfMemoryTight(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
-    const session = await this.runtime.start(cursorModel, llamaServerPath, undefined, cursorTunnelConfigFromWorkspace()).catch((error: unknown) => {
+    const tunnelConfig = options.connectCursor ? cursorTunnelConfigFromWorkspace({ forceCursor: true }) : undefined;
+    const session = await this.runtime.start(cursorModel, llamaServerPath, undefined, tunnelConfig).catch((error: unknown) => {
       throw withMemoryHint(error, cursorModel.displayName);
     });
     if (installed.modelId !== LOCAL_MOTION_MODEL_ID || installed.contextTokens !== cursorModel.contextTokens) {
@@ -559,6 +581,26 @@ export class LocalMotionController {
     }
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
     return session;
+  }
+
+  private isActiveInstalledModel(installed: InstalledModel | undefined): boolean {
+    const active = this.runtime.activeSession();
+    return Boolean(installed && active && path.resolve(installed.modelPath) === path.resolve(active.modelPath));
+  }
+
+  private async withSetupOperation<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.setupOperation) {
+      throw new Error("Local Motion setup is already running. Wait for the current setup to finish.");
+    }
+    const running = operation();
+    this.setupOperation = running;
+    try {
+      return await running;
+    } finally {
+      if (this.setupOperation === running) {
+        this.setupOperation = undefined;
+      }
+    }
   }
 
   private async modelFileSize(modelPath: string): Promise<number | undefined> {

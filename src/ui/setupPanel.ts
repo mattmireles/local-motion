@@ -95,9 +95,10 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
     await this.session?.postInitialState();
   }
 
-  async runAutomagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+  async runAutomagicalSetup(onShown: () => Promise<void> = async () => undefined): Promise<AutomagicalSetupCompleteResponse | undefined> {
     await vscode.commands.executeCommand(SetupViewProvider.containerCommand);
     await this.waitForView();
+    await onShown();
     if (this.session) {
       return this.session.hostStartedAutomagicalSetup();
     }

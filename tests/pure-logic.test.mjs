@@ -46,7 +46,9 @@ import {
 } from "../out/setupPolicy.js";
 import {
   isAutomagicalSetupCompletion,
-  isLastCopiedCursorSetup
+  isInstalledModel,
+  isLastCopiedCursorSetup,
+  isModelSlots
 } from "../out/stateValidation.js";
 import {
   generateApiKey,
@@ -995,6 +997,56 @@ test("state validators reject stale persisted setup shapes", () => {
   assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "wrong-key" }), false);
   assert.equal(isAutomagicalSetupCompletion({ ...completion, endpointVerifiedAt: "" }), false);
   assert.equal(isAutomagicalSetupCompletion(true), false);
+});
+
+test("state validators reject stale installed model and model slot shapes", () => {
+  const installed = {
+    repoId: "owner/model-GGUF",
+    fileName: "model-Q4_K_M.gguf",
+    revision: "main",
+    sizeBytes: 123,
+    modelPath: "/tmp/model.gguf",
+    modelId: LOCAL_MOTION_MODEL_ID,
+    displayName: "Model",
+    contextTokens: 8192
+  };
+
+  assert.equal(isInstalledModel(installed), true);
+  assert.equal(isInstalledModel({ ...installed, modelPath: "" }), false);
+  assert.equal(isInstalledModel({ ...installed, contextTokens: 0 }), false);
+  assert.equal(isInstalledModel({ ...installed, sizeBytes: -1 }), false);
+  assert.equal(isInstalledModel(true), false);
+
+  assert.equal(isModelSlots({ max: installed, mini: installed }), true);
+  assert.equal(isModelSlots({ max: installed }), true);
+  assert.equal(isModelSlots({ max: { ...installed, modelPath: "" } }), false);
+  assert.equal(isModelSlots({ tiny: installed }), false);
+  assert.equal(isModelSlots(true), false);
+});
+
+test("manual full setup-block copy verifies endpoint before persisting current freshness", async () => {
+  const harness = cursorSetupWorkflowHarness();
+  const result = await harness.workflow.copyCursorValue("setupBlock");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.cursorSetupFreshness.status, "current");
+  assert.equal(harness.requests[0].input, "https://public.example.com/v1/models");
+  assert.equal(harness.requests[0].authorization, "Bearer session-secret");
+  assert.equal(harness.clipboardWrites.length, 1);
+  assert.ok(harness.clipboardWrites[0].includes("Override OpenAI Base URL: https://public.example.com/v1"));
+  assert.equal(harness.lastCopied?.trigger, "copySetupBlock");
+  assert.equal(harness.lastCopied?.endpointVerifiedAt, "2026-06-16T00:00:00.000Z");
+});
+
+test("manual full setup-block copy does not write clipboard when endpoint verification fails", async () => {
+  const harness = cursorSetupWorkflowHarness({ modelIds: ["other-model"] });
+  const result = await harness.workflow.copyCursorValue("setupBlock");
+
+  assert.equal(result.ok, false);
+  assert.equal(result.cursorSetupFreshness.status, "not-copied");
+  assert.equal(harness.requests.length, 1);
+  assert.deepEqual(harness.clipboardWrites, []);
+  assert.equal(harness.lastCopied, undefined);
 });
 
 function cursorSetupWorkflowHarness(options = {}) {

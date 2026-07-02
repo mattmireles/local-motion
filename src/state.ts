@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LocalModelOptionId } from "./models/defaultRepos";
-import { isAutomagicalSetupCompletion, isLastCopiedCursorSetup } from "./stateValidation";
+import { isAutomagicalSetupCompletion, isInstalledModel, isLastCopiedCursorSetup, isModelSlots } from "./stateValidation";
 import type { AutomagicalSetupCompletion, InstalledModel, LastCopiedCursorSetup } from "./types";
 
 const INSTALLED_MODEL_KEY = "localMotion.installedModel";
@@ -14,7 +14,8 @@ export class LocalMotionState {
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   installedModel(): InstalledModel | undefined {
-    return this.context.globalState.get<InstalledModel>(INSTALLED_MODEL_KEY);
+    const model = this.context.globalState.get<unknown>(INSTALLED_MODEL_KEY);
+    return isInstalledModel(model) ? model : undefined;
   }
 
   async setInstalledModel(model: InstalledModel): Promise<void> {
@@ -31,7 +32,8 @@ export class LocalMotionState {
   }
 
   modelSlots(): Partial<Record<LocalModelOptionId, InstalledModel>> {
-    return this.context.globalState.get<Partial<Record<LocalModelOptionId, InstalledModel>>>(MODEL_SLOTS_KEY, {});
+    const slots = this.context.globalState.get<unknown>(MODEL_SLOTS_KEY, {});
+    return isModelSlots(slots) ? slots : {};
   }
 
   modelSlot(optionId: LocalModelOptionId): InstalledModel | undefined {

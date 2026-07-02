@@ -56,6 +56,13 @@ export function setupPanelHtml(nonce: string): string {
             <button class="btn ghost copy" data-key="baseUrl">Copy</button>
           </div>
         </div>
+        <div class="field">
+          <label>Full setup</label>
+          <div class="field-row">
+            <span id="valSetupBlock" class="field-value">All Cursor fields</span>
+            <button id="copySetupBlock" class="btn ghost copy" data-key="setupBlock">Copy Full Setup</button>
+          </div>
+        </div>
       </div>
       <div class="row">
         <button id="openCursor" class="btn cta">Open Cursor Settings</button>
@@ -146,6 +153,8 @@ export function setupPanelHtml(nonce: string): string {
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
+      valSetupBlock: document.getElementById('valSetupBlock'),
+      copySetupBlock: document.getElementById('copySetupBlock'),
       modelChooser: document.getElementById('modelChooser'),
       modelOptions: document.getElementById('modelOptions'),
       openCursor: document.getElementById('openCursor'),
@@ -413,8 +422,8 @@ export function setupPanelHtml(nonce: string): string {
       // clickable against a server that is about to be replaced.
       const phase = (errored && !running) ? 'error'
         : state.modelSwitchRunning ? 'starting'
-        : state.cursorConnectRunning ? 'starting'
         : running ? 'on'
+        : state.cursorConnectRunning ? 'starting'
         : busy ? 'starting' : 'off';
       renderModelOptions();
       renderStorage();
@@ -534,12 +543,22 @@ export function setupPanelHtml(nonce: string): string {
       } else {
         const viewModel = state.cursorSetupViewModel || {};
         els.connect.classList.remove('hidden');
+        const cursorReady = viewModel.isRunning === true;
+        const cursorDisabled = !cursorReady || state.cursorConnectRunning || state.setupOperationRunning;
+        for (const button of document.querySelectorAll('.connect .copy')) {
+          button.disabled = cursorDisabled;
+        }
         els.openCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
         els.valModelId.textContent = viewModel.modelId || 'Local Motion';
         els.valApiKey.textContent = viewModel.apiKey || '';
-        els.valBaseUrl.textContent = viewModel.baseUrl || 'Preparing the Cursor endpoint…';
-        els.connectNote.textContent = state.connectMessage || '';
-        els.connectNote.style.display = state.connectMessage ? 'block' : 'none';
+        els.valBaseUrl.textContent = viewModel.baseUrl || (viewModel.statusMessage || 'Cursor connection is not ready.');
+        els.valSetupBlock.textContent = cursorReady ? 'Model name, API key, and Base URL' : 'Unavailable until Cursor connection is ready';
+        els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
+          ? 'Copy Updated Setup'
+          : 'Copy Full Setup';
+        const freshnessMessage = state.cursorSetupFreshness && state.cursorSetupFreshness.message;
+        els.connectNote.textContent = state.connectMessage || freshnessMessage || viewModel.statusMessage || '';
+        els.connectNote.style.display = els.connectNote.textContent ? 'block' : 'none';
       }
 
       // One quiet greyed metadata line: the model display name only.

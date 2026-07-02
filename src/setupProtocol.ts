@@ -163,7 +163,7 @@ export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, Se
   type: typeof SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE;
   installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;
-  cursor: CursorSetupPreparedResponse;
+  cursor?: CursorSetupPreparedResponse;
 }
 
 export type SetupResponse =

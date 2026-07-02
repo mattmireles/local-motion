@@ -99,10 +99,24 @@ export class CursorSetupWorkflow {
 
   async copyCursorValue(key: CursorSetupValueKey): Promise<CursorCopyResult> {
     const viewModel = this.currentViewModel();
+    let endpointVerifiedAt: string | undefined;
+    if (key === "setupBlock") {
+      const verification = await this.verifyViewModelEndpoint(viewModel);
+      if (!verification.ok) {
+        return {
+          type: SETUP_RESPONSE_TYPE.CURSOR_COPY_RESULT,
+          key,
+          cursorSetupFreshness: this.freshness(viewModel),
+          ok: false,
+          message: `Setup block was not copied because endpoint verification failed. ${verification.message}`
+        };
+      }
+      endpointVerifiedAt = this.host.now();
+    }
     const result = await this.writeCursorValue(key, viewModel);
     let freshness = this.freshness(viewModel);
     if (shouldPersistCursorSetupCopy(key, result.ok)) {
-      await this.state.setLastCopiedCursorSetup(lastCopiedCursorSetup(viewModel, "copySetupBlock", this.host.now()));
+      await this.state.setLastCopiedCursorSetup(lastCopiedCursorSetup(viewModel, "copySetupBlock", this.host.now(), endpointVerifiedAt));
       freshness = this.freshness(viewModel);
     }
     return { type: SETUP_RESPONSE_TYPE.CURSOR_COPY_RESULT, key, cursorSetupFreshness: freshness, ...result };

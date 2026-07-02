@@ -101,6 +101,7 @@
         "localMotion.llamaServerPath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "description": "Optional absolute path to llama-server. If empty, Local Motion searches PATH and Homebrew locations."
         },
         "localMotion.contextTokens": {
@@ -134,21 +135,25 @@
         "localMotion.cursorTunnelUrl": {
           "type": "string",
           "default": "",
-          "description": "Optional public HTTPS base URL for a user-managed tunnel, such as a Cloudflare Named Tunnel. When set, Local Motion uses this instead of spawning a Quick Tunnel. Applies on the next model start."
+          "scope": "machine",
+          "description": "Optional public HTTPS base URL for a user-managed tunnel, such as a Cloudflare Named Tunnel. When set, Local Motion uses this instead of spawning a Quick Tunnel when you connect Cursor."
         },
         "localMotion.defaultModelRepo": {
           "type": "string",
           "default": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+          "scope": "machine",
           "description": "Default Hugging Face GGUF repository shown in Advanced. One-click setup installs the fixed Max + Mini pack: Qwen3-Coder-30B-A3B and Gemma 4 26B A4B. Qwen2.5 models are manual Advanced choices, not automatic downgrades."
         },
         "localMotion.maxModelRepo": {
           "type": "string",
           "default": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+          "scope": "machine",
           "description": "Hugging Face GGUF repository used for the Max slot. Paste a compatible GGUF repo in Local Motion setup to replace Max."
         },
         "localMotion.miniModelRepo": {
           "type": "string",
           "default": "unsloth/gemma-4-26B-A4B-it-GGUF",
+          "scope": "machine",
           "description": "Hugging Face GGUF repository used for the Mini slot. Paste a compatible GGUF repo in Local Motion setup to replace Mini."
         },
         "localMotion.openSetupOnStartup": {
