@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import { LocalMotionController } from "../app/localMotionController";
 import { isCursorSetupValueKey } from "../cursor/cursorIntegration";
+import type { LocalModelOptionId } from "../models/defaultRepos";
 import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE, type AutomagicalSetupCompleteResponse, type SetupRequest, type SetupResponse } from "../setupProtocol";
 import { shouldPostInitialQuantizations } from "../setupPolicy";
 import { setupPanelHtml } from "./setupPanelHtml";
@@ -162,7 +163,7 @@ class SetupWebviewSession {
           await this.installRun(message.candidate);
           break;
         case SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP:
-          await this.automagicalSetup();
+          await this.automagicalSetup(message.modelOptionId);
           break;
         case SETUP_REQUEST_COMMAND.STOP:
           await this.post(await this.controller.stop());
@@ -178,6 +179,25 @@ class SetupWebviewSession {
             const id = message.id;
             await this.withSetupOperation(async () => {
               await this.post(await this.controller.startDownloadedModel(id));
+            });
+          }
+          break;
+        case SETUP_REQUEST_COMMAND.REPLACE_MODEL_OPTION:
+          if (this.setupOperationActive) {
+            throw new Error("Wait for setup to finish before replacing models.");
+          }
+          if (message.modelOptionId !== "max" && message.modelOptionId !== "mini") {
+            throw new Error("No model slot was selected.");
+          }
+          if (!message.repoId?.trim()) {
+            throw new Error("Paste a Hugging Face GGUF repository.");
+          }
+          {
+            const optionId = message.modelOptionId;
+            const repoId = message.repoId;
+            await this.withSetupOperation(async () => {
+              const { onProgress, onModelSelected } = this.installProgressCallbacks();
+              await this.post(await this.controller.replaceModelOption(optionId, repoId, onProgress, onModelSelected));
             });
           }
           break;
@@ -265,12 +285,12 @@ class SetupWebviewSession {
     });
   }
 
-  private async automagicalSetup(): Promise<AutomagicalSetupCompleteResponse | undefined> {
+  private async automagicalSetup(modelOptionId?: LocalModelOptionId): Promise<AutomagicalSetupCompleteResponse | undefined> {
     return this.withSetupOperation(async () => {
       await this.waitUntilReady();
       await this.post({ type: SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_STARTED });
       const { onProgress, onModelSelected } = this.installProgressCallbacks();
-      const payload = await this.controller.automagicalSetup(onProgress, onModelSelected);
+      const payload = await this.controller.automagicalSetup(onProgress, onModelSelected, modelOptionId);
       if (payload) {
         await this.post(payload);
       }

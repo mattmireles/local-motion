@@ -23,11 +23,44 @@ export const CURATED_CODER_REPOS: readonly string[] = [
   /* END curated-ladder */
 ];
 
+export const LOCAL_MODEL_PACK = [
+  {
+    id: "max",
+    label: "Max",
+    modelName: "Qwen3-Coder-30B-A3B",
+    summary: "Best quality",
+    settingKey: "maxModelRepo",
+    repoId: CURATED_CODER_REPOS[0]
+  },
+  {
+    id: "mini",
+    label: "Mini",
+    modelName: "Gemma 4 26B A4B",
+    summary: "Lighter fallback",
+    settingKey: "miniModelRepo",
+    repoId: CURATED_CODER_REPOS[1]
+  }
+] as const;
+
+export type LocalModelOptionId = typeof LOCAL_MODEL_PACK[number]["id"];
+
 /** The primary model we ship; the configured default shown in Advanced. */
 export const DEFAULT_MODEL_REPO = CURATED_CODER_REPOS[0];
 
-/** Fallback ladder used by automagical setup (see above). */
+/** The fixed Max + Mini pack installed by one-click setup. */
 export const AUTOMAGICAL_MODEL_REPOS = CURATED_CODER_REPOS;
+
+export function localModelOptionForRepo(repoId: string): typeof LOCAL_MODEL_PACK[number] | undefined {
+  const normalized = normalizeHuggingFaceRepoId(repoId);
+  return LOCAL_MODEL_PACK.find((option) => option.repoId === normalized);
+}
+
+export function localModelOptionForFileName(fileName: string): typeof LOCAL_MODEL_PACK[number] | undefined {
+  const lower = fileName.toLowerCase();
+  if (lower.includes("qwen3-coder")) return LOCAL_MODEL_PACK[0];
+  if (lower.includes("gemma-4-26b")) return LOCAL_MODEL_PACK[1];
+  return undefined;
+}
 
 export function automagicalModelRepos(configuredRepo: string): string[] {
   const seen = new Set<string>();

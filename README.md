@@ -65,13 +65,11 @@ is stopped, the command starts it first; then it verifies the endpoint, copies
 the setup block, and opens Cursor Models settings.
 
 `Turn On Local Agent` may install `llama.cpp` through Homebrew and download the
-best compatible GGUF quantization for this Mac. The default path is Qwen3-Coder:
-a 30B mixture-of-experts coder (Qwen3-Coder-30B-A3B), with Gemma 4 26B A4B as
-the bundled fallback. Local Motion downloads both selected GGUFs when they fit,
-starts Qwen3, and leaves Gemma in Downloaded Models so you can switch with
-`Run`. It does not silently downgrade the one-click setup to older Qwen2.5
-models; choose those explicitly from Advanced when needed. Override the first
-choice with `localMotion.defaultModelRepo`. Set
+best compatible GGUF quantizations for this Mac. The default setup is a two-model
+pack: **Max: Qwen3-Coder-30B-A3B** and **Mini: Gemma 4 26B A4B**. Local Motion
+preinstalls both when they fit, then starts the selected model. It does not
+silently downgrade the one-click setup to older Qwen2.5 models; choose those
+explicitly from Advanced when needed. Set
 `localMotion.runAutomagicalSetupOnFirstStartup`
 to `true` only if you want that install/download to start automatically on first
 startup.
@@ -86,12 +84,16 @@ Run `Local Motion: Free Memory` to unload the local model immediately.
 
 ### Switching Models
 
-Every downloaded model stays on disk. To switch, open the setup panel, click
-`Manage` next to the storage line, and click `Run` on any fully downloaded
-model. The current model stops, the selected one starts, and it becomes the
-model that `Turn On Local Agent` starts next time. A practical pattern on a
-loaded Mac: keep one maximum-size model for focused work and one small model
-for when other applications need the memory.
+The setup panel shows Max and Mini as first-class choices with their selected
+quantization, download size, and estimated runtime memory. Select either model
+and use the main button to start, switch, or install the pack if it is not
+downloaded yet. The current model stops, the selected one starts, and it becomes
+the model that `Turn On Local Agent` starts next time.
+
+Max and Mini are replaceable slots. Paste a Hugging Face GGUF repository into
+either row and click `Replace`; Local Motion validates the best compatible Q4+
+quantization, downloads it into that slot, and restarts the model only when that
+slot was already running.
 
 Run `Local Motion: Diagnose Setup` for a read-only status check of the installed
 model file, local runtime, proxy verification, copied Cursor values, and the

@@ -123,8 +123,9 @@ test("setup first screen is a single on/off switch before one advanced disclosur
     panelSource,
     /els\.primary\.addEventListener\('click'[\s\S]*?state\.runtime && state\.runtime\.running[\s\S]*?command: '\$\{SETUP_REQUEST_COMMAND\.STOP\}'[\s\S]*?command: '\$\{SETUP_REQUEST_COMMAND\.AUTOMAGICAL_SETUP\}'/
   );
-  assert.match(panelSource, /els\.primary\.textContent = 'Turn On Local Agent'/);
-  assert.match(panelSource, /els\.primary\.textContent = 'Turn Off Local Agent'/);
+  assert.match(panelSource, /function primaryActionText\(option, running\)/);
+  assert.match(panelSource, /Install Max \+ Mini, Start/);
+  assert.match(panelSource, /return running \? 'Turn Off Local Agent' : 'Turn On Local Agent'/);
 
   // Each Cursor value copies independently from its own row, so the user can
   // drop them one at a time into Cursor's Add Custom Model fields.
@@ -148,6 +149,10 @@ test("setup surface shows downloaded model storage before advanced controls", as
 
   assert.match(protocolSource, /downloadedModels: DownloadedModelEntry\[\]/);
   assert.match(protocolSource, /downloadedModelsSizeBytes: number/);
+  assert.match(protocolSource, /interface SetupModelOptionView/);
+  assert.match(protocolSource, /modelOptions: SetupModelOptionView\[\]/);
+  assert.match(protocolSource, /selectedModelOptionId: LocalModelOptionId/);
+  assert.match(protocolSource, /REPLACE_MODEL_OPTION: "replaceModelOption"/);
   assert.match(protocolSource, /SetupInstalledModelView/);
   assert.equal(protocolSource.includes("InstalledModel,"), false);
   assert.equal(protocolSource.includes("installed?: InstalledModel"), false);
@@ -186,6 +191,16 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.DELETE_DOWNLOADED_MODEL\}'/);
   assert.match(panelSource, /function updateDownloadedStorage\(message\)/);
   assert.match(panelSource, /function renderStorage\(\)/);
+  assert.match(panelSource, /id="modelChooser"/);
+  assert.match(panelSource, /function renderModelOptions\(\)/);
+  assert.match(panelSource, /requiredMemory \+ ' runtime memory'/);
+  assert.match(panelSource, /Install Max \+ Mini, Start/);
+  assert.match(panelSource, /modelOptionId: option\.id/);
+  assert.match(panelSource, /data-replace-option/);
+  assert.match(panelSource, /function replaceModelOption\(optionId, repoId\)/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.REPLACE_MODEL_OPTION/);
+  assert.match(controllerSource, /async replaceModelOption/);
+  assert.match(controllerSource, /setModelSlot\(optionId, installed\)/);
   assert.match(panelSource, /function modelLabel\(fileName\)/);
   assert.match(panelSource, /Max: Qwen3-Coder-30B-A3B/);
   assert.match(panelSource, /Mini: Gemma 4 26B A4B/);
@@ -346,7 +361,12 @@ test("one-click setup downloads Max and Mini before starting Max", async () => {
 
   assert.match(defaultReposSource, /Qwen3-Coder-30B-A3B-Instruct-GGUF/);
   assert.match(defaultReposSource, /gemma-4-26B-A4B-it-GGUF/);
-  assert.match(controllerSource, /installAndStartAll\(await this\.automagicalCandidates\(\), onProgress, onModelSelected\)/);
+  assert.match(controllerSource, /installAndStartAll\(await this\.automagicalCandidates\(\), onProgress, onModelSelected, selectedModelOptionId\)/);
+  assert.match(defaultReposSource, /LOCAL_MODEL_PACK/);
+  assert.match(defaultReposSource, /label: "Max"/);
+  assert.match(defaultReposSource, /modelName: "Qwen3-Coder-30B-A3B"/);
+  assert.match(defaultReposSource, /label: "Mini"/);
+  assert.match(defaultReposSource, /modelName: "Gemma 4 26B A4B"/);
 
   const batchBody = controllerSource.slice(
     controllerSource.indexOf("private async installAndStartAll"),
@@ -354,7 +374,7 @@ test("one-click setup downloads Max and Mini before starting Max", async () => {
   );
   assert.match(batchBody, /for \(const candidate of candidates\)/);
   assert.match(batchBody, /installedModels\.push\(await this\.installCandidate\(candidate, onProgress, onModelSelected\)\)/);
-  assert.match(batchBody, /const installed = installedModels\[0\]/);
+  assert.match(batchBody, /localModelOptionForRepo\(model\.repoId\)\?\.id === selectedModelOptionId/);
   assert.match(batchBody, /this\.startInstalledModel\(installed/);
 });
 

@@ -99,6 +99,107 @@ export function setupPanelStyles(): string {
     }
     .progress.hidden { display: none; }
 
+    .model-chooser {
+      margin-top: 18px;
+      display: grid;
+      gap: 8px;
+    }
+    .model-chooser h2 {
+      margin: 0;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .model-options {
+      display: grid;
+      gap: 8px;
+    }
+    .model-option {
+      appearance: none;
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 12px;
+      align-items: center;
+      text-align: left;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--vscode-foreground);
+      background: transparent;
+      cursor: pointer;
+      font-family: var(--vscode-font-family);
+    }
+    .model-option:hover {
+      background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
+    }
+    .model-option.selected {
+      border-color: var(--vscode-focusBorder);
+      background: color-mix(in srgb, var(--vscode-focusBorder) 9%, transparent);
+    }
+    .model-option.active .model-status {
+      color: var(--ok);
+    }
+    .model-option.skeleton {
+      cursor: default;
+      color: var(--faint);
+    }
+    .model-title {
+      min-width: 0;
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      overflow-wrap: anywhere;
+    }
+    .model-title strong {
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .model-title span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .model-meta {
+      grid-column: 1 / -1;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .model-status {
+      color: var(--faint);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .model-repo {
+      grid-column: 1 / -1;
+      color: var(--faint);
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .model-replace {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .model-replace input {
+      width: 100%;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 9px;
+      color: var(--vscode-input-foreground, var(--vscode-foreground));
+      background: var(--vscode-input-background, transparent);
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+    }
+
     /* The one primary control, in one fixed slot. */
     .primary-slot { margin-top: 22px; }
     .btn {
@@ -126,6 +227,7 @@ export function setupPanelStyles(): string {
     /* Keyboard focus must be visible inside the webview, not left to UA defaults. */
     .btn:focus-visible,
     .item:focus-visible,
+    .model-option:focus-visible,
     input:focus-visible,
     summary:focus-visible {
       outline: 2px solid var(--vscode-focusBorder);

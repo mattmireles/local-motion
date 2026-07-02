@@ -6,7 +6,12 @@ import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { classifyCompatibility, meetsAutomagicalQualityFloor, parameterCountFromText, quantizationFromFileName, selectBestCompatibleQuantization } from "../models/compatibility";
-import { automagicalModelRepos, DEFAULT_MODEL_REPO, normalizeHuggingFaceRepoId } from "../models/defaultRepos";
+import {
+  DEFAULT_MODEL_REPO,
+  LOCAL_MODEL_PACK,
+  normalizeHuggingFaceRepoId,
+  type LocalModelOptionId
+} from "../models/defaultRepos";
 import { deleteDownloadedModel, listDownloadedModels, resolveDownloadedModelId } from "../models/downloadedModels";
 import { listQuantizations, searchModels } from "../models/huggingFace";
 import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../models/installedModel";
@@ -23,6 +28,8 @@ import {
   type CursorSetupPayload,
   type CursorSetupPreparedResponse,
   type InstalledResponse,
+  type SetupModelOptionsPayload,
+  type SetupModelOptionView,
   type QuantizationsResponse,
   type RuntimeResponse,
   type SearchResultsResponse,
@@ -33,11 +40,12 @@ import {
 import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
-import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type InstalledModel, type RuntimeSession } from "../types";
+import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type DownloadedModelEntry, type InstalledModel, type RuntimeSession } from "../types";
 import { formatBytes, modelDisplayName } from "../util/format";
 
 export class LocalMotionController {
   private readonly cursorSetup: CursorSetupWorkflow;
+  private modelOptionCandidates: Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -137,17 +145,18 @@ export class LocalMotionController {
 
   async automagicalSetup(
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
-    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined,
+    selectedModelOptionId: LocalModelOptionId = "max"
   ): Promise<AutomagicalSetupCompleteResponse | undefined> {
     await this.ensureCursorTunnelForCursorSetup();
     if (!this.runtime.status().running) {
-      const installedModel = await this.reusableInstalledModel({ requireCurrentDefault: true });
+      const installedModel = await this.reusableInstalledModelForOption(selectedModelOptionId);
       if (installedModel) {
         await this.startInstalledModel(installedModel, {
           allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
         });
       } else {
-        await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected);
+        await this.installAndStartAll(await this.automagicalCandidates(), onProgress, onModelSelected, selectedModelOptionId);
       }
     }
 
@@ -188,6 +197,46 @@ export class LocalMotionController {
     return { type: SETUP_RESPONSE_TYPE.RUNTIME, runtime, ...await this.responseEnvelope(runtime) };
   }
 
+  async replaceModelOption(
+    optionId: LocalModelOptionId,
+    repoId: string,
+    onProgress: (progress: DownloadProgress, modelName?: string) => void,
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void = () => undefined
+  ): Promise<SetupStateResponse> {
+    const option = LOCAL_MODEL_PACK.find((candidate) => candidate.id === optionId);
+    const normalizedRepo = normalizeHuggingFaceRepoId(repoId);
+    if (!option || !normalizedRepo.includes("/")) {
+      throw new Error("Paste a Hugging Face GGUF repository like owner/model-GGUF.");
+    }
+
+    const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(normalizedRepo));
+    if (!candidate) {
+      throw new Error(`No compatible GGUF quantization found for ${normalizedRepo}.`);
+    }
+    if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
+      throw new Error(`${normalizedRepo} only fits at ${candidate.quantization}, below the Q4 automatic floor.`);
+    }
+
+    const previous = this.state.modelSlot(optionId);
+    const active = this.runtime.activeSession();
+    const wasActive = Boolean(previous && active && path.resolve(previous.modelPath) === path.resolve(active.modelPath));
+    const installed = await this.installCandidate(candidate, onProgress, onModelSelected);
+
+    await vscode.workspace.getConfiguration("localMotion").update(option.settingKey, normalizedRepo, vscode.ConfigurationTarget.Global);
+    this.modelOptionCandidates = undefined;
+    await this.state.setModelSlot(optionId, installed);
+
+    if (wasActive) {
+      await this.startInstalledModel(installed, {
+        allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+      });
+      await this.state.setInstalledModel(installed);
+      this.provider.refresh();
+    }
+
+    return this.initialState();
+  }
+
   async enableCursorTunnel(): Promise<RuntimeResponse> {
     await vscode.workspace.getConfiguration("localMotion").update("cursorTunnel", true, vscode.ConfigurationTarget.Global);
     const runtime = this.runtime.status();
@@ -218,10 +267,6 @@ export class LocalMotionController {
     if (model.partial) {
       throw new Error("That download is incomplete. Finish downloading it or delete it.");
     }
-    if (model.active) {
-      return this.initialState();
-    }
-
     const modelPath = resolveDownloadedModelId(this.modelsRoot(), id);
     const installed: InstalledModel = {
       // The storage id is <safeId(repoId-revision)>/<fileName>; the folder
@@ -266,6 +311,7 @@ export class LocalMotionController {
     }
 
     const deletedPath = await deleteDownloadedModel(this.modelsRoot(), id);
+    await this.state.clearModelSlotIfPath(deletedPath);
     const clearedInstalled = await this.state.clearInstalledModelIfPath(deletedPath);
     if (clearedInstalled) {
       await this.state.clearAutomagicalSetupCompletionIfModel(clearedInstalled.modelId);
@@ -345,7 +391,20 @@ export class LocalMotionController {
   }
 
   automagicalRepos(): string[] {
-    return automagicalModelRepos(this.defaultRepo());
+    return this.localModelPack().map((option) => option.repoId);
+  }
+
+  private localModelPack(): Array<typeof LOCAL_MODEL_PACK[number]> {
+    const config = vscode.workspace.getConfiguration("localMotion");
+    return LOCAL_MODEL_PACK.map((option) => ({
+      ...option,
+      repoId: normalizeHuggingFaceRepoId(config.get<string>(option.settingKey, option.repoId).trim()) || option.repoId
+    }));
+  }
+
+  private localModelOptionForRepo(repoId: string): typeof LOCAL_MODEL_PACK[number] | undefined {
+    const normalized = normalizeHuggingFaceRepoId(repoId);
+    return this.localModelPack().find((option) => option.repoId === normalized);
   }
 
   private async download(
@@ -398,20 +457,13 @@ export class LocalMotionController {
   private async automagicalCandidates(): Promise<CandidateQuantization[]> {
     const attempts: string[] = [];
     const selected: CandidateQuantization[] = [];
-    for (const repoId of this.automagicalRepos()) {
-      try {
-        const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(repoId));
-        if (!candidate) {
-          attempts.push(`${repoId}: no compatible quantization`);
-          continue;
-        }
-        if (meetsAutomagicalQualityFloor(candidate.quantization)) {
-          selected.push(candidate);
-          continue;
-        }
-        attempts.push(`${repoId}: only ${candidate.quantization} fits, below the quality floor`);
-      } catch (error) {
-        attempts.push(`${repoId}: ${error instanceof Error ? error.message : String(error)}`);
+    const candidates = await this.modelOptionCandidateMap();
+    for (const option of this.localModelPack()) {
+      const candidate = candidates.get(option.id);
+      if (candidate && !(candidate instanceof Error)) {
+        selected.push(candidate);
+      } else {
+        attempts.push(`${option.repoId}: ${candidate instanceof Error ? candidate.message : "no compatible quantization"}`);
       }
     }
 
@@ -439,13 +491,20 @@ export class LocalMotionController {
   private async installAndStartAll(
     candidates: CandidateQuantization[],
     onProgress: (progress: DownloadProgress, modelName?: string) => void,
-    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void
+    onModelSelected: (modelName: string, requiredMemory: string, availableMemory: string) => void,
+    selectedModelOptionId: LocalModelOptionId
   ): Promise<InstalledModel> {
     const installedModels: InstalledModel[] = [];
     for (const candidate of candidates) {
       installedModels.push(await this.installCandidate(candidate, onProgress, onModelSelected));
     }
-    const installed = installedModels[0];
+    for (const installedModel of installedModels) {
+      const option = this.localModelOptionForRepo(installedModel.repoId);
+      if (option) {
+        await this.state.setModelSlot(option.id, installedModel);
+      }
+    }
+    const installed = installedModels.find((model) => this.localModelOptionForRepo(model.repoId)?.id === selectedModelOptionId) ?? installedModels[0];
     if (!installed) {
       throw new Error("No compatible GGUF quantization found for this Mac.");
     }
@@ -534,6 +593,12 @@ export class LocalMotionController {
       : undefined;
   }
 
+  private async reusableInstalledModelForOption(optionId: LocalModelOptionId): Promise<InstalledModel | undefined> {
+    const slot = this.state.modelSlot(optionId);
+    const actualSizeBytes = slot ? await this.modelFileSize(slot.modelPath) : undefined;
+    return canReuseInstalledModel(slot, actualSizeBytes) ? slot : undefined;
+  }
+
   /**
    * Advisory only, never blocking. macOS keeps "free" memory near zero by
    * design (cache fills idle RAM) and reclaims it on demand — it evicts
@@ -566,12 +631,14 @@ export class LocalMotionController {
   // place that assembles it instead of five inline copies.
   private async responseEnvelope(
     runtime: ReturnType<LlamaServerManager["status"]>
-  ): Promise<CursorSetupPayload & SetupStoragePayload> {
+  ): Promise<CursorSetupPayload & SetupStoragePayload & SetupModelOptionsPayload> {
     const cursorSetup = this.cursorSetupPayload(runtime);
+    const storage = await this.storagePayload();
     return {
       cursorSetupViewModel: cursorSetup.viewModel,
       cursorSetupFreshness: cursorSetup.freshness,
-      ...await this.storagePayload()
+      ...storage,
+      ...await this.modelOptionsPayload(storage.downloadedModels)
     };
   }
 
@@ -603,6 +670,87 @@ export class LocalMotionController {
       downloadedModels: downloaded.models,
       downloadedModelsSizeBytes: downloaded.totalSizeBytes
     };
+  }
+
+  private async modelOptionsPayload(downloadedModels: DownloadedModelEntry[]): Promise<SetupModelOptionsPayload> {
+    const candidates = await this.modelOptionCandidateMap();
+    const activeOption = this.slottedOptionId(downloadedModels.find((model) => model.active));
+    const installedOption = this.slottedOptionId(downloadedModels.find((model) => model.installed));
+    return {
+      selectedModelOptionId: activeOption ?? installedOption ?? "max",
+      modelOptions: this.localModelPack().map((option): SetupModelOptionView => {
+        const slot = this.state.modelSlot(option.id);
+        const downloadedId = slot ? this.downloadedModelIdForPath(slot.modelPath, downloadedModels) : undefined;
+        const downloaded = downloadedId ? downloadedModels.find((model) => model.id === downloadedId && !model.partial) : undefined;
+        const active = downloaded?.active === true;
+        const candidate = candidates.get(option.id);
+        const isDefaultRepo = option.repoId === LOCAL_MODEL_PACK.find((candidateOption) => candidateOption.id === option.id)?.repoId;
+        const status = active
+          ? "running"
+          : downloaded
+            ? "downloaded"
+            : candidate instanceof Error
+              ? "unavailable"
+              : "available";
+        const unavailableReason = candidate instanceof Error ? candidate.message : undefined;
+        return {
+          id: option.id,
+          label: option.label,
+          modelName: isDefaultRepo ? option.modelName : option.repoId,
+          summary: isDefaultRepo ? option.summary : "Custom model",
+          repoId: option.repoId,
+          status,
+          fileName: candidate instanceof Error ? downloaded?.fileName ?? slot?.fileName : candidate?.fileName ?? downloaded?.fileName ?? slot?.fileName,
+          quantization: candidate instanceof Error ? undefined : candidate?.quantization,
+          downloadSize: candidate instanceof Error ? slot?.sizeBytes ? formatBytes(slot.sizeBytes) : undefined : candidate?.sizeBytes ? formatBytes(candidate.sizeBytes) : undefined,
+          requiredMemory: candidate instanceof Error ? undefined : candidate?.compatibility ? formatBytes(candidate.compatibility.requiredMemoryBytes) : undefined,
+          downloadedModelId: downloaded?.id,
+          statusText: active
+            ? "Running"
+            : downloaded
+              ? "Ready"
+              : unavailableReason ?? "Not installed"
+        };
+      })
+    };
+  }
+
+  private slottedOptionId(model: DownloadedModelEntry | undefined): LocalModelOptionId | undefined {
+    if (!model) {
+      return undefined;
+    }
+    return this.localModelPack().find((option) => this.state.modelSlot(option.id)?.modelPath &&
+      this.downloadedModelIdForPath(this.state.modelSlot(option.id)?.modelPath ?? "", [model]) === model.id)?.id;
+  }
+
+  private downloadedModelIdForPath(modelPath: string, downloadedModels: DownloadedModelEntry[]): string | undefined {
+    const relative = path.relative(path.resolve(this.modelsRoot()), path.resolve(modelPath));
+    return downloadedModels.find((model) => model.id === relative)?.id;
+  }
+
+  private async modelOptionCandidateMap(): Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> {
+    if (!this.modelOptionCandidates) {
+      this.modelOptionCandidates = this.loadModelOptionCandidates();
+    }
+    return this.modelOptionCandidates;
+  }
+
+  private async loadModelOptionCandidates(): Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> {
+    const entries = await Promise.all(this.localModelPack().map(async (option): Promise<[LocalModelOptionId, CandidateQuantization | Error]> => {
+      try {
+        const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(option.repoId));
+        if (!candidate) {
+          return [option.id, new Error("No compatible quantization found")];
+        }
+        if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
+          return [option.id, new Error(`Only ${candidate.quantization} fits, below the Q4 floor`)];
+        }
+        return [option.id, candidate];
+      } catch (error) {
+        return [option.id, error instanceof Error ? error : new Error(String(error))];
+      }
+    }));
+    return new Map(entries);
   }
 
   private installedModelView(installed: InstalledModel): SetupInstalledModelView {

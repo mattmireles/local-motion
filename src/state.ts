@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { LocalModelOptionId } from "./models/defaultRepos";
 import { isAutomagicalSetupCompletion, isLastCopiedCursorSetup } from "./stateValidation";
 import type { AutomagicalSetupCompletion, InstalledModel, LastCopiedCursorSetup } from "./types";
 
@@ -7,6 +8,7 @@ const INSTALLED_MODEL_KEY = "localMotion.installedModel";
 const LAST_COPIED_CURSOR_SETUP_KEY = "localMotion.lastCopiedCursorSetup";
 const SETUP_ONBOARDING_OPENED_KEY = "localMotion.setupOnboardingOpened";
 const AUTOMAGICAL_SETUP_COMPLETED_KEY = "localMotion.automagicalSetupCompleted";
+const MODEL_SLOTS_KEY = "localMotion.modelSlots";
 
 export class LocalMotionState {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -26,6 +28,35 @@ export class LocalMotionState {
     }
     await this.context.globalState.update(INSTALLED_MODEL_KEY, undefined);
     return installed;
+  }
+
+  modelSlots(): Partial<Record<LocalModelOptionId, InstalledModel>> {
+    return this.context.globalState.get<Partial<Record<LocalModelOptionId, InstalledModel>>>(MODEL_SLOTS_KEY, {});
+  }
+
+  modelSlot(optionId: LocalModelOptionId): InstalledModel | undefined {
+    return this.modelSlots()[optionId];
+  }
+
+  async setModelSlot(optionId: LocalModelOptionId, model: InstalledModel): Promise<void> {
+    await this.context.globalState.update(MODEL_SLOTS_KEY, {
+      ...this.modelSlots(),
+      [optionId]: model
+    });
+  }
+
+  async clearModelSlotIfPath(modelPath: string): Promise<void> {
+    const slots = this.modelSlots();
+    let changed = false;
+    for (const [optionId, model] of Object.entries(slots) as Array<[LocalModelOptionId, InstalledModel]>) {
+      if (path.resolve(model.modelPath) === path.resolve(modelPath)) {
+        delete slots[optionId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.context.globalState.update(MODEL_SLOTS_KEY, slots);
+    }
   }
 
   lastCopiedCursorSetup(): LastCopiedCursorSetup | undefined {

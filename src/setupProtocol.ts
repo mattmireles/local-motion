@@ -1,4 +1,5 @@
 import type { CursorSetupFreshness, CursorSetupValueKey, CursorSetupViewModel } from "./cursor/cursorIntegration";
+import type { LocalModelOptionId } from "./models/defaultRepos";
 import type { DownloadProgress } from "./runtime/downloader";
 import type { CandidateQuantization, DownloadedModelEntry, ModelSearchResult, RuntimeStatus } from "./types";
 
@@ -16,6 +17,7 @@ export const SETUP_REQUEST_COMMAND = {
   AUTOMAGICAL_SETUP: "automagicalSetup",
   STOP: "stop",
   START_DOWNLOADED_MODEL: "startDownloadedModel",
+  REPLACE_MODEL_OPTION: "replaceModelOption",
   DELETE_DOWNLOADED_MODEL: "deleteDownloadedModel",
   CONNECT_CURSOR: "connectCursor",
   PREPARE_CURSOR: "prepareCursor",
@@ -44,9 +46,10 @@ export type SetupRequest =
   | { command: typeof SETUP_REQUEST_COMMAND.SEARCH; query?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.QUANTIZATIONS; repoId?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.INSTALL_RUN; candidate?: CandidateQuantization }
-  | { command: typeof SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP }
+  | { command: typeof SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP; modelOptionId?: LocalModelOptionId }
   | { command: typeof SETUP_REQUEST_COMMAND.STOP }
   | { command: typeof SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL; id?: string }
+  | { command: typeof SETUP_REQUEST_COMMAND.REPLACE_MODEL_OPTION; modelOptionId?: LocalModelOptionId; repoId?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL; id?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.CONNECT_CURSOR }
   | { command: typeof SETUP_REQUEST_COMMAND.PREPARE_CURSOR }
@@ -90,6 +93,26 @@ export interface SetupStoragePayload {
   downloadedModelsSizeBytes: number;
 }
 
+export interface SetupModelOptionView {
+  id: LocalModelOptionId;
+  label: string;
+  modelName: string;
+  summary: string;
+  repoId: string;
+  status: "checking" | "available" | "downloaded" | "running" | "unavailable";
+  fileName?: string;
+  quantization?: string;
+  downloadSize?: string;
+  requiredMemory?: string;
+  downloadedModelId?: string;
+  statusText: string;
+}
+
+export interface SetupModelOptionsPayload {
+  modelOptions: SetupModelOptionView[];
+  selectedModelOptionId: LocalModelOptionId;
+}
+
 export interface SetupMachineView {
   cpu: string;
   arch: string;
@@ -105,7 +128,7 @@ export interface SetupInstalledModelView {
   displayName: string;
 }
 
-export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload {
+export interface SetupStateResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
   type: typeof SETUP_RESPONSE_TYPE.STATE;
   defaultRepo: string;
   machine: SetupMachineView;
@@ -124,19 +147,19 @@ export interface QuantizationsResponse {
   quantizations: CandidateQuantization[];
 }
 
-export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload {
+export interface InstalledResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
   type: typeof SETUP_RESPONSE_TYPE.INSTALLED;
   installed: SetupInstalledModelView;
   runtime: RuntimeStatus;
   cursor?: CursorSetupPreparedResponse;
 }
 
-export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload {
+export interface RuntimeResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
   type: typeof SETUP_RESPONSE_TYPE.RUNTIME;
   runtime: RuntimeStatus;
 }
 
-export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, SetupStoragePayload {
+export interface AutomagicalSetupCompleteResponse extends CursorSetupPayload, SetupStoragePayload, SetupModelOptionsPayload {
   type: typeof SETUP_RESPONSE_TYPE.AUTOMAGICAL_SETUP_COMPLETE;
   installed?: SetupInstalledModelView;
   runtime: RuntimeStatus;

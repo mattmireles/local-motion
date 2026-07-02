@@ -27,6 +27,11 @@ export function setupPanelHtml(nonce: string): string {
     </div>
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
 
+    <section id="modelChooser" class="model-chooser" aria-label="Local models">
+      <h2>Model</h2>
+      <div id="modelOptions" class="model-options" role="radiogroup" aria-label="Choose local model"></div>
+    </section>
+
     <div id="connect" class="connect hidden">
       <p class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
       <div class="fields">
@@ -111,6 +116,8 @@ export function setupPanelHtml(nonce: string): string {
       cursorSetupFreshness: undefined,
       verification: undefined,
       settings: undefined,
+      modelOptions: [],
+      selectedModelOptionId: 'max',
       copyResults: {},
       automagicalSetupRunning: false,
       modelSwitchRunning: false,
@@ -134,6 +141,8 @@ export function setupPanelHtml(nonce: string): string {
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
+      modelChooser: document.getElementById('modelChooser'),
+      modelOptions: document.getElementById('modelOptions'),
       openCursor: document.getElementById('openCursor'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
@@ -159,14 +168,23 @@ export function setupPanelHtml(nonce: string): string {
       // Disabled is the single source of truth for "busy". Never gate the
       // toggle on a setup flag — that is what made Turn Off a dead button.
       if (els.primary.disabled) return;
+      const option = selectedModelOption();
       if (state.runtime && state.runtime.running) {
+        if (option && option.status !== 'running') {
+          startModelOption(option);
+          return;
+        }
         // Stop has a short grace period; give immediate, honest feedback.
         els.primary.disabled = true;
         els.primary.textContent = 'Turning Off…';
         vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.STOP}' });
         return;
       }
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP}' });
+      if (option) {
+        startModelOption(option);
+        return;
+      }
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP}', modelOptionId: state.selectedModelOptionId });
     });
 
     /* Each Cursor value copies on its own, outside the primary slot. */
@@ -209,6 +227,7 @@ export function setupPanelHtml(nonce: string): string {
         state.installed = message.installed;
         state.runtime = message.runtime;
         state.machine = message.machine;
+        updateModelOptions(message);
         updateDownloadedStorage(message);
         /* A model switch spans several runtime status changes (old model
            stops, new one loads), each of which pushes a fresh STATE. The
@@ -263,14 +282,15 @@ export function setupPanelHtml(nonce: string): string {
         state.errorMessage = '';
         state.progressPercent = undefined;
         state.selectedModelName = '';
-        state.progressMessage = 'Choosing the recommended model for this Mac…';
+        state.progressMessage = 'Preparing Max and Mini for this Mac…';
         els.install.disabled = true;
         render();
-        setStatus('Selecting a compatible model, starting it, and preparing Cursor.');
+        setStatus('Selecting compatible Max and Mini downloads, starting the selected model, and preparing Cursor.');
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.INSTALLED}') {
         state.installed = message.installed;
         state.runtime = message.runtime;
+        updateModelOptions(message);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
@@ -291,6 +311,7 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.RUNTIME}') {
         state.runtime = message.runtime;
+        updateModelOptions(message);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         state.progressMessage = '';
@@ -311,6 +332,7 @@ export function setupPanelHtml(nonce: string): string {
         state.selectedModelName = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
+        updateModelOptions(message);
         updateDownloadedStorage(message);
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -380,6 +402,7 @@ export function setupPanelHtml(nonce: string): string {
         : state.cursorConnectRunning ? 'starting'
         : running ? 'on'
         : busy ? 'starting' : 'off';
+      renderModelOptions();
       renderStorage();
 
       // Brand status dot: off / busy / on.
@@ -422,14 +445,17 @@ export function setupPanelHtml(nonce: string): string {
     }
 
     function renderOff() {
+      const option = selectedModelOption();
       els.headline.textContent = 'Local agent is off';
-      els.subline.textContent = 'Runs a coding model on this Mac for Cursor.';
+      els.subline.textContent = option
+        ? 'Choose the local model Cursor will use.'
+        : 'Runs a coding model on this Mac for Cursor.';
       els.progress.classList.add('hidden');
       els.connect.classList.add('hidden');
       els.metaLine.style.display = 'none';
-      els.primary.textContent = 'Turn On Local Agent';
+      els.primary.textContent = primaryActionText(option, false);
       els.primary.removeAttribute('title');
-      els.primary.disabled = false;
+      els.primary.disabled = option && option.status === 'unavailable';
     }
 
     function renderStarting() {
@@ -471,9 +497,10 @@ export function setupPanelHtml(nonce: string): string {
 
       // A clean symmetric on/off toggle, never a destructive-sounding morph.
       // The memory framing lives in the tooltip, not in a second button.
-      els.primary.textContent = 'Turn Off Local Agent';
-      els.primary.title = 'Frees the model from memory';
-      els.primary.disabled = false;
+      const option = selectedModelOption();
+      els.primary.textContent = primaryActionText(option, true);
+      els.primary.title = option && option.status !== 'running' ? 'Stops the current model and starts the selected one' : 'Frees the model from memory';
+      els.primary.disabled = option && option.status === 'unavailable';
 
       // A post-start failure (copy, verify, open settings) surfaces in place
       // while the agent itself stays on, instead of hiding in the activity log.
@@ -514,6 +541,14 @@ export function setupPanelHtml(nonce: string): string {
       return runtime.displayName || runtime.modelId || '';
     }
 
+    function primaryActionText(option, running) {
+      if (!option) return running ? 'Turn Off Local Agent' : 'Turn On Local Agent';
+      if (option.status === 'unavailable') return option.label + ' Unavailable';
+      if (running && option.status !== 'running') return option.downloadedModelId ? 'Switch to ' + option.label : 'Install Max + Mini, Switch to ' + option.label;
+      if (running) return 'Turn Off Local Agent';
+      return option.downloadedModelId ? 'Start ' + option.label : 'Install Max + Mini, Start ' + option.label;
+    }
+
     /* ------------------------------------------------------------------ */
     /* Advanced surface: model controls, Mac details, activity log.        */
     /* ------------------------------------------------------------------ */
@@ -529,6 +564,98 @@ export function setupPanelHtml(nonce: string): string {
         ['Free disk', machine.disk],
         ['Storage', machine.storageRoot]
       ].map(([label, value]) => '<div class="metric"><span>' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>').join('');
+    }
+
+    function updateModelOptions(message) {
+      if (!Array.isArray(message.modelOptions)) return;
+      state.modelOptions = message.modelOptions;
+      const selected = message.selectedModelOptionId || state.selectedModelOptionId;
+      if (state.modelOptions.some(option => option.id === selected)) {
+        state.selectedModelOptionId = selected;
+      }
+    }
+
+    function renderModelOptions() {
+      const options = state.modelOptions || [];
+      if (!options.length) {
+        els.modelOptions.innerHTML = '<div class="model-option skeleton"><div class="model-title"><strong>Max</strong><span>Checking models…</span></div><div class="model-meta">Reading memory and download size.</div></div>';
+        return;
+      }
+      els.modelOptions.innerHTML = options.map(option => {
+        const selected = option.id === state.selectedModelOptionId;
+        const unavailable = option.status === 'unavailable';
+        const active = option.status === 'running';
+        const detail = [
+          option.summary,
+          option.quantization,
+          option.requiredMemory ? option.requiredMemory + ' runtime memory' : '',
+          option.downloadSize ? option.downloadSize + ' download' : ''
+        ].filter(Boolean).join(' · ');
+        return '<div class="model-option' + (selected ? ' selected' : '') + (active ? ' active' : '') + '" data-option-id="' + esc(option.id) + '" role="radio" tabindex="0" aria-checked="' + (selected ? 'true' : 'false') + '"' + (unavailable ? ' title="' + esc(option.statusText) + '"' : '') + '>' +
+          '<span class="model-title"><strong>' + esc(option.label) + '</strong><span>' + esc(option.modelName) + '</span></span>' +
+          '<span class="model-meta">' + esc(detail || option.repoId) + '</span>' +
+          '<span class="model-status">' + esc(option.statusText) + '</span>' +
+          '<span class="model-repo">' + esc(option.repoId) + '</span>' +
+          '<span class="model-replace"><input data-repo-input="' + esc(option.id) + '" value="' + esc(option.repoId) + '" aria-label="Hugging Face repository for ' + esc(option.label) + '"><button class="btn ghost" data-replace-option="' + esc(option.id) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>Replace</button></span>' +
+        '</div>';
+      }).join('');
+
+      for (const optionEl of els.modelOptions.querySelectorAll('[data-option-id]')) {
+        optionEl.addEventListener('click', event => {
+          if (event.target && (event.target.closest('input') || event.target.closest('button'))) return;
+          state.selectedModelOptionId = optionEl.dataset.optionId;
+          render();
+        });
+        optionEl.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          state.selectedModelOptionId = optionEl.dataset.optionId;
+          render();
+        });
+      }
+      for (const button of els.modelOptions.querySelectorAll('button[data-replace-option]')) {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          const optionId = button.dataset.replaceOption;
+          const input = els.modelOptions.querySelector('input[data-repo-input="' + optionId + '"]');
+          replaceModelOption(optionId, input ? input.value : '');
+        });
+      }
+    }
+
+    function selectedModelOption() {
+      return (state.modelOptions || []).find(option => option.id === state.selectedModelOptionId);
+    }
+
+    function startModelOption(option) {
+      if (option.status === 'unavailable') return;
+      state.modelSwitchRunning = Boolean(state.runtime && state.runtime.running);
+      state.setupOperationRunning = true;
+      state.progressPercent = undefined;
+      state.progressMessage = option.downloadedModelId
+        ? (option.status === 'running' ? 'Reloading ' : 'Starting ') + option.label + '…'
+        : 'Installing Max and Mini, then starting ' + option.label + '…';
+      render();
+      setStatus(state.progressMessage);
+      if (option.downloadedModelId) {
+        vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL}', id: option.downloadedModelId });
+        return;
+      }
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.AUTOMAGICAL_SETUP}', modelOptionId: option.id });
+    }
+
+    function replaceModelOption(optionId, repoId) {
+      const cleanRepo = String(repoId || '').trim();
+      if (!cleanRepo) {
+        setStatus('Paste a Hugging Face GGUF repository first.');
+        return;
+      }
+      state.setupOperationRunning = true;
+      state.progressPercent = undefined;
+      state.progressMessage = 'Replacing ' + optionId + ' with ' + cleanRepo + '…';
+      render();
+      setStatus(state.progressMessage);
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.REPLACE_MODEL_OPTION}', modelOptionId: optionId, repoId: cleanRepo });
     }
 
     /* Downloaded-model storage. This is one execution scope with the render

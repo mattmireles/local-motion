@@ -5,21 +5,18 @@ download and run. This is a design/policy note, not a debug log.
 
 ---
 
-## Policy: biggest-first coder ladder — Active
+## Policy: Max + Mini model pack — Active
 
 **Last reviewed:** 2026-06-17
 **Status:** Active
 
 ### Summary
 
-Local Motion ships a curated Qwen3-Coder default for one-click setup.
-`automagicalCandidate()` picks the best compatible quantization from that
-repository. The default path must not silently downgrade to the older Qwen2.5
-family. The only automatic fallback is Gemma 4 26B A4B, selected over Gemma 4
-31B because 31B is too close to Qwen3's memory class to be a useful fallback.
-One-click setup downloads both selected GGUFs when they fit, starts Qwen3, and
-leaves Gemma in Downloaded Models for switching. Smaller or older models are
-explicit Advanced choices.
+Local Motion ships a fixed two-model one-click setup pack: **Max** is
+Qwen3-Coder-30B-A3B, and **Mini** is Gemma 4 26B A4B. Setup picks the best
+compatible Q4+ quantization for each model, preinstalls both when they fit, and
+starts the selected option. The default path must not silently downgrade to the
+older Qwen2.5 family. Smaller or older models are explicit Advanced choices.
 
 ### The ladder (source of truth)
 
@@ -32,7 +29,8 @@ the `BEGIN/END curated-ladder` markers:
 (Resolved from the live ranking on 2026-06-17 by `npm run models:refresh`.)
 
 `DEFAULT_MODEL_REPO` (and the `localMotion.defaultModelRepo` package.json
-default) is ladder entry 1. A user override is tried first.
+default) remains the Advanced repository default. One-click setup uses the
+fixed Max + Mini pack.
 
 ### Source
 
@@ -46,13 +44,17 @@ counts** among reputable publishers, not by the blog post.
 
 - **Aggressive default.** VS Code/Cursor extension users are power users; the
   default is Qwen3-Coder, not a conservative Qwen2.5 fallback.
-- **Gemma 4 26B fallback.** Gemma 4 31B and 26B are both available as GGUF.
+- **Gemma 4 26B Mini.** Gemma 4 31B and 26B are both available as GGUF.
   31B is not useful as a fallback because it is effectively in the same memory
   tier as Qwen3-Coder-30B-A3B. Gemma 4 26B A4B is the smaller current-generation
-  fallback.
-- **Download both.** The one-click path downloads the best compatible Qwen3
-  quant and the best compatible Gemma 4 26B quant, then starts Qwen3. The user
-  can switch to Gemma from Downloaded Models without another network wait.
+  Mini.
+- **Preinstall both.** The one-click path downloads the best compatible Qwen3
+  quant and the best compatible Gemma 4 26B quant, then starts the selected
+  option. The user can switch between Max and Mini without another network wait.
+- **Slots are replaceable.** Max and Mini have default repos, but users can
+  paste a different Hugging Face GGUF repo into either slot. Replacement uses
+  the same compatibility, Q4+ floor, resumable download, and slot persistence as
+  the default pack.
 - **MoE memory math is already correct.** `classifyCompatibility` sizes on
   *total* parameters, which is right — all experts must be resident in unified
   memory even though only ~3B activate. (The `×1.32` runtime overhead is mildly
