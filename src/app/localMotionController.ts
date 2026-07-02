@@ -268,7 +268,14 @@ export class LocalMotionController {
       throw new Error("That download is incomplete. Finish downloading it or delete it.");
     }
     const modelPath = resolveDownloadedModelId(this.modelsRoot(), id);
-    const installed: InstalledModel = {
+    const slottedModel = this.localModelPack()
+      .map((option) => this.state.modelSlot(option.id))
+      .find((slot) => slot && path.resolve(slot.modelPath) === path.resolve(modelPath));
+    const installed: InstalledModel = slottedModel ? {
+      ...slottedModel,
+      modelId: LOCAL_MOTION_MODEL_ID,
+      contextTokens: this.contextTokensSetting()
+    } : {
       // The storage id is <safeId(repoId-revision)>/<fileName>; the folder
       // name is the best surviving record of the source repo and is only
       // used for parameter-count inference and display fallbacks.
