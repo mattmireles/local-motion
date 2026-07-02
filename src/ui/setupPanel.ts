@@ -202,6 +202,15 @@ class SetupWebviewSession {
             });
           }
           break;
+        case SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION:
+          if (message.modelOptionId !== "max" && message.modelOptionId !== "mini") {
+            throw new Error("No model slot was selected.");
+          }
+          if (!message.fileName) {
+            throw new Error("No quantization was selected.");
+          }
+          await this.post(await this.controller.selectQuantization(message.modelOptionId, message.fileName));
+          break;
         case SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL:
           if (this.setupOperationActive) {
             throw new Error("Wait for setup to finish before deleting downloaded models.");

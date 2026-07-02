@@ -624,13 +624,25 @@ export function setupPanelHtml(nonce: string): string {
         const detail = [
           option.summary,
           option.quantization,
-          option.requiredMemory ? option.requiredMemory + ' runtime memory' : '',
+          option.contextWindow ? option.contextWindow + ' context' : '',
           option.downloadSize ? option.downloadSize + ' download' : ''
         ].filter(Boolean).join(' · ');
+        // The chooser appears only while there is a real choice to make —
+        // before download, with more than one compatible level. Each entry
+        // states its consequence (size, context) so the trade is legible
+        // without leaving the card.
+        const choices = (!option.downloadedModelId && Array.isArray(option.quantizationChoices) && option.quantizationChoices.length > 1)
+          ? option.quantizationChoices : undefined;
+        const chooser = choices
+          ? '<span class="model-quant"><select data-quant-option="' + esc(option.id) + '" aria-label="Quantization for ' + esc(option.label) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>' +
+              choices.map(choice => '<option value="' + esc(choice.fileName) + '"' + (choice.fileName === option.fileName ? ' selected' : '') + '>' + esc(choice.label) + '</option>').join('') +
+            '</select></span>'
+          : '';
         return '<div class="model-option' + (selected ? ' selected' : '') + (active ? ' active' : '') + '" data-option-id="' + esc(option.id) + '" role="radio" tabindex="0" aria-checked="' + (selected ? 'true' : 'false') + '"' + (unavailable ? ' title="' + esc(option.statusText) + '"' : '') + '>' +
           '<span class="model-title"><strong>' + esc(option.label) + '</strong><span>' + esc(option.modelName) + '</span></span>' +
           '<span class="model-meta">' + esc(detail || option.repoId) + '</span>' +
           '<span class="model-status">' + esc(option.statusText) + '</span>' +
+          chooser +
           '<span class="model-repo">' + esc(option.repoId) + '</span>' +
           '<span class="model-replace"><input data-repo-input="' + esc(option.id) + '" value="' + esc(option.repoId) + '" aria-label="Hugging Face repository for ' + esc(option.label) + '"><button class="btn ghost" data-replace-option="' + esc(option.id) + '"' + (state.setupOperationRunning ? ' disabled' : '') + '>Replace</button></span>' +
         '</div>';
@@ -638,7 +650,7 @@ export function setupPanelHtml(nonce: string): string {
 
       for (const optionEl of els.modelOptions.querySelectorAll('[data-option-id]')) {
         optionEl.addEventListener('click', event => {
-          if (event.target && (event.target.closest('input') || event.target.closest('button'))) return;
+          if (event.target && (event.target.closest('input') || event.target.closest('button') || event.target.closest('select'))) return;
           state.selectedModelOptionId = optionEl.dataset.optionId;
           render();
         });
@@ -655,6 +667,11 @@ export function setupPanelHtml(nonce: string): string {
           const optionId = button.dataset.replaceOption;
           const input = els.modelOptions.querySelector('input[data-repo-input="' + optionId + '"]');
           replaceModelOption(optionId, input ? input.value : '');
+        });
+      }
+      for (const select of els.modelOptions.querySelectorAll('select[data-quant-option]')) {
+        select.addEventListener('change', () => {
+          vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION}', modelOptionId: select.dataset.quantOption, fileName: select.value });
         });
       }
     }

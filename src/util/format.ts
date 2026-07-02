@@ -12,6 +12,14 @@ export function formatBytes(bytes: number | undefined): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+/**
+ * Context windows in the familiar "128k" shape (binary k, matching how
+ * model vendors label them: 131072 → "128k", 32768 → "32k").
+ */
+export function formatTokenWindow(tokens: number): string {
+  return `${Math.floor(tokens / 1024)}k`;
+}
+
 export function safeId(input: string): string {
   return input
     .toLowerCase()

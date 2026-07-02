@@ -55,10 +55,27 @@ counts** among reputable publishers, not by the blog post.
   paste a different Hugging Face GGUF repo into either slot. Replacement uses
   the same compatibility, Q4+ floor, resumable download, and slot persistence as
   the default pack.
-- **MoE memory math is already correct.** `classifyCompatibility` sizes on
-  *total* parameters, which is right — all experts must be resident in unified
-  memory even though only ~3B activate. (The `×1.32` runtime overhead is mildly
-  conservative for MoE, since KV/compute scale with active params; safe.)
+- **Weights are sized from the real file, KV from a flat per-token constant.**
+  `classifyCompatibility` charges the GGUF file size ×1.1 (mmap'd weights plus
+  compute buffers) — right for MoE too, since all experts must be resident in
+  unified memory even though only ~3-4B activate. KV cache is a flat
+  96KB/token (q8_0 cache — the spawn passes `-ctk/-ctv q8_0`, half the f16
+  cost): at f16, modern GQA models cluster ~96-262KB/token with no useful
+  correlation to total parameter count, and the old params-linear scale
+  overcharged a 30B MoE ~5×, branding every model incompatible at large
+  context (see the 2026-07-02 issue below).
+- **`localMotion.contextTokens` is a ceiling, not a demand.** The runtime fits
+  the largest context the memory budget affords at spawn time
+  (`fitContextTokens`, applied in `LlamaServerManager` where `-c` is written),
+  capped by the setting. A big cap can never brand a model incompatible; only
+  "cannot fit even 32k tokens" blocks.
+- **Each model card shows its context window and a quantization chooser.**
+  The card meta reads "Q8_0 · 128k context · 30.3 GB download"; before
+  download, a per-card dropdown lists compatible Q4+ quantizations, each
+  labeled with the context window this Mac would get, so the quality/context
+  trade is legible on machines where they compete. The choice is
+  session-scoped (`selectQuantization`); the downloaded file is the durable
+  record.
 - **4-bit quality floor.** `meetsAutomagicalQualityFloor` (Q4 = score 40) keeps
   the one-click path from selecting a badly crushed quantization. Manual
   installs from Advanced are exempt.
@@ -91,6 +108,60 @@ single-file Q4+ quant. Defaults are **never** auto-merged from the open internet
 - [`src/models/compatibility.ts`](src/models/compatibility.ts) — quality floor,
   shard detection, compatibility/memory math.
 - [`src/app/localMotionController.ts`](src/app/localMotionController.ts) —
-  `automagicalCandidate()` ladder walk.
+  `automagicalCandidates()` fixed Max + Mini pack selection.
 - Tests: `tests/pure-logic.test.mjs` (ladder order, quality floor, shard
   detection), `tests/extension-wiring.test.mjs` (package.json default).
+
+---
+
+## Issue: Params-Linear KV Estimate Branded Every Model Incompatible — Resolved
+
+**First spotted:** 2026-07-02
+**Resolved:** 2026-07-02
+**Status:** Resolved
+
+### Symptom
+
+With `localMotion.contextTokens: 131072`, both Max and Mini read "Needs about
+67.7 GB runtime memory; available budget is 51.2 GB" on a 64GB M2 Ultra —
+every quantization of both pinned repos classified not-compatible, setup
+dead-ended.
+
+### Root Cause
+
+Three compounding defects. (1) The KV-cache estimate scaled linearly with
+*total* parameter count (`(tokens/8192) × (params/7) × 0.85GiB`), charging
+Qwen3-Coder-30B-A3B ~58GB of phantom KV at 131k tokens; the real GQA cost is
+~96KB/token ≈ 12.6GB. (2) The setting was a hard demand: if the requested
+context did not fit, the model was "not compatible" rather than fitted to a
+smaller context. (3) The fit later lived in three controller sites plus the
+raw setting reaching `-c`, so the panel, persisted state, and the running
+server could each believe a different number.
+
+### Fix
+
+`fitContextTokens` in `src/models/compatibility.ts` is the single fit formula:
+flat 96KB/token KV (q8_0 cache), floor 32768 (below ~32k a coding agent
+cannot hold a real task, so the model reads as incompatible), capped by the
+(clamped) setting.
+`classifyCompatibility` consumes it for verdicts; `LlamaServerManager` applies
+it where `-c` is written, so every start path — panel, model switch, provider
+lazy start, Connect Cursor restart — is fitted by construction, and
+`startInstalledModel` persists exactly what ran. The 7B-default size-estimate
+fallback (`estimateModelBytes`/`parameterCount`) was deleted: unknown size is
+an honest not-compatible. The provider advertises one slot's window (minus
+the output reservation) because llama-server splits `-c` across `--parallel`
+slots.
+
+To meet the ≥128k-context requirement on a 64GB Mac at Q8 weights, the spawn
+uses `-ctk/-ctv q8_0` with `-fa on` (halves KV memory; V-quant requires flash
+attention) and `parallelRequests` defaults to 1 (a second slot silently
+halves every request's window; extra requests queue instead).
+
+### Executable Memory
+
+Regression test: `tests/pure-logic.test.mjs` — "a max contextTokens cap
+shrinks context to fit instead of branding the Mac incompatible", "an unknown
+file size is an honest not-compatible, never a guessed green light".
+Regression test: `tests/extension-wiring.test.mjs` — "the runtime owns the
+context fit; no start path can pass the raw setting to -c".

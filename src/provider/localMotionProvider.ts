@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { LOCAL_MOTION_MODEL_ID, type InstalledModel } from "../types";
 import type { OpenAiMessage } from "../runtime/openAiChat";
 import { streamChatCompletion } from "../runtime/openAiStream";
-import { LlamaServerManager } from "../runtime/llamaServer";
+import { LlamaServerManager, parallelRequestsSetting } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
 import { NO_INSTALLED_MODEL_MESSAGE } from "./providerMessages";
 
@@ -30,13 +30,24 @@ export class LocalMotionProvider implements vscode.LanguageModelChatProvider<vsc
       return [];
     }
 
+    // Prefer the running session's numbers — those are the -c and --parallel
+    // the server was actually spawned with. The persisted record and the
+    // live setting are the last run's values and can drift if settings
+    // changed since; they refresh on the next start.
+    const active = this.runtime.activeSession();
+    const contextTokens = active?.contextTokens ?? model.contextTokens;
+    // llama-server splits -c evenly across --parallel slots, and a slot
+    // holds prompt + completion together, so the honest input window is one
+    // slot minus the output reservation.
+    const slotTokens = Math.floor(contextTokens / (active?.parallelRequests ?? parallelRequestsSetting()));
+    const maxOutputTokens = 4096;
     const info: vscode.LanguageModelChatInformation = {
       id: LOCAL_MOTION_MODEL_ID,
       name: LOCAL_MOTION_MODEL_ID,
       family: "local-gguf",
       version: model.fileName,
-      maxInputTokens: model.contextTokens,
-      maxOutputTokens: 4096,
+      maxInputTokens: Math.max(1024, slotTokens - maxOutputTokens),
+      maxOutputTokens,
       tooltip: `${model.repoId}/${model.fileName}`,
       detail: model.displayName,
       capabilities: {

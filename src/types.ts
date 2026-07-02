@@ -22,7 +22,6 @@ export interface GgufFile {
   sha256?: string;
   revision?: string;
   quantization: string;
-  parameterCount?: number;
   downloadUrl: string;
 }
 
@@ -37,6 +36,14 @@ export interface CompatibilityResult {
   status: CompatibilityStatus;
   requiredMemoryBytes: number;
   requiredDiskBytes: number;
+  /**
+   * Panel-time estimate of the largest context this machine's memory budget
+   * affords for this file, capped by the `localMotion.contextTokens`
+   * ceiling. Display and provisional install records only — the runtime
+   * re-runs the same formula at spawn time (where `-c` is written) and
+   * startInstalledModel persists what actually ran.
+   */
+  fittedContextTokens: number;
   reasons: string[];
 }
 
@@ -52,6 +59,11 @@ export interface InstalledModel {
   modelPath: string;
   modelId: string;
   displayName: string;
+  /**
+   * Before a start this is a provisional value (a candidate's panel-time fit
+   * or the minimum floor); the runtime fits the real context at spawn and
+   * the persisted record then carries what the server actually ran with.
+   */
   contextTokens: number;
 }
 
@@ -73,6 +85,12 @@ export interface RuntimeSession {
   modelId: string;
   displayName: string;
   contextTokens: number;
+  /**
+   * The --parallel value this server was spawned with. The provider divides
+   * the advertised window by this, not the live setting — a mid-session
+   * settings change must not misstate what the running server can hold.
+   */
+  parallelRequests: number;
   baseUrl: string;
   upstreamBaseUrl: string;
   apiKey: string;

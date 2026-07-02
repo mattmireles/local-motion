@@ -25,9 +25,11 @@ frees the memory when you do not.
   Silicon Metal wired-memory limit (the real ceiling for GPU-resident GGUF
   weights), and estimates load cost at 1.1x file size plus explicit KV-cache
   and server overheads.
+- Fits the context window to the machine: the `localMotion.contextTokens`
+  setting is a ceiling, and every model start uses the largest context the
+  memory budget affords under it.
 - Never blocks a start on current free memory. macOS reclaims cache and
-  compresses idle apps on demand, so Local Motion shows a non-blocking
-  "memory is tight" warning instead of refusing, and reports an honest
+  compresses idle apps on demand, and Local Motion reports an honest
   out-of-memory explanation if `llama-server` genuinely cannot load.
 - Searches Hugging Face GGUF repositories and ranks compatible quantizations
   only when setup or advanced model controls need them.

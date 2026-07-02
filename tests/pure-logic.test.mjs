@@ -16,10 +16,11 @@ import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
   classifyCompatibility,
   effectiveMemoryBudget,
+  fitContextTokens,
   isAuxiliaryGgufFileName,
   isShardedGgufFileName,
   meetsAutomagicalQualityFloor,
-  parameterCountFromText,
+  MINIMUM_USABLE_CONTEXT_TOKENS,
   quantizationFromFileName,
   selectBestCompatibleQuantization
 } from "../out/models/compatibility.js";
@@ -69,10 +70,29 @@ test("extracts GGUF quantization names from common filenames", () => {
   assert.equal(quantizationFromFileName("model-f16.gguf"), "F16");
 });
 
-test("extracts parameter count from model text", () => {
-  assert.equal(parameterCountFromText("gemma-4-12B-coder"), 12);
-  assert.equal(parameterCountFromText("Qwen2.5-7.5B-Instruct"), 7.5);
-  assert.equal(parameterCountFromText("no-size-here"), undefined);
+test("an unknown file size is an honest not-compatible, never a guessed green light", () => {
+  // The deleted estimate fallback defaulted to 7B parameters — a ~4×
+  // undersize for the shipped 30B models that could approve a file the
+  // machine cannot hold. Unknown size now refuses to classify.
+  const GIB = 1024 ** 3;
+  const result = classifyCompatibility(
+    { sizeBytes: undefined },
+    {
+      platform: "darwin",
+      arch: "arm64",
+      cpuBrand: "Apple M2 Ultra",
+      isMac: true,
+      isAppleSilicon: true,
+      totalMemoryBytes: 64 * GIB,
+      availableMemoryBytes: 39 * GIB,
+      recommendedModelMemoryBytes: Math.floor(64 * GIB * 0.8),
+      storageRoot: "/tmp",
+      availableDiskBytes: 117 * GIB
+    },
+    131072
+  );
+  assert.equal(result.status, "not-compatible");
+  assert.match(result.reasons[0], /Could not read this file's size/);
 });
 
 test("uses stable model budget for compatibility selection", () => {
@@ -115,7 +135,6 @@ test("a 64GB Mac fits a 70B-class 4-bit model at moderate context", () => {
       fileName: "llama-70B-Q4_K_M.gguf",
       sizeBytes: 42_500_000_000,
       quantization: "Q4_K_M",
-      parameterCount: 70,
       downloadUrl: "https://example.invalid/llama-70B-Q4_K_M.gguf"
     },
     {
@@ -135,12 +154,99 @@ test("a 64GB Mac fits a 70B-class 4-bit model at moderate context", () => {
   assert.equal(result.status, "compatible");
 });
 
+test("a max contextTokens cap shrinks context to fit instead of branding the Mac incompatible", () => {
+  // Regression for the 2026-07-02 setup dead-end: contextTokens=131072 plus
+  // a params-linear KV estimate charged Qwen3-Coder-30B-A3B ~58GB of phantom
+  // KV cache (real GQA cost: ~12.6GB), so every quantization of both pinned
+  // models read "not compatible" on a 64GB M2 Ultra. The setting is a
+  // ceiling: compatibility must fit the largest affordable context under it.
+  const GIB = 1024 ** 3;
+  const machine = {
+    platform: "darwin",
+    arch: "arm64",
+    cpuBrand: "Apple M2 Ultra",
+    isMac: true,
+    isAppleSilicon: true,
+    totalMemoryBytes: 64 * GIB,
+    availableMemoryBytes: 39 * GIB,
+    recommendedModelMemoryBytes: Math.floor(64 * GIB * 0.8),
+    storageRoot: "/tmp",
+    availableDiskBytes: 117 * GIB
+  };
+  const qwenQ8 = classifyCompatibility(
+    {
+      repoId: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      fileName: "Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf",
+      sizeBytes: 32_500_000_000,
+      quantization: "Q8_0",
+      downloadUrl: "https://example.invalid/q8.gguf"
+    },
+    machine,
+    131072
+  );
+  assert.equal(qwenQ8.status, "compatible");
+  // With q8_0 KV cache, a 64GB Mac runs the Max model at Q8 weights with
+  // the full 128k window — the product requirement this math serves.
+  assert.equal(qwenQ8.fittedContextTokens, 131072);
+  // And the estimate stays inside the budget it was fitted to.
+  assert.equal(qwenQ8.requiredMemoryBytes <= machine.recommendedModelMemoryBytes, true);
+
+  // A bigger file shrinks context to fit instead of failing: at least a
+  // usable window, never more than the cap.
+  const bigFile = classifyCompatibility({ sizeBytes: 45_000_000_000 }, machine, 131072);
+  assert.equal(bigFile.status, "compatible");
+  assert.equal(bigFile.fittedContextTokens >= MINIMUM_USABLE_CONTEXT_TOKENS, true);
+  assert.equal(bigFile.fittedContextTokens < 131072, true);
+
+  // A small model with headroom to spare gets the full requested cap.
+  const smallModel = classifyCompatibility(
+    {
+      repoId: "example/tiny-GGUF",
+      fileName: "tiny-Q4_K_M.gguf",
+      sizeBytes: 4_000_000_000,
+      quantization: "Q4_K_M",
+      downloadUrl: "https://example.invalid/tiny.gguf"
+    },
+    machine,
+    131072
+  );
+  assert.equal(smallModel.fittedContextTokens, 131072);
+
+  // Genuine incompatibility still blocks: weights alone bust the budget,
+  // and the reason says so at the reduced floor context, not the cap.
+  const tooBig = classifyCompatibility(
+    {
+      repoId: "example/huge-GGUF",
+      fileName: "huge-F16.gguf",
+      sizeBytes: 80_000_000_000,
+      quantization: "F16",
+      downloadUrl: "https://example.invalid/huge.gguf"
+    },
+    machine,
+    131072
+  );
+  assert.equal(tooBig.status, "not-compatible");
+  assert.match(tooBig.reasons[0], /even at a minimal 32,768-token context/);
+
+  // The fit formula is the single source both classification and the
+  // llama-server spawn consume: capped by the request, floored at the
+  // minimum usable window, 0 when even the floor does not fit.
+  const budget = machine.recommendedModelMemoryBytes;
+  assert.equal(MINIMUM_USABLE_CONTEXT_TOKENS, 32768);
+  assert.equal(fitContextTokens(32_500_000_000, budget, true, 131072), 131072);
+  assert.equal(fitContextTokens(80_000_000_000, budget, true, 131072), 0);
+  const fitted = fitContextTokens(45_000_000_000, budget, true, 131072);
+  assert.equal(fitted >= MINIMUM_USABLE_CONTEXT_TOKENS && fitted < 131072, true);
+  // A model that squeezes in an 8k context but not 32k is not usable for
+  // coding — it must read as incompatible, not as a tiny-window tease.
+  assert.equal(fitContextTokens(48_000_000_000, budget, true, 131072), 0);
+});
+
 test("selects the highest-quality compatible quantization for automagical setup", () => {
   const base = {
     repoId: "example/model-GGUF",
     revision: "main",
     downloadUrl: "https://example.invalid/model.gguf",
-    parameterCount: 7
   };
   const selected = selectBestCompatibleQuantization([
     {
@@ -177,7 +283,6 @@ test("does not select an incompatible quantization for automagical setup", () =>
       revision: "main",
       quantization: "Q2_K",
       sizeBytes: 2,
-      parameterCount: 7,
       downloadUrl: "https://example.invalid/model.gguf",
       compatibility: { status: "not-compatible", requiredMemoryBytes: 2, requiredDiskBytes: 2, reasons: ["blocked"] }
     }

@@ -19,6 +19,20 @@ const execFile = promisify(childProcess.execFile);
  */
 const METAL_WIRED_LIMIT_FRACTION = 0.8;
 
+/**
+ * The model memory budget, synchronously and without subprocesses — the one
+ * number the context fit needs. {@link profileMachine} reports the same value
+ * as `recommendedModelMemoryBytes` so the panel and the spawn agree.
+ */
+export function modelMemoryBudgetBytes(): number {
+  return Math.floor(os.totalmem() * METAL_WIRED_LIMIT_FRACTION);
+}
+
+/** One predicate for both {@link profileMachine} and the spawn-time fit. */
+export function isAppleSiliconHost(): boolean {
+  return process.platform === "darwin" && process.arch === "arm64";
+}
+
 export async function profileMachine(storageRoot: string): Promise<MachineProfile> {
   const [cpuBrand, availableMemoryBytes, availableDiskBytes] = await Promise.all([
     readCpuBrand(),
@@ -28,7 +42,7 @@ export async function profileMachine(storageRoot: string): Promise<MachineProfil
 
   const totalMemoryBytes = os.totalmem();
   const isMac = process.platform === "darwin";
-  const isAppleSilicon = isMac && process.arch === "arm64";
+  const isAppleSilicon = isAppleSiliconHost();
 
   return {
     platform: process.platform,
@@ -38,7 +52,7 @@ export async function profileMachine(storageRoot: string): Promise<MachineProfil
     isAppleSilicon,
     totalMemoryBytes,
     availableMemoryBytes,
-    recommendedModelMemoryBytes: Math.floor(totalMemoryBytes * METAL_WIRED_LIMIT_FRACTION),
+    recommendedModelMemoryBytes: modelMemoryBudgetBytes(),
     storageRoot,
     availableDiskBytes
   };

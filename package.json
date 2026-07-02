@@ -106,17 +106,17 @@
         },
         "localMotion.contextTokens": {
           "type": "number",
-          "default": 8192,
+          "default": 131072,
           "minimum": 2048,
           "maximum": 131072,
-          "description": "Context window to request from llama-server."
+          "description": "Maximum context window. Local Motion automatically uses the largest context that fits this Mac's memory budget, up to this cap."
         },
         "localMotion.parallelRequests": {
           "type": "number",
-          "default": 2,
+          "default": 1,
           "minimum": 1,
           "maximum": 8,
-          "description": "Number of parallel requests to allow in llama-server."
+          "description": "Number of parallel llama-server slots. Each slot splits the context window, so 1 gives a single request the full window; extra requests queue."
         },
         "localMotion.downloadConcurrency": {
           "type": "number",

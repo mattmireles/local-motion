@@ -5,7 +5,7 @@ import { cursorTunnelConfigFromWorkspace } from "./cursorTunnelConfig";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
-import { classifyCompatibility, meetsAutomagicalQualityFloor, parameterCountFromText, quantizationFromFileName, selectBestCompatibleQuantization } from "../models/compatibility";
+import { meetsAutomagicalQualityFloor, MINIMUM_USABLE_CONTEXT_TOKENS, selectBestCompatibleQuantization } from "../models/compatibility";
 import {
   DEFAULT_MODEL_REPO,
   LOCAL_MODEL_PACK,
@@ -18,7 +18,7 @@ import { canReuseInstalledModel, canReuseInstalledModelForDefault } from "../mod
 import { hasCompletedAutomagicalSetupForInstalledModel } from "../onboarding";
 import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
-import { LlamaServerManager } from "../runtime/llamaServer";
+import { contextTokensCap, LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
 import {
   SETUP_RESPONSE_TYPE,
@@ -34,6 +34,7 @@ import {
   type RuntimeResponse,
   type SearchResultsResponse,
   type SetupInstalledModelView,
+  type SetupQuantizationChoiceView,
   type SetupStoragePayload,
   type SetupStateResponse
 } from "../setupProtocol";
@@ -41,11 +42,14 @@ import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
 import { profileMachine } from "../system/machineProfile";
 import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type DownloadedModelEntry, type InstalledModel, type RuntimeSession } from "../types";
-import { formatBytes, modelDisplayName } from "../util/format";
+import { formatBytes, formatTokenWindow, modelDisplayName } from "../util/format";
 
 export class LocalMotionController {
   private readonly cursorSetup: CursorSetupWorkflow;
-  private modelOptionCandidates: Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> | undefined;
+  private modelOptionCandidates: Promise<Map<LocalModelOptionId, CandidateQuantization[] | Error>> | undefined;
+  // Session-scoped dropdown choices (fileName per option). Not persisted:
+  // once installed, the downloaded file itself is the durable record.
+  private readonly quantizationChoice = new Map<LocalModelOptionId, string>();
   private setupOperation: Promise<unknown> | undefined;
 
   constructor(
@@ -243,8 +247,6 @@ export class LocalMotionController {
       await this.startInstalledModel(installed, {
         allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
       });
-      await this.state.setInstalledModel(installed);
-      this.provider.refresh();
     }
 
     return this.initialState();
@@ -276,26 +278,25 @@ export class LocalMotionController {
       .find((slot) => slot && path.resolve(slot.modelPath) === path.resolve(modelPath));
     const installed: InstalledModel = slottedModel ? {
       ...slottedModel,
-      modelId: LOCAL_MOTION_MODEL_ID,
-      contextTokens: this.contextTokensSetting()
+      modelId: LOCAL_MOTION_MODEL_ID
     } : {
       // The storage id is <safeId(repoId-revision)>/<fileName>; the folder
       // name is the best surviving record of the source repo and is only
-      // used for parameter-count inference and display fallbacks.
+      // used for display fallbacks.
       repoId: path.dirname(id),
       fileName: model.fileName,
       sizeBytes: model.sizeBytes,
       modelPath,
       modelId: LOCAL_MOTION_MODEL_ID,
       displayName: model.fileName.replace(/\.gguf$/i, ""),
-      contextTokens: this.contextTokensSetting()
+      // Provisional: the runtime fits the real context at spawn and
+      // startInstalledModel persists what actually ran.
+      contextTokens: MINIMUM_USABLE_CONTEXT_TOKENS
     };
 
     await this.startInstalledModel(installed, {
       allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
     });
-    await this.state.setInstalledModel(installed);
-    this.provider.refresh();
     return this.initialState();
   }
 
@@ -335,24 +336,31 @@ export class LocalMotionController {
   }
 
   async connectCursor(): Promise<CursorSetupPreparedResponse> {
-    const status = this.runtime.status();
-    // A running session whose tunnel died (or never came up) can only be
-    // healed by a restart — the tunnel child spawns with the model.
-    if (status.running && (!status.cursorTunnel?.enabled || !status.cursorTunnel.url)) {
-      const active = this.runtime.activeSession();
-      if (active) {
-        await this.runtime.stop();
-        await this.startInstalledModel(active, {
-          allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
-          connectCursor: true
-        });
+    // Serialized with installs/switches: a Connect fired from the command
+    // palette mid-install would otherwise interleave a stop() with another
+    // operation's start.
+    return this.withSetupOperation(async () => {
+      const status = this.runtime.status();
+      // A running session whose tunnel died (or never came up) can only be
+      // healed by a restart — the tunnel child spawns with the model.
+      if (status.running && (!status.cursorTunnel?.enabled || !status.cursorTunnel.url)) {
+        const active = this.runtime.activeSession();
+        if (active) {
+          await this.runtime.stop();
+          await this.startInstalledModel(active, {
+            allowInstall: allowLlamaInstallForAutomagicalStart("explicit"),
+            connectCursor: true
+          });
+        }
       }
-    }
 
-    return this.prepareCursorAfterStartingInstalledModel();
+      return this.prepareCursorAfterStartingInstalledModel();
+    });
   }
 
-  async prepareCursorAfterStartingInstalledModel(): Promise<CursorSetupPreparedResponse> {
+  // Private on purpose: called only inside connectCursor's setup-operation
+  // lock. A public entry here would start a model outside that serialization.
+  private async prepareCursorAfterStartingInstalledModel(): Promise<CursorSetupPreparedResponse> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();
       if (installedModel) {
@@ -464,7 +472,7 @@ export class LocalMotionController {
 
   private async defaultQuantizations(repoId: string): Promise<CandidateQuantization[]> {
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
-    return listQuantizations(repoId, machine, this.contextTokensSetting());
+    return listQuantizations(repoId, machine, contextTokensCap());
   }
 
   private async automagicalCandidates(): Promise<CandidateQuantization[]> {
@@ -472,7 +480,7 @@ export class LocalMotionController {
     const selected: CandidateQuantization[] = [];
     const candidates = await this.modelOptionCandidateMap();
     for (const option of this.localModelPack()) {
-      const candidate = candidates.get(option.id);
+      const candidate = this.optionCandidate(option.id, candidates.get(option.id));
       if (candidate && !(candidate instanceof Error)) {
         selected.push(candidate);
       } else {
@@ -496,8 +504,6 @@ export class LocalMotionController {
     await this.startInstalledModel(installed, {
       allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
     });
-    await this.state.setInstalledModel(installed);
-    this.provider.refresh();
     return installed;
   }
 
@@ -524,8 +530,6 @@ export class LocalMotionController {
     await this.startInstalledModel(installed, {
       allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
     });
-    await this.state.setInstalledModel(installed);
-    this.provider.refresh();
     return installed;
   }
 
@@ -537,10 +541,10 @@ export class LocalMotionController {
     const displayName = modelDisplayName(candidate.repoId, candidate.fileName);
     // Report the memory picture for the UI, but do NOT gate the download on it.
     // A multi-GB download takes a long time and current free RAM is irrelevant
-    // until the model is actually loaded. The real memory gate lives in
-    // startInstalledModel(), which re-checks at load time — so a tight machine
-    // still gets the (already-downloaded) model and only has to close apps and
-    // turn it on again, with no second download.
+    // until the model is actually loaded. The honest memory gate is llama-server
+    // itself at load time (caught and explained by withMemoryHint) — so a tight
+    // machine still gets the (already-downloaded) model and only has to close
+    // apps and turn it on again, with no second download.
     const machine = await profileMachine(this.context.globalStorageUri.fsPath);
     onModelSelected(
       displayName,
@@ -556,7 +560,7 @@ export class LocalMotionController {
       modelPath,
       modelId: LOCAL_MOTION_MODEL_ID,
       displayName,
-      contextTokens: this.contextTokensSetting()
+      contextTokens: candidate.compatibility.fittedContextTokens
     };
   }
 
@@ -564,21 +568,25 @@ export class LocalMotionController {
     installed: InstalledModel,
     options: { allowInstall: boolean; connectCursor?: boolean }
   ): Promise<RuntimeSession> {
-    const cursorModel = {
-      ...installed,
-      modelId: LOCAL_MOTION_MODEL_ID,
-      contextTokens: this.contextTokensSetting()
-    };
-    await this.warnIfMemoryTight(cursorModel);
     const llamaServerPath = await this.resolver.resolve({ allowInstall: options.allowInstall });
     const tunnelConfig = options.connectCursor ? cursorTunnelConfigFromWorkspace({ forceCursor: true }) : undefined;
-    const session = await this.runtime.start(cursorModel, llamaServerPath, undefined, tunnelConfig).catch((error: unknown) => {
-      throw withMemoryHint(error, cursorModel.displayName);
+    const session = await this.runtime.start(installed, llamaServerPath, undefined, tunnelConfig).catch((error: unknown) => {
+      throw withMemoryHint(error, installed.displayName);
     });
-    if (installed.modelId !== LOCAL_MOTION_MODEL_ID || installed.contextTokens !== cursorModel.contextTokens) {
-      await this.state.setInstalledModel(cursorModel);
-      this.provider.refresh();
-    }
+    // Persist exactly what runs. The runtime owns the context fit (the -c it
+    // spawned is in session.contextTokens); explicit picks keep session-only
+    // fields like the bearer key out of globalState.
+    await this.state.setInstalledModel({
+      repoId: session.repoId,
+      fileName: session.fileName,
+      revision: session.revision,
+      sizeBytes: session.sizeBytes,
+      modelPath: session.modelPath,
+      modelId: LOCAL_MOTION_MODEL_ID,
+      displayName: session.displayName,
+      contextTokens: session.contextTokens
+    });
+    this.provider.refresh();
     await vscode.window.showInformationMessage(`${session.displayName} is running locally.`);
     return session;
   }
@@ -612,10 +620,6 @@ export class LocalMotionController {
     }
   }
 
-  private contextTokensSetting(): number {
-    return vscode.workspace.getConfiguration("localMotion").get<number>("contextTokens", 8192);
-  }
-
   private async reusableInstalledModel(options: { requireCurrentDefault?: boolean } = {}): Promise<InstalledModel | undefined> {
     const installedModel = this.state.installedModel();
     const actualSizeBytes = installedModel ? await this.modelFileSize(installedModel.modelPath) : undefined;
@@ -631,33 +635,6 @@ export class LocalMotionController {
     const slot = this.state.modelSlot(optionId);
     const actualSizeBytes = slot ? await this.modelFileSize(slot.modelPath) : undefined;
     return canReuseInstalledModel(slot, actualSizeBytes) ? slot : undefined;
-  }
-
-  /**
-   * Advisory only, never blocking. macOS keeps "free" memory near zero by
-   * design (cache fills idle RAM) and reclaims it on demand — it evicts
-   * file cache and compresses idle apps the moment the model asks for
-   * pages. Instantaneous free memory therefore does not predict whether
-   * the model loads; the honest failure signal is llama-server itself,
-   * which startInstalledModel catches and explains.
-   */
-  private async warnIfMemoryTight(installed: InstalledModel): Promise<void> {
-    const machine = await profileMachine(this.context.globalStorageUri.fsPath);
-    const compatibility = classifyCompatibility({
-      repoId: installed.repoId,
-      fileName: installed.fileName,
-      sizeBytes: installed.sizeBytes,
-      revision: installed.revision,
-      quantization: quantizationFromFileName(installed.fileName),
-      parameterCount: parameterCountFromText(`${installed.repoId} ${installed.fileName}`),
-      downloadUrl: ""
-    }, machine, installed.contextTokens);
-    if (compatibility.requiredMemoryBytes <= machine.availableMemoryBytes) {
-      return;
-    }
-    void vscode.window.showWarningMessage(
-      `Memory is tight: ${installed.displayName} wants about ${formatBytes(compatibility.requiredMemoryBytes)} and about ${formatBytes(machine.availableMemoryBytes)} looks free right now. macOS will make room, but other apps may slow down while it runs.`
-    );
   }
 
   // Every status-bearing response carries the same cursor + storage envelope
@@ -717,7 +694,8 @@ export class LocalMotionController {
         const downloadedId = slot ? this.downloadedModelIdForPath(slot.modelPath, downloadedModels) : undefined;
         const downloaded = downloadedId ? downloadedModels.find((model) => model.id === downloadedId && !model.partial) : undefined;
         const active = downloaded?.active === true;
-        const candidate = candidates.get(option.id);
+        const quantizations = candidates.get(option.id);
+        const candidate = this.optionCandidate(option.id, quantizations);
         const isDefaultRepo = option.repoId === LOCAL_MODEL_PACK.find((candidateOption) => candidateOption.id === option.id)?.repoId;
         const status = active
           ? "running"
@@ -738,6 +716,14 @@ export class LocalMotionController {
           quantization: candidate instanceof Error ? undefined : candidate?.quantization,
           downloadSize: candidate instanceof Error ? slot?.sizeBytes ? formatBytes(slot.sizeBytes) : undefined : candidate?.sizeBytes ? formatBytes(candidate.sizeBytes) : undefined,
           requiredMemory: candidate instanceof Error ? undefined : candidate?.compatibility ? formatBytes(candidate.compatibility.requiredMemoryBytes) : undefined,
+          contextWindow: !(candidate instanceof Error) && candidate?.compatibility
+            ? formatTokenWindow(candidate.compatibility.fittedContextTokens)
+            : undefined,
+          // The chooser only makes sense before a file exists; once
+          // downloaded, the file on disk is the fact the card reports.
+          quantizationChoices: !downloaded && quantizations && !(quantizations instanceof Error)
+            ? this.quantizationChoiceViews(quantizations)
+            : undefined,
           downloadedModelId: downloaded?.id,
           statusText: active
             ? "Running"
@@ -762,7 +748,7 @@ export class LocalMotionController {
     return downloadedModels.find((model) => model.id === relative)?.id;
   }
 
-  private async modelOptionCandidateMap(): Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> {
+  private async modelOptionCandidateMap(): Promise<Map<LocalModelOptionId, CandidateQuantization[] | Error>> {
     if (!this.modelOptionCandidates) {
       this.modelOptionCandidates = this.loadModelOptionCandidates();
     }
@@ -776,29 +762,91 @@ export class LocalMotionController {
     return candidates;
   }
 
-  private async loadModelOptionCandidates(): Promise<Map<LocalModelOptionId, CandidateQuantization | Error>> {
-    const entries = await Promise.all(this.localModelPack().map(async (option): Promise<[LocalModelOptionId, CandidateQuantization | Error]> => {
+  private async loadModelOptionCandidates(): Promise<Map<LocalModelOptionId, CandidateQuantization[] | Error>> {
+    const entries = await Promise.all(this.localModelPack().map(async (option): Promise<[LocalModelOptionId, CandidateQuantization[] | Error]> => {
       try {
         const quantizations = await this.defaultQuantizations(option.repoId);
         if (quantizations.length === 0) {
           return [option.id, new Error("Hugging Face returned no model files — likely a network hiccup. Try again.")];
         }
-        const candidate = selectBestCompatibleQuantization(quantizations);
-        if (!candidate) {
-          // All candidates were classified not-compatible; say why, using the
-          // smallest one's blocking reason instead of a generic verdict.
-          const reason = quantizations[0]?.compatibility.reasons[0];
-          return [option.id, new Error(reason ?? "No compatible quantization found")];
-        }
-        if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
-          return [option.id, new Error(`Only ${candidate.quantization} fits, below the Q4 floor`)];
-        }
-        return [option.id, candidate];
+        return [option.id, quantizations];
       } catch (error) {
         return [option.id, error instanceof Error ? error : new Error(String(error))];
       }
     }));
     return new Map(entries);
+  }
+
+  /**
+   * The candidate an option would install: the user's dropdown choice when
+   * one is set and still compatible, else the automagical best (which must
+   * clear the Q4 quality floor — an explicit choice is exempt).
+   */
+  private optionCandidate(
+    optionId: LocalModelOptionId,
+    quantizations: CandidateQuantization[] | Error | undefined
+  ): CandidateQuantization | Error | undefined {
+    if (!quantizations || quantizations instanceof Error) {
+      return quantizations;
+    }
+    const chosenFileName = this.quantizationChoice.get(optionId);
+    const chosen = chosenFileName
+      ? quantizations.find((candidate) => candidate.fileName === chosenFileName && candidate.compatibility.status === "compatible")
+      : undefined;
+    if (chosen) {
+      return chosen;
+    }
+    const candidate = selectBestCompatibleQuantization(quantizations);
+    if (!candidate) {
+      // All candidates were classified not-compatible; say why, using the
+      // smallest one's blocking reason instead of a generic verdict.
+      const reason = quantizations[0]?.compatibility.reasons[0];
+      return new Error(reason ?? "No compatible quantization found");
+    }
+    if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
+      return new Error(`Only ${candidate.quantization} fits, below the Q4 floor`);
+    }
+    return candidate;
+  }
+
+  /**
+   * The chooser's entries: compatible files at Q4 quality or better with a
+   * recognizable quantization name, one per level (the list arrives
+   * preference-sorted, so the first file for each level is the best of its
+   * kind), each labeled with the context window this Mac would actually
+   * get. Sub-Q4 crush jobs and unparseable files stay in Advanced — a
+   * chooser should offer the ladder the product stands behind, not the
+   * whole warehouse.
+   */
+  private quantizationChoiceViews(quantizations: CandidateQuantization[]): SetupQuantizationChoiceView[] {
+    const seen = new Set<string>();
+    const choices: SetupQuantizationChoiceView[] = [];
+    for (const candidate of quantizations) {
+      if (
+        candidate.compatibility.status !== "compatible" ||
+        seen.has(candidate.quantization) ||
+        candidate.quantization === "Unknown" ||
+        !meetsAutomagicalQualityFloor(candidate.quantization)
+      ) {
+        continue;
+      }
+      seen.add(candidate.quantization);
+      choices.push({
+        fileName: candidate.fileName,
+        quantization: candidate.quantization,
+        label: `${candidate.quantization} · ${formatBytes(candidate.sizeBytes)} · ${formatTokenWindow(candidate.compatibility.fittedContextTokens)} context`
+      });
+    }
+    return choices;
+  }
+
+  async selectQuantization(optionId: LocalModelOptionId, fileName: string): Promise<SetupStateResponse> {
+    const quantizations = (await this.modelOptionCandidateMap()).get(optionId);
+    if (quantizations instanceof Error || !quantizations?.some((candidate) => candidate.fileName === fileName)) {
+      throw new Error("That quantization is not available for this model.");
+    }
+    this.quantizationChoice.set(optionId, fileName);
+    return this.initialState();
   }
 
   private installedModelView(installed: InstalledModel): SetupInstalledModelView {
@@ -811,11 +859,11 @@ export class LocalMotionController {
 }
 
 /**
- * llama-server dying during startup is the honest out-of-memory signal (the
- * advisory in warnIfMemoryTight never blocks), so explain the likely cause
- * and the way out. Only genuine server failures get the hint — all
- * llamaHealth failure messages start with "llama-server"; cancellations and
- * resolver errors pass through untouched.
+ * llama-server dying during startup is the honest out-of-memory signal —
+ * nothing upstream blocks on instantaneous free RAM, macOS makes room on
+ * demand — so explain the likely cause and the way out. Only genuine server
+ * failures get the hint: all llamaHealth failure messages start with
+ * "llama-server"; cancellations and resolver errors pass through untouched.
  */
 function withMemoryHint(error: unknown, modelName: string): Error {
   const original = error instanceof Error ? error : new Error(String(error));

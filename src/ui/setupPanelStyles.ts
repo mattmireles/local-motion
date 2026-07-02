@@ -181,6 +181,23 @@ export function setupPanelStyles(): string {
       line-height: 1.4;
       overflow-wrap: anywhere;
     }
+    /* The quantization chooser sits quietly between status and repo: the
+       same input treatment as the replace field, no added chrome. */
+    .model-quant {
+      grid-column: 1 / -1;
+      margin-top: 2px;
+    }
+    .model-quant select {
+      width: 100%;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 9px;
+      color: var(--vscode-input-foreground, var(--vscode-foreground));
+      background: var(--vscode-input-background, transparent);
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+    }
     .model-replace {
       grid-column: 1 / -1;
       display: grid;

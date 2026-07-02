@@ -1,6 +1,6 @@
 import type { CandidateQuantization, GgufFile, MachineProfile, ModelSearchResult } from "../types";
 import { parseContentLengthHeader } from "../runtime/runtimeGuards";
-import { classifyCompatibility, compareQuantizationPreference, isAuxiliaryGgufFileName, isShardedGgufFileName, parameterCountFromText, quantizationFromFileName } from "./compatibility";
+import { classifyCompatibility, compareQuantizationPreference, isAuxiliaryGgufFileName, isShardedGgufFileName, quantizationFromFileName } from "./compatibility";
 
 const HF_TIMEOUT_MS = 30_000;
 
@@ -67,7 +67,6 @@ export async function listQuantizations(
         sha256: parseSha256(sibling.lfs?.oid),
         revision,
         quantization: quantizationFromFileName(fileName),
-        parameterCount: parameterCountFromText(`${repoId} ${fileName}`),
         downloadUrl: url
       };
     }));

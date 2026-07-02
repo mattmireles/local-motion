@@ -18,6 +18,7 @@ export const SETUP_REQUEST_COMMAND = {
   STOP: "stop",
   START_DOWNLOADED_MODEL: "startDownloadedModel",
   REPLACE_MODEL_OPTION: "replaceModelOption",
+  SELECT_QUANTIZATION: "selectQuantization",
   DELETE_DOWNLOADED_MODEL: "deleteDownloadedModel",
   CONNECT_CURSOR: "connectCursor",
   PREPARE_CURSOR: "prepareCursor",
@@ -50,6 +51,7 @@ export type SetupRequest =
   | { command: typeof SETUP_REQUEST_COMMAND.STOP }
   | { command: typeof SETUP_REQUEST_COMMAND.START_DOWNLOADED_MODEL; id?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.REPLACE_MODEL_OPTION; modelOptionId?: LocalModelOptionId; repoId?: string }
+  | { command: typeof SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION; modelOptionId?: LocalModelOptionId; fileName?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.DELETE_DOWNLOADED_MODEL; id?: string }
   | { command: typeof SETUP_REQUEST_COMMAND.CONNECT_CURSOR }
   | { command: typeof SETUP_REQUEST_COMMAND.PREPARE_CURSOR }
@@ -93,6 +95,17 @@ export interface SetupStoragePayload {
   downloadedModelsSizeBytes: number;
 }
 
+/**
+ * One entry in a model option's quantization chooser. The label is
+ * preformatted host-side ("Q8_0 · 34.9 GB · 128k context") so the webview
+ * stays a dumb renderer of consequences, not a calculator of them.
+ */
+export interface SetupQuantizationChoiceView {
+  fileName: string;
+  quantization: string;
+  label: string;
+}
+
 export interface SetupModelOptionView {
   id: LocalModelOptionId;
   label: string;
@@ -104,6 +117,10 @@ export interface SetupModelOptionView {
   quantization?: string;
   downloadSize?: string;
   requiredMemory?: string;
+  /** The context window this Mac gets for the selected file, e.g. "128k". */
+  contextWindow?: string;
+  /** Compatible quantizations to choose from; present only before download. */
+  quantizationChoices?: SetupQuantizationChoiceView[];
   downloadedModelId?: string;
   statusText: string;
 }

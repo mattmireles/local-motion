@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 // These tests grep compiled/source text rather than executing the webview
@@ -207,7 +207,9 @@ test("setup surface shows downloaded model storage before advanced controls", as
   assert.match(panelSource, /function renderStorage\(\)/);
   assert.match(panelSource, /id="modelChooser"/);
   assert.match(panelSource, /function renderModelOptions\(\)/);
-  assert.match(panelSource, /requiredMemory \+ ' runtime memory'/);
+  // The card leads with the consequence a user plans around — the context
+  // window — not internal memory accounting.
+  assert.match(panelSource, /option\.contextWindow \+ ' context'/);
   assert.match(panelSource, /Install Max \+ Mini, Start/);
   assert.match(panelSource, /modelOptionId: option\.id/);
   assert.match(panelSource, /data-replace-option/);
@@ -232,24 +234,23 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.match(protocolSource, /SETUP_REQUEST_COMMAND\.START_DOWNLOADED_MODEL; id\?: string/);
 
   // The controller rebuilds an installed model from the on-disk file and
-  // reuses the normal start path (which stops the previous server), then
-  // persists it as the installed model so restarts pick the switched model.
+  // reuses the normal start path, which stops the previous server, fits the
+  // context, and persists the switched model so restarts pick it.
   assert.match(controllerSource, /async startDownloadedModel\(id: string\)/);
   assert.match(controllerSource, /resolveDownloadedModelId\(this\.modelsRoot\(\), id\)/);
   assert.match(controllerSource, /That download is incomplete/);
   const switchStart = controllerSource.indexOf("async startDownloadedModel");
-  const switchStartCall = controllerSource.indexOf("this.startInstalledModel(installed", switchStart);
-  const switchPersist = controllerSource.indexOf("await this.state.setInstalledModel(installed)", switchStart);
-  const switchBody = controllerSource.slice(switchStart, switchPersist);
-  assert.notEqual(switchStartCall, -1);
-  assert.notEqual(switchPersist, -1);
-  assert.equal(switchStartCall < switchPersist, true);
+  const switchEnd = controllerSource.indexOf("async deleteDownloadedModel", switchStart);
+  const switchBody = controllerSource.slice(switchStart, switchEnd);
+  assert.match(switchBody, /this\.startInstalledModel\(installed/);
   assert.match(switchBody, /const slottedModel = this\.localModelPack\(\)/);
   assert.match(switchBody, /this\.state\.modelSlot\(option\.id\)/);
   assert.match(switchBody, /path\.resolve\(slot\.modelPath\) === path\.resolve\(modelPath\)/);
   assert.match(switchBody, /\.\.\.slottedModel/);
   assert.match(switchBody, /modelId: LOCAL_MOTION_MODEL_ID/);
-  assert.match(switchBody, /contextTokens: this\.contextTokensSetting\(\)/);
+  // Persistence is owned by startInstalledModel; the switch path must not
+  // add a second, pre-fit write on top of it.
+  assert.equal(switchBody.includes("setInstalledModel"), false);
 
   // The host serializes switching behind the same setup-operation guard as
   // installs, and the webview offers Switch only for complete, inactive files.
@@ -275,18 +276,66 @@ test("downloaded models can be run directly from storage for manual switching", 
   assert.match(errorHandler, /state\.modelSwitchRunning = false;/);
 });
 
-test("every model start reads the live contextTokens setting, not the frozen record", async () => {
+test("the runtime owns the context fit; no start path can pass the raw setting to -c", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
+  const llamaSource = await readText("../src/runtime/llamaServer.ts");
+  const providerSource = await readText("../src/provider/localMotionProvider.ts");
+  const manifest = JSON.parse(await readText("../package.json"));
 
+  // The fit happens where -c is written, so the setup panel, model switch,
+  // provider lazy start, and Connect Cursor restart all get it by
+  // construction — there is no second fit site to drift from.
+  assert.match(llamaSource, /fitContextTokens\(sizeBytes, modelMemoryBudgetBytes\(\)/);
+  assert.match(llamaSource, /String\(contextTokens\)/);
+  assert.equal(llamaSource.includes("String(model.contextTokens)"), false);
+  assert.equal(controllerSource.includes("fitContextTokens"), false);
+
+  // The setting is a clamped ceiling read in exactly one place — anywhere
+  // in src/, not just the files this test happens to know about — so a
+  // hand-edited settings.json 0 or -5 can never reach llama-server.
+  assert.match(llamaSource, /Math\.min\(131072, Math\.max\(2048, Math\.floor\(raw\)\)\)/);
+  const sourceFiles = (await readdir(new URL("../src", import.meta.url), { recursive: true }))
+    .filter((name) => name.endsWith(".ts"));
+  const allSource = (await Promise.all(sourceFiles.map((name) => readText(`../src/${name}`)))).join("\n");
+  const configReads = allSource.match(/get<number>\("contextTokens"/g) ?? [];
+  assert.equal(configReads.length, 1);
+  assert.equal(manifest.contributes.configuration.properties["localMotion.contextTokens"].default, 131072);
+  assert.match(llamaSource, /get<number>\("contextTokens", 131072\)/);
+
+  // What runs is what persists: the session carries the fitted value and
+  // startInstalledModel writes exactly that record (explicit picks keep the
+  // session bearer key out of globalState).
   const startBody = controllerSource.slice(
     controllerSource.indexOf("private async startInstalledModel"),
     controllerSource.indexOf("private async modelFileSize")
   );
-  assert.match(startBody, /contextTokens: this\.contextTokensSetting\(\)/);
-  assert.match(startBody, /installed\.contextTokens !== cursorModel\.contextTokens/);
+  assert.match(startBody, /contextTokens: session\.contextTokens/);
+  assert.equal(startBody.includes("apiKey"), false);
 
-  const configReads = controllerSource.match(/get<number>\("contextTokens", 8192\)/g) ?? [];
-  assert.equal(configReads.length, 1);
+  // The provider advertises what one llama-server slot can actually hold:
+  // the running session's -c (not a possibly stale record) divided across
+  // --parallel slots, minus the output reservation that shares the slot.
+  assert.match(providerSource, /active\?\.contextTokens \?\? model\.contextTokens/);
+  assert.match(providerSource, /active\?\.parallelRequests \?\? parallelRequestsSetting\(\)/);
+  assert.match(providerSource, /maxInputTokens: Math\.max\(1024, slotTokens - maxOutputTokens\)/);
+
+  // 128k on a 64GB Mac is a product requirement: q8_0 KV cache (with flash
+  // attention pinned on, required for V-quant) halves context memory, and
+  // one parallel slot gives a single request the full window.
+  assert.match(llamaSource, /"-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0"/);
+  assert.equal(manifest.contributes.configuration.properties["localMotion.parallelRequests"].default, 1);
+  assert.match(llamaSource, /get<number>\("parallelRequests", 1\)/);
+
+  // Pre-Aug-2025 llama-server builds die on the value-taking -fa form, and
+  // some models lack flash-attention support; both exit before health and
+  // get exactly one retry on plain f16 KV, with upgrade guidance logged.
+  // Slow-load health timeouts must NOT retry.
+  assert.match(llamaSource, /error\.message\.startsWith\("llama-server failed"\)/);
+  assert.match(llamaSource, /spawnAndAwaitHealth\(baseArgs\)/);
+  assert.match(llamaSource, /brew upgrade llama\.cpp/);
+
+  // Installs stamp the candidate's fitted value as the provisional record.
+  assert.match(controllerSource, /contextTokens: candidate\.compatibility\.fittedContextTokens/);
 });
 
 test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor", async () => {
@@ -426,10 +475,51 @@ test("transient model-listing failures retry instead of dead-ending the panel", 
   assert.equal(panelSource.includes("' Unavailable'"), false);
 });
 
+test("model cards show the fitted context window and offer a quantization chooser", async () => {
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const controllerSource = await readText("../src/app/localMotionController.ts");
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
+  const stylesSource = await readText("../src/ui/setupPanelStyles.ts");
+
+  // Protocol: the chooser is a first-class command with preformatted,
+  // consequence-labeled entries (the webview never computes memory math).
+  assert.match(protocolSource, /SELECT_QUANTIZATION: "selectQuantization"/);
+  assert.match(protocolSource, /SetupQuantizationChoiceView/);
+  assert.match(protocolSource, /contextWindow\?: string/);
+
+  // Controller: the user's choice overrides the automagical best when still
+  // compatible; an explicit choice is exempt from the Q4 quality floor, and
+  // the choice must exist in the live candidate list to be accepted.
+  assert.match(controllerSource, /this\.quantizationChoice\.get\(optionId\)/);
+  assert.match(controllerSource, /candidate\.compatibility\.status === "compatible"/);
+  assert.match(controllerSource, /That quantization is not available for this model\./);
+  assert.match(controllerSource, /formatTokenWindow\(candidate\.compatibility\.fittedContextTokens\)/);
+
+  // Card copy states the consequence, and the chooser only renders while
+  // there is a real choice to make (pre-download, more than one level).
+  assert.match(panelSource, /option\.contextWindow \+ ' context'/);
+  assert.match(panelSource, /option\.quantizationChoices\.length > 1/);
+  assert.match(panelSource, /select data-quant-option/);
+  assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.SELECT_QUANTIZATION\}'/);
+  // Interacting with the chooser must not toggle the card's radio state.
+  assert.match(panelSource, /closest\('select'\)/);
+
+  // Host handles the command; styles keep the select on the same quiet
+  // input treatment as the replace field.
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.SELECT_QUANTIZATION/);
+  assert.match(panelHostSource, /this\.controller\.selectQuantization\(message\.modelOptionId, message\.fileName\)/);
+  assert.match(stylesSource, /\.model-quant select/);
+});
+
 test("installed model state is committed before provider refresh", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
-  const setStateIndex = controllerSource.indexOf("await this.state.setInstalledModel(installed)");
-  const refreshIndex = controllerSource.indexOf("this.provider.refresh()", setStateIndex);
+  const startBody = controllerSource.slice(
+    controllerSource.indexOf("private async startInstalledModel"),
+    controllerSource.indexOf("private async modelFileSize")
+  );
+  const setStateIndex = startBody.indexOf("await this.state.setInstalledModel({");
+  const refreshIndex = startBody.indexOf("this.provider.refresh()", setStateIndex);
   assert.notEqual(setStateIndex, -1);
   assert.notEqual(refreshIndex, -1);
   assert.equal(setStateIndex < refreshIndex, true);
@@ -446,24 +536,23 @@ test("free memory never blocks a model: advisory at load, honest error from llam
   // The throwing runtime gate is gone too. macOS "free" memory is elastic
   // (cache eviction, compression), so instantaneous free RAM must never veto
   // a start — a 64GB Mac with many apps open was refusing models it could
-  // easily run. The load path warns instead.
+  // easily run.
   assert.equal(controllerSource.includes("assertCurrentMemoryReady"), false);
-  assert.match(controllerSource, /this\.warnIfMemoryTight\(cursorModel\)/);
-  const warnBody = controllerSource.slice(
-    controllerSource.indexOf("private async warnIfMemoryTight"),
-    controllerSource.indexOf("// Every status-bearing response")
-  );
-  assert.match(warnBody, /showWarningMessage/);
-  assert.equal(warnBody.includes("throw"), false);
+
+  // The "Memory is tight" advisory is gone as well: fitted contexts saturate
+  // the budget by design, so required-vs-free would have warned on nearly
+  // every large-model start — cry-wolf noise, and its own doc admitted free
+  // memory predicts nothing on macOS.
+  assert.equal(controllerSource.includes("warnIfMemoryTight"), false);
+  assert.equal(controllerSource.includes("Memory is tight"), false);
 
   // The honest out-of-memory signal is llama-server itself failing to start;
   // that failure is caught and explained with a way out.
   assert.match(controllerSource, /const tunnelConfig = options\.connectCursor \? cursorTunnelConfigFromWorkspace\(\{ forceCursor: true \}\) : undefined/);
-  assert.match(controllerSource, /runtime\.start\(cursorModel, llamaServerPath, undefined, tunnelConfig\)\.catch/);
-  assert.match(controllerSource, /withMemoryHint\(error, cursorModel\.displayName\)/);
+  assert.match(controllerSource, /runtime\.start\(installed, llamaServerPath, undefined, tunnelConfig\)\.catch/);
+  assert.match(controllerSource, /withMemoryHint\(error, installed\.displayName\)/);
 
-  // The download still runs before start; the memory advisory only fires
-  // afterwards, inside startInstalledModel.
+  // The download still runs before start.
   const installStart = controllerSource.indexOf("private async installAndStart");
   const installCandidateCall = controllerSource.indexOf("this.installCandidate(candidate", installStart);
   const startIndex = controllerSource.indexOf("this.startInstalledModel(installed", installStart);
@@ -472,12 +561,10 @@ test("free memory never blocks a model: advisory at load, honest error from llam
     controllerSource.indexOf("private async startInstalledModel")
   );
   const downloadIndex = installCandidateBody.indexOf("this.download(candidate");
-  const warnIndex = installCandidateBody.indexOf("this.warnIfMemoryTight");
   assert.notEqual(installCandidateCall, -1);
   assert.notEqual(downloadIndex, -1);
   assert.notEqual(startIndex, -1);
   assert.equal(installCandidateCall < startIndex, true);
-  assert.equal(warnIndex, -1);
 });
 
 test("startup resume does not prepare Cursor or expose a side-effectful controller method", async () => {

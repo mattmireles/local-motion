@@ -12,16 +12,95 @@ const GIB = 1024 ** 3;
  */
 const MODEL_LOAD_OVERHEAD = 1.1;
 
+/**
+ * q8_0 KV-cache cost per context token (the runtime spawns llama-server
+ * with `-ctk/-ctv q8_0`, half the f16 cost). At f16, modern local models
+ * (4B–32B, all GQA) cluster between ~96KB/token (Qwen3-30B-A3B: 48 layers
+ * × 4 KV heads × 128 head dim × 2 bytes × K+V) and ~262KB/token
+ * (Qwen3-32B dense), with no useful correlation to total parameter count —
+ * MoE decouples the two. The old params-linear scale charged a 30B MoE
+ * ~466KB/token, a 5× overestimate that branded every model incompatible at
+ * large context. A flat mid-class constant keeps the error within ~2×
+ * either way, and llama-server remains the final arbiter at load time.
+ */
+const KV_CACHE_BYTES_PER_TOKEN = 96 * 1024;
+
+/**
+ * Smallest context worth running a coding agent at. Below ~32k a coding
+ * agent cannot hold a real task — file contents, edits, and conversation
+ * overflow immediately — so a machine that cannot fit 32k on top of the
+ * weights cannot run the model, and the UI must say so rather than offer
+ * a window that will only disappoint.
+ */
+export const MINIMUM_USABLE_CONTEXT_TOKENS = 32_768;
+
+/**
+ * Weights + server overhead — everything a model costs before the first
+ * context token. The single expression both the fit and the displayed
+ * requirement derive from.
+ */
+function baseMemoryBytes(sizeBytes: number, isAppleSilicon: boolean): number {
+  const serverOverhead = isAppleSilicon ? 1.25 * GIB : 2 * GIB;
+  return Math.ceil(sizeBytes * MODEL_LOAD_OVERHEAD + serverOverhead);
+}
+
+/**
+ * The one context-fit formula in the codebase. Returns the largest context
+ * the memory budget affords for a model file, capped by `requestedTokens`,
+ * or 0 when even min(requested, {@link MINIMUM_USABLE_CONTEXT_TOKENS})
+ * does not fit. Both compatibility classification and the llama-server
+ * spawn (`-c`) must go through this — two fit sites was how the panel and
+ * the running server learned to disagree.
+ *
+ * Known gap: the fit is budget-aware, not model-aware. Nothing here reads
+ * the GGUF's trained context, so a small-native-context model pasted into
+ * Advanced on a big Mac can be spawned past its trained window (llama-server
+ * warns and runs with degraded output). The pinned pack is 256k-native, so
+ * the default flow never hits this.
+ */
+export function fitContextTokens(
+  sizeBytes: number,
+  memoryBudgetBytes: number,
+  isAppleSilicon: boolean,
+  requestedTokens: number
+): number {
+  const affordableTokens = Math.floor((memoryBudgetBytes - baseMemoryBytes(sizeBytes, isAppleSilicon)) / KV_CACHE_BYTES_PER_TOKEN);
+  const floorTokens = Math.min(requestedTokens, MINIMUM_USABLE_CONTEXT_TOKENS);
+  return affordableTokens >= floorTokens ? Math.min(requestedTokens, affordableTokens) : 0;
+}
+
+/**
+ * The `localMotion.contextTokens` setting is a ceiling, not a demand:
+ * compatibility fits the largest context the memory budget affords, capped
+ * by the requested value. A big cap must never brand a model incompatible —
+ * that failure mode is deleted, not handled.
+ */
 export function classifyCompatibility(
-  file: GgufFile,
+  file: Pick<GgufFile, "sizeBytes">,
   machine: MachineProfile,
-  contextTokens: number
+  requestedContextTokens: number
 ): CompatibilityResult {
-  const estimatedModelBytes = file.sizeBytes ?? estimateModelBytes(file);
-  const contextOverhead = estimateContextOverheadBytes(contextTokens, file.parameterCount);
-  const serverOverhead = machine.isAppleSilicon ? 1.25 * GIB : 2 * GIB;
-  const requiredMemoryBytes = Math.ceil(estimatedModelBytes * MODEL_LOAD_OVERHEAD + contextOverhead + serverOverhead);
-  const requiredDiskBytes = Math.ceil(estimatedModelBytes * 1.08 + 1 * GIB);
+  if (file.sizeBytes === undefined) {
+    // No size, no estimate. The old fallback guessed 7B parameters and
+    // green-lit files it knew nothing about; an honest "cannot check" beats
+    // a confident lie, and sizes are near-always present via ?blobs=true.
+    return {
+      status: "not-compatible",
+      requiredMemoryBytes: 0,
+      requiredDiskBytes: 0,
+      fittedContextTokens: 0,
+      reasons: ["Could not read this file's size from Hugging Face, so memory fit cannot be checked. Try again."]
+    };
+  }
+
+  const memoryBudget = effectiveMemoryBudget(machine);
+  const floorTokens = Math.min(requestedContextTokens, MINIMUM_USABLE_CONTEXT_TOKENS);
+  const fitted = fitContextTokens(file.sizeBytes, memoryBudget, machine.isAppleSilicon, requestedContextTokens);
+  const memoryFits = fitted > 0;
+  const fittedContextTokens = memoryFits ? fitted : floorTokens;
+
+  const requiredMemoryBytes = baseMemoryBytes(file.sizeBytes, machine.isAppleSilicon) + fittedContextTokens * KV_CACHE_BYTES_PER_TOKEN;
+  const requiredDiskBytes = Math.ceil(file.sizeBytes * 1.08 + 1 * GIB);
   const blockingReasons: string[] = [];
   const advisories: string[] = [];
 
@@ -32,10 +111,9 @@ export function classifyCompatibility(
     advisories.push("Apple Silicon is recommended for Metal acceleration.");
   }
 
-  const memoryBudget = effectiveMemoryBudget(machine);
-  if (requiredMemoryBytes > memoryBudget) {
+  if (!memoryFits) {
     blockingReasons.push(
-      `Needs about ${toGb(requiredMemoryBytes)} GB runtime memory; available budget is ${toGb(memoryBudget)} GB.`
+      `Needs about ${toGb(requiredMemoryBytes)} GB runtime memory even at a minimal ${floorTokens.toLocaleString("en-US")}-token context; available budget is ${toGb(memoryBudget)} GB.`
     );
   }
   if (requiredDiskBytes > machine.availableDiskBytes) {
@@ -46,6 +124,7 @@ export function classifyCompatibility(
     status: blockingReasons.length === 0 ? "compatible" : "not-compatible",
     requiredMemoryBytes,
     requiredDiskBytes,
+    fittedContextTokens,
     reasons:
       blockingReasons.length > 0
         ? blockingReasons
@@ -133,33 +212,6 @@ export function isAuxiliaryGgufFileName(fileName: string): boolean {
   return /mmproj/i.test(base) || /-mtp\.gguf$/i.test(base);
 }
 
-export function parameterCountFromText(text: string): number | undefined {
-  const match = text.match(/(\d+(?:\.\d+)?)\s*B\b/i);
-  if (!match) {
-    return undefined;
-  }
-  return Number(match[1]);
-}
-
-function estimateModelBytes(file: GgufFile): number {
-  const params = file.parameterCount ?? parameterCountFromText(`${file.repoId} ${file.fileName}`) ?? 7;
-  const bits = bitsPerWeight(file.quantization);
-  return Math.ceil(params * 1_000_000_000 * (bits / 8) * 1.12);
-}
-
-function bitsPerWeight(quantization: string): number {
-  const q = quantization.toUpperCase();
-  if (q === "F32") return 32;
-  if (q === "F16" || q === "BF16") return 16;
-  if (q.startsWith("Q8")) return 8;
-  if (q.startsWith("Q6")) return 6;
-  if (q.startsWith("Q5")) return 5;
-  if (q.startsWith("Q4") || q.startsWith("IQ4")) return 4;
-  if (q.startsWith("Q3") || q.startsWith("IQ3")) return 3;
-  if (q.startsWith("Q2") || q.startsWith("IQ2")) return 2;
-  return 5;
-}
-
 function quantizationQualityScore(quantization: string): number {
   const q = quantization.toUpperCase();
   if (q === "F32") return 320;
@@ -180,11 +232,6 @@ function quantizationVariantBonus(quantization: string): number {
   if (quantization.includes("_1")) return 0.2;
   if (quantization.includes("_0")) return 0.1;
   return 0;
-}
-
-function estimateContextOverheadBytes(contextTokens: number, parameterCount?: number): number {
-  const sizeFactor = Math.max(1, (parameterCount ?? 7) / 7);
-  return Math.ceil((contextTokens / 8192) * sizeFactor * 0.85 * GIB);
 }
 
 function toGb(bytes: number): string {
