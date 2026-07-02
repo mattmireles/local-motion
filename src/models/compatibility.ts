@@ -161,6 +161,66 @@ export function meetsAutomagicalQualityFloor(quantization: string): boolean {
   return quantizationQualityScore(quantization) >= AUTOMAGICAL_QUALITY_FLOOR;
 }
 
+/**
+ * Chooser eligibility: compatible, Q4-or-better, recognizably named. The
+ * setup panel's quantization dropdown offers exactly this set, and
+ * {@link chooseOptionCandidate} honors a stored pick only when it is still
+ * in this set — one predicate, so the chooser can never offer (or a crafted
+ * webview message select) a file the product does not stand behind.
+ */
+export function isChooserEligibleQuantization(candidate: CandidateQuantization): boolean {
+  return candidate.compatibility.status === "compatible" &&
+    candidate.quantization !== "Unknown" &&
+    meetsAutomagicalQualityFloor(candidate.quantization);
+}
+
+/**
+ * The chooser's candidate list: eligible files, one per quantization level.
+ * The input arrives preference-sorted, so the first file for each level is
+ * the best of its kind.
+ */
+export function chooserQuantizations(quantizations: CandidateQuantization[]): CandidateQuantization[] {
+  const seen = new Set<string>();
+  const choices: CandidateQuantization[] = [];
+  for (const candidate of quantizations) {
+    if (!isChooserEligibleQuantization(candidate) || seen.has(candidate.quantization)) {
+      continue;
+    }
+    seen.add(candidate.quantization);
+    choices.push(candidate);
+  }
+  return choices;
+}
+
+/**
+ * Resolve the file a model option installs: the user's chooser pick when it
+ * is still offered (a vanished or no-longer-eligible pick falls back
+ * silently — the listing is the truth), else the automagical best gated by
+ * the Q4 quality floor. Errors carry the honest blocking reason.
+ */
+export function chooseOptionCandidate(
+  quantizations: CandidateQuantization[],
+  chosenFileName: string | undefined
+): CandidateQuantization | Error {
+  const chosen = chosenFileName
+    ? chooserQuantizations(quantizations).find((candidate) => candidate.fileName === chosenFileName)
+    : undefined;
+  if (chosen) {
+    return chosen;
+  }
+  const candidate = selectBestCompatibleQuantization(quantizations);
+  if (!candidate) {
+    // All candidates were classified not-compatible; say why, using the
+    // smallest one's blocking reason instead of a generic verdict.
+    const reason = quantizations[0]?.compatibility.reasons[0];
+    return new Error(reason ?? "No compatible quantization found");
+  }
+  if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
+    return new Error(`Only ${candidate.quantization} fits, below the Q4 floor`);
+  }
+  return candidate;
+}
+
 export function compareQuantizationPreference(a: CandidateQuantization, b: CandidateQuantization): number {
   if (a.compatibility.status !== b.compatibility.status) {
     return a.compatibility.status === "compatible" ? -1 : 1;

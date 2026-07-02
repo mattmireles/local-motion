@@ -5,7 +5,7 @@ import { cursorTunnelConfigFromWorkspace } from "./cursorTunnelConfig";
 import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
-import { meetsAutomagicalQualityFloor, MINIMUM_USABLE_CONTEXT_TOKENS, selectBestCompatibleQuantization } from "../models/compatibility";
+import { chooseOptionCandidate, chooserQuantizations, fitContextTokens, MINIMUM_USABLE_CONTEXT_TOKENS, quantizationFromFileName } from "../models/compatibility";
 import {
   DEFAULT_MODEL_REPO,
   LOCAL_MODEL_PACK,
@@ -40,7 +40,7 @@ import {
 } from "../setupProtocol";
 import { allowLlamaInstallForAutomagicalStart } from "../setupPolicy";
 import { LocalMotionState } from "../state";
-import { profileMachine } from "../system/machineProfile";
+import { isAppleSiliconHost, modelMemoryBudgetBytes, profileMachine } from "../system/machineProfile";
 import { LOCAL_MOTION_MODEL_ID, type CandidateQuantization, type DownloadedModelEntry, type InstalledModel, type RuntimeSession } from "../types";
 import { formatBytes, formatTokenWindow, modelDisplayName } from "../util/format";
 
@@ -226,12 +226,11 @@ export class LocalMotionController {
       throw new Error("Paste a Hugging Face GGUF repository like owner/model-GGUF.");
     }
 
-    const candidate = selectBestCompatibleQuantization(await this.defaultQuantizations(normalizedRepo));
-    if (!candidate) {
-      throw new Error(`No compatible GGUF quantization found for ${normalizedRepo}.`);
-    }
-    if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
-      throw new Error(`${normalizedRepo} only fits at ${candidate.quantization}, below the Q4 automatic floor.`);
+    // Same decision logic as the pack options: automagical best, gated by
+    // the Q4 quality floor, with the honest blocking reason on failure.
+    const candidate = chooseOptionCandidate(await this.defaultQuantizations(normalizedRepo), undefined);
+    if (candidate instanceof Error) {
+      throw new Error(`${normalizedRepo}: ${candidate.message}`);
     }
 
     const previous = this.state.modelSlot(optionId);
@@ -684,26 +683,48 @@ export class LocalMotionController {
   }
 
   private async modelOptionsPayload(downloadedModels: DownloadedModelEntry[]): Promise<SetupModelOptionsPayload> {
-    const candidates = await this.modelOptionCandidateMap();
     const activeOption = this.slottedOptionId(downloadedModels.find((model) => model.active));
     const installedOption = this.slottedOptionId(downloadedModels.find((model) => model.installed));
+    const optionStates = this.localModelPack().map((option) => {
+      const slot = this.state.modelSlot(option.id);
+      const downloadedId = slot ? this.downloadedModelIdForPath(slot.modelPath, downloadedModels) : undefined;
+      const downloaded = downloadedId ? downloadedModels.find((model) => model.id === downloadedId && !model.partial) : undefined;
+      return { option, slot, downloaded };
+    });
+    // Disk facts need no network. When every slot is already downloaded the
+    // panel renders instantly and offline; the live Hugging Face listing is
+    // consulted only for options that still need a download.
+    const candidates = optionStates.every((state) => state.downloaded)
+      ? new Map<LocalModelOptionId, CandidateQuantization[] | Error>()
+      : await this.modelOptionCandidateMap();
     return {
       selectedModelOptionId: activeOption ?? installedOption ?? "max",
-      modelOptions: this.localModelPack().map((option): SetupModelOptionView => {
-        const slot = this.state.modelSlot(option.id);
-        const downloadedId = slot ? this.downloadedModelIdForPath(slot.modelPath, downloadedModels) : undefined;
-        const downloaded = downloadedId ? downloadedModels.find((model) => model.id === downloadedId && !model.partial) : undefined;
+      modelOptions: optionStates.map(({ option, slot, downloaded }): SetupModelOptionView => {
         const active = downloaded?.active === true;
+        const isDefaultRepo = option.repoId === LOCAL_MODEL_PACK.find((candidateOption) => candidateOption.id === option.id)?.repoId;
+        // Once a file is on disk, the card reports THAT file — its name,
+        // its quantization, its size, the window the runtime would fit for
+        // it — never the live listing's best candidate. A downloaded Q4
+        // must not masquerade as "Q8 · 128k" because Hugging Face answered.
+        if (downloaded) {
+          return {
+            id: option.id,
+            label: option.label,
+            modelName: isDefaultRepo ? option.modelName : option.repoId,
+            summary: isDefaultRepo ? option.summary : "Custom model",
+            repoId: option.repoId,
+            status: active ? "running" : "downloaded",
+            fileName: downloaded.fileName,
+            quantization: quantizationFromFileName(downloaded.fileName),
+            downloadSize: formatBytes(downloaded.sizeBytes),
+            contextWindow: this.fittedWindowForSize(downloaded.sizeBytes),
+            downloadedModelId: downloaded.id,
+            statusText: active ? "Running" : "Ready"
+          };
+        }
         const quantizations = candidates.get(option.id);
         const candidate = this.optionCandidate(option.id, quantizations);
-        const isDefaultRepo = option.repoId === LOCAL_MODEL_PACK.find((candidateOption) => candidateOption.id === option.id)?.repoId;
-        const status = active
-          ? "running"
-          : downloaded
-            ? "downloaded"
-            : candidate instanceof Error
-              ? "unavailable"
-              : "available";
+        const status = candidate instanceof Error ? "unavailable" : "available";
         const unavailableReason = candidate instanceof Error ? candidate.message : undefined;
         return {
           id: option.id,
@@ -712,24 +733,17 @@ export class LocalMotionController {
           summary: isDefaultRepo ? option.summary : "Custom model",
           repoId: option.repoId,
           status,
-          fileName: candidate instanceof Error ? downloaded?.fileName ?? slot?.fileName : candidate?.fileName ?? downloaded?.fileName ?? slot?.fileName,
+          fileName: candidate instanceof Error ? slot?.fileName : candidate?.fileName ?? slot?.fileName,
           quantization: candidate instanceof Error ? undefined : candidate?.quantization,
           downloadSize: candidate instanceof Error ? slot?.sizeBytes ? formatBytes(slot.sizeBytes) : undefined : candidate?.sizeBytes ? formatBytes(candidate.sizeBytes) : undefined,
           requiredMemory: candidate instanceof Error ? undefined : candidate?.compatibility ? formatBytes(candidate.compatibility.requiredMemoryBytes) : undefined,
           contextWindow: !(candidate instanceof Error) && candidate?.compatibility
             ? formatTokenWindow(candidate.compatibility.fittedContextTokens)
             : undefined,
-          // The chooser only makes sense before a file exists; once
-          // downloaded, the file on disk is the fact the card reports.
-          quantizationChoices: !downloaded && quantizations && !(quantizations instanceof Error)
+          quantizationChoices: quantizations && !(quantizations instanceof Error)
             ? this.quantizationChoiceViews(quantizations)
             : undefined,
-          downloadedModelId: downloaded?.id,
-          statusText: active
-            ? "Running"
-            : downloaded
-              ? "Ready"
-              : unavailableReason ?? "Not installed"
+          statusText: unavailableReason ?? "Not installed"
         };
       })
     };
@@ -778,9 +792,9 @@ export class LocalMotionController {
   }
 
   /**
-   * The candidate an option would install: the user's dropdown choice when
-   * one is set and still compatible, else the automagical best (which must
-   * clear the Q4 quality floor — an explicit choice is exempt).
+   * The candidate an option would install. The decision logic is pure and
+   * behaviorally tested in compatibility.ts; this only threads the stored
+   * choice through.
    */
   private optionCandidate(
     optionId: LocalModelOptionId,
@@ -789,64 +803,48 @@ export class LocalMotionController {
     if (!quantizations || quantizations instanceof Error) {
       return quantizations;
     }
-    const chosenFileName = this.quantizationChoice.get(optionId);
-    const chosen = chosenFileName
-      ? quantizations.find((candidate) => candidate.fileName === chosenFileName && candidate.compatibility.status === "compatible")
-      : undefined;
-    if (chosen) {
-      return chosen;
-    }
-    const candidate = selectBestCompatibleQuantization(quantizations);
-    if (!candidate) {
-      // All candidates were classified not-compatible; say why, using the
-      // smallest one's blocking reason instead of a generic verdict.
-      const reason = quantizations[0]?.compatibility.reasons[0];
-      return new Error(reason ?? "No compatible quantization found");
-    }
-    if (!meetsAutomagicalQualityFloor(candidate.quantization)) {
-      return new Error(`Only ${candidate.quantization} fits, below the Q4 floor`);
-    }
-    return candidate;
+    return chooseOptionCandidate(quantizations, this.quantizationChoice.get(optionId));
   }
 
   /**
-   * The chooser's entries: compatible files at Q4 quality or better with a
-   * recognizable quantization name, one per level (the list arrives
-   * preference-sorted, so the first file for each level is the best of its
-   * kind), each labeled with the context window this Mac would actually
-   * get. Sub-Q4 crush jobs and unparseable files stay in Advanced — a
-   * chooser should offer the ladder the product stands behind, not the
-   * whole warehouse.
+   * The chooser's entries, labeled with the consequences a user plans
+   * around. Eligibility and dedupe live in chooserQuantizations — sub-Q4
+   * crush jobs and unparseable files stay in Advanced; a chooser should
+   * offer the ladder the product stands behind, not the whole warehouse.
    */
   private quantizationChoiceViews(quantizations: CandidateQuantization[]): SetupQuantizationChoiceView[] {
-    const seen = new Set<string>();
-    const choices: SetupQuantizationChoiceView[] = [];
-    for (const candidate of quantizations) {
-      if (
-        candidate.compatibility.status !== "compatible" ||
-        seen.has(candidate.quantization) ||
-        candidate.quantization === "Unknown" ||
-        !meetsAutomagicalQualityFloor(candidate.quantization)
-      ) {
-        continue;
-      }
-      seen.add(candidate.quantization);
-      choices.push({
-        fileName: candidate.fileName,
-        quantization: candidate.quantization,
-        label: `${candidate.quantization} · ${formatBytes(candidate.sizeBytes)} · ${formatTokenWindow(candidate.compatibility.fittedContextTokens)} context`
-      });
-    }
-    return choices;
+    return chooserQuantizations(quantizations).map((candidate) => ({
+      fileName: candidate.fileName,
+      quantization: candidate.quantization,
+      label: `${candidate.quantization} · ${formatBytes(candidate.sizeBytes)} · ${formatTokenWindow(candidate.compatibility.fittedContextTokens)} context`
+    }));
   }
 
   async selectQuantization(optionId: LocalModelOptionId, fileName: string): Promise<SetupStateResponse> {
     const quantizations = (await this.modelOptionCandidateMap()).get(optionId);
-    if (quantizations instanceof Error || !quantizations?.some((candidate) => candidate.fileName === fileName)) {
+    // Only entries the chooser actually offers are selectable — a crafted
+    // webview message cannot reach a hidden sub-Q4 or unparseable file, and
+    // an incompatible pick is rejected loudly instead of ignored.
+    if (
+      quantizations instanceof Error ||
+      !quantizations ||
+      !chooserQuantizations(quantizations).some((candidate) => candidate.fileName === fileName)
+    ) {
       throw new Error("That quantization is not available for this model.");
     }
     this.quantizationChoice.set(optionId, fileName);
     return this.initialState();
+  }
+
+  /**
+   * Display-only: the window the runtime would fit for a file already on
+   * disk, from the same formula the spawn uses so the card and the server
+   * agree. Never feeds a start — startInstalledModel persists what the
+   * runtime actually spawned.
+   */
+  private fittedWindowForSize(sizeBytes: number): string | undefined {
+    const fitted = fitContextTokens(sizeBytes, modelMemoryBudgetBytes(), isAppleSiliconHost(), contextTokensCap());
+    return fitted > 0 ? formatTokenWindow(fitted) : undefined;
   }
 
   private installedModelView(installed: InstalledModel): SetupInstalledModelView {

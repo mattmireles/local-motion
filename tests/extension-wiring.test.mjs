@@ -288,7 +288,6 @@ test("the runtime owns the context fit; no start path can pass the raw setting t
   assert.match(llamaSource, /fitContextTokens\(sizeBytes, modelMemoryBudgetBytes\(\)/);
   assert.match(llamaSource, /String\(contextTokens\)/);
   assert.equal(llamaSource.includes("String(model.contextTokens)"), false);
-  assert.equal(controllerSource.includes("fitContextTokens"), false);
 
   // The setting is a clamped ceiling read in exactly one place — anywhere
   // in src/, not just the files this test happens to know about — so a
@@ -311,6 +310,10 @@ test("the runtime owns the context fit; no start path can pass the raw setting t
   );
   assert.match(startBody, /contextTokens: session\.contextTokens/);
   assert.equal(startBody.includes("apiKey"), false);
+  // The controller's only fit use is the display-only card helper; the
+  // start path never computes a context of its own.
+  assert.equal(startBody.includes("fitContextTokens"), false);
+  assert.match(controllerSource, /private fittedWindowForSize\(sizeBytes: number\)/);
 
   // The provider advertises what one llama-server slot can actually hold:
   // the running session's -c (not a possibly stale record) divided across
@@ -467,7 +470,8 @@ test("transient model-listing failures retry instead of dead-ending the panel", 
   assert.match(controllerSource, /this\.modelOptionCandidates = undefined/);
   // The failure copy names the real cause, not a fake incompatibility verdict.
   assert.match(controllerSource, /Hugging Face returned no model files/);
-  assert.match(controllerSource, /quantizations\[0\]\?\.compatibility\.reasons\[0\]/);
+  const compatibilitySource = await readText("../src/models/compatibility.ts");
+  assert.match(compatibilitySource, /quantizations\[0\]\?\.compatibility\.reasons\[0\]/);
 
   // The unavailable state offers Try Again instead of a disabled dead end.
   assert.match(panelSource, /if \(option\.status === 'unavailable'\) return 'Try Again';/);
@@ -488,13 +492,38 @@ test("model cards show the fitted context window and offer a quantization choose
   assert.match(protocolSource, /SetupQuantizationChoiceView/);
   assert.match(protocolSource, /contextWindow\?: string/);
 
-  // Controller: the user's choice overrides the automagical best when still
-  // compatible; an explicit choice is exempt from the Q4 quality floor, and
-  // the choice must exist in the live candidate list to be accepted.
+  // The decision logic is pure and behaviorally tested in compatibility.ts;
+  // the controller only threads the stored choice through, and only entries
+  // the chooser actually offers are selectable (one eligibility predicate
+  // covers rendering and selection — no hidden sub-Q4/Unknown reachable).
+  const compatibilitySource = await readText("../src/models/compatibility.ts");
+  assert.match(compatibilitySource, /export function chooseOptionCandidate/);
+  assert.match(compatibilitySource, /export function chooserQuantizations/);
+  assert.match(compatibilitySource, /export function isChooserEligibleQuantization/);
   assert.match(controllerSource, /this\.quantizationChoice\.get\(optionId\)/);
-  assert.match(controllerSource, /candidate\.compatibility\.status === "compatible"/);
+  assert.match(controllerSource, /chooserQuantizations\(quantizations\)\.some\(\(candidate\) => candidate\.fileName === fileName\)/);
   assert.match(controllerSource, /That quantization is not available for this model\./);
   assert.match(controllerSource, /formatTokenWindow\(candidate\.compatibility\.fittedContextTokens\)/);
+
+  // Once a file is on disk, the card reports THAT file, never the listing's
+  // best candidate — a downloaded Q4 must not masquerade as "Q8 · 128k".
+  assert.match(controllerSource, /quantization: quantizationFromFileName\(downloaded\.fileName\)/);
+  assert.match(controllerSource, /downloadSize: formatBytes\(downloaded\.sizeBytes\)/);
+  assert.match(controllerSource, /contextWindow: this\.fittedWindowForSize\(downloaded\.sizeBytes\)/);
+
+  // Disk facts need no network: a fully-downloaded setup renders without
+  // awaiting the Hugging Face listing, so an offline Mac with both models
+  // on disk gets an instant panel instead of a 30s listing-timeout stall.
+  assert.match(controllerSource, /optionStates\.every\(\(state\) => state\.downloaded\)\s*\?\s*new Map/);
+  const payloadBody = controllerSource.slice(
+    controllerSource.indexOf("private async modelOptionsPayload"),
+    controllerSource.indexOf("private slottedOptionId")
+  );
+  assert.equal(payloadBody.indexOf("if (downloaded)") < payloadBody.indexOf("candidates.get(option.id)"), true);
+
+  // The chooser command respects the same setup-operation gate as its
+  // sibling mutating commands.
+  assert.match(panelHostSource, /Wait for setup to finish before changing quantization\./);
 
   // Card copy states the consequence, and the chooser only renders while
   // there is a real choice to make (pre-download, more than one level).

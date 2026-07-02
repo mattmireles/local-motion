@@ -203,6 +203,9 @@ class SetupWebviewSession {
           }
           break;
         case SETUP_REQUEST_COMMAND.SELECT_QUANTIZATION:
+          if (this.setupOperationActive) {
+            throw new Error("Wait for setup to finish before changing quantization.");
+          }
           if (message.modelOptionId !== "max" && message.modelOptionId !== "mini") {
             throw new Error("No model slot was selected.");
           }

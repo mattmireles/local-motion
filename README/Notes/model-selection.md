@@ -158,6 +158,15 @@ uses `-ctk/-ctv q8_0` with `-fa on` (halves KV memory; V-quant requires flash
 attention) and `parallelRequests` defaults to 1 (a second slot silently
 halves every request's window; extra requests queue instead).
 
+**Accepted trade (2026-07-02, external audit P2):** the flat 96KB/token
+constant is tuned to the MoE end of the class; a large *dense* model (e.g.
+Qwen3-32B at ~262KB/token f16 ≈ 131KB/token q8_0) pasted into Advanced can
+classify compatible at a context whose real KV busts the budget, failing at
+load with the memory hint. Raising the constant would cost the all-MoE
+default pack its 128k window — the product requirement — so the constant
+stays MoE-tuned and llama-server remains the final arbiter for Advanced
+installs. Revisit only if a dense model enters the default pack.
+
 ### Executable Memory
 
 Regression test: `tests/pure-logic.test.mjs` — "a max contextTokens cap

@@ -14,10 +14,13 @@ import { CursorSetupWorkflow } from "../out/cursor/cursorSetupWorkflow.js";
 import { normalizePublicHttpsTunnelUrl } from "../out/cursor/tunnelUrl.js";
 import { setupDiagnosticSummary } from "../out/diagnostics/setupDiagnostics.js";
 import {
+  chooseOptionCandidate,
+  chooserQuantizations,
   classifyCompatibility,
   effectiveMemoryBudget,
   fitContextTokens,
   isAuxiliaryGgufFileName,
+  isChooserEligibleQuantization,
   isShardedGgufFileName,
   meetsAutomagicalQualityFloor,
   MINIMUM_USABLE_CONTEXT_TOKENS,
@@ -240,6 +243,59 @@ test("a max contextTokens cap shrinks context to fit instead of branding the Mac
   // A model that squeezes in an 8k context but not 32k is not usable for
   // coding — it must read as incompatible, not as a tiny-window tease.
   assert.equal(fitContextTokens(48_000_000_000, budget, true, 131072), 0);
+});
+
+test("quantization chooser offers only the Q4+ ladder and honors only offered picks", () => {
+  const compatible = { status: "compatible", requiredMemoryBytes: 1, requiredDiskBytes: 1, fittedContextTokens: 131072, reasons: [] };
+  const blocked = {
+    status: "not-compatible",
+    requiredMemoryBytes: 1,
+    requiredDiskBytes: 1,
+    fittedContextTokens: 32768,
+    reasons: ["Needs about 99.0 GB runtime memory even at a minimal 32,768-token context; available budget is 51.2 GB."]
+  };
+  const file = (fileName, quantization, compatibility, sizeBytes = 1) => ({
+    repoId: "example/model-GGUF",
+    fileName,
+    quantization,
+    sizeBytes,
+    downloadUrl: "https://example.invalid/" + fileName,
+    compatibility
+  });
+  const q8 = file("model-Q8_0.gguf", "Q8_0", compatible, 8);
+  const q8Duplicate = file("model-UD-Q8_0.gguf", "Q8_0", compatible, 9);
+  const q4 = file("model-Q4_K_M.gguf", "Q4_K_M", compatible, 4);
+  const q3 = file("model-Q3_K_M.gguf", "Q3_K_M", compatible, 3);
+  const unknown = file("imatrix.gguf", "Unknown", compatible, 2);
+  const incompatible = file("model-F16.gguf", "F16", blocked, 16);
+  const list = [q8, q8Duplicate, q4, q3, unknown, incompatible];
+
+  // Eligibility: compatible, Q4-or-better, recognizably named.
+  assert.equal(isChooserEligibleQuantization(q8), true);
+  assert.equal(isChooserEligibleQuantization(q3), false);
+  assert.equal(isChooserEligibleQuantization(unknown), false);
+  assert.equal(isChooserEligibleQuantization(incompatible), false);
+
+  // One entry per level, first (best) file wins the level.
+  assert.deepEqual(chooserQuantizations(list).map((c) => c.fileName), ["model-Q8_0.gguf", "model-Q4_K_M.gguf"]);
+
+  // No pick → automagical best. An offered pick is honored; a hidden
+  // (sub-Q4/Unknown) or vanished pick falls back silently to the best —
+  // a crafted webview message cannot reach what the chooser does not offer.
+  assert.equal(chooseOptionCandidate(list, undefined).fileName, "model-Q8_0.gguf");
+  assert.equal(chooseOptionCandidate(list, "model-Q4_K_M.gguf").fileName, "model-Q4_K_M.gguf");
+  assert.equal(chooseOptionCandidate(list, "imatrix.gguf").fileName, "model-Q8_0.gguf");
+  assert.equal(chooseOptionCandidate(list, "model-Q3_K_M.gguf").fileName, "model-Q8_0.gguf");
+  assert.equal(chooseOptionCandidate(list, "vanished.gguf").fileName, "model-Q8_0.gguf");
+
+  // All-incompatible lists surface the smallest file's real blocking
+  // reason; a best pick below the Q4 floor is refused with the floor named.
+  const allBlocked = chooseOptionCandidate([file("model-F16.gguf", "F16", blocked, 16)], undefined);
+  assert.equal(allBlocked instanceof Error, true);
+  assert.match(allBlocked.message, /even at a minimal 32,768-token context/);
+  const onlyQ3 = chooseOptionCandidate([q3], undefined);
+  assert.equal(onlyQ3 instanceof Error, true);
+  assert.match(onlyQ3.message, /below the Q4 floor/);
 });
 
 test("selects the highest-quality compatible quantization for automagical setup", () => {
