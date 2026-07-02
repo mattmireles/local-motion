@@ -28,8 +28,7 @@ export function setupPanelHtml(nonce: string): string {
     <div id="progress" class="progress hidden" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progressFill" class="fill"></div></div>
 
     <div id="connect" class="connect hidden">
-      <p id="connectLead" class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
-      <p id="tunnelDisclosure" class="note disclosure">Prompts and files sent from Cursor transit Cursor's backend and a Cloudflare tunnel. Anyone with the URL and key can reach the proxy while the tunnel is up. Cursor's Zero Data Retention does not apply to custom keys.</p>
+      <p id="connectLead" class="connect-lead">Connect Cursor to this local agent.</p>
       <div id="fields" class="fields">
         <div class="field">
           <label>Model name</label>
@@ -54,10 +53,10 @@ export function setupPanelHtml(nonce: string): string {
         </div>
       </div>
       <div class="row">
-        <button id="enableTunnel" class="btn cta">Turn on Cursor tunnel</button>
+        <button id="connectCursor" class="btn cta">Connect Cursor</button>
         <button id="installCloudflared" class="btn ghost">Copy brew install cloudflared</button>
-        <button id="openCursor" class="btn cta">Open Cursor Settings</button>
       </div>
+      <p id="tunnelDisclosure" class="note disclosure">Cursor requires one manual paste in Settings > Models. Prompts sent from Cursor transit Cursor's backend and the tunnel before reaching this Mac.</p>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
     </div>
 
@@ -118,7 +117,7 @@ export function setupPanelHtml(nonce: string): string {
       automagicalSetupRunning: false,
       modelSwitchRunning: false,
       setupOperationRunning: false,
-      cursorTunnelEnabledNextStart: false,
+      cursorConnectRunning: false,
       selectedModelName: '',
       progressMessage: '',
       progressPercent: undefined,
@@ -136,12 +135,11 @@ export function setupPanelHtml(nonce: string): string {
       connect: document.getElementById('connect'),
       connectLead: document.getElementById('connectLead'),
       fields: document.getElementById('fields'),
-      enableTunnel: document.getElementById('enableTunnel'),
+      connectCursor: document.getElementById('connectCursor'),
       installCloudflared: document.getElementById('installCloudflared'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
-      openCursor: document.getElementById('openCursor'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
       metaLine: document.getElementById('metaLine'),
@@ -182,14 +180,15 @@ export function setupPanelHtml(nonce: string): string {
         vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE}', key: button.dataset.key });
       });
     }
-    els.openCursor.addEventListener('click', () => {
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.PREPARE_CURSOR}' });
-    });
-    els.enableTunnel.addEventListener('click', () => {
-      state.cursorTunnelEnabledNextStart = true;
-      state.connectMessage = 'Cursor tunnel will start the next time the local agent starts.';
+    els.connectCursor.addEventListener('click', () => {
+      state.cursorConnectRunning = true;
+      state.setupOperationRunning = true;
+      state.progressPercent = undefined;
+      state.progressMessage = 'Connecting Cursor…';
+      state.connectMessage = 'Preparing a public Cursor endpoint, copying setup, and opening Cursor Settings.';
       render();
-      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.ENABLE_CURSOR_TUNNEL}' });
+      setStatus(state.connectMessage);
+      vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.CONNECT_CURSOR}' });
     });
     els.installCloudflared.addEventListener('click', () => {
       state.connectMessage = 'Copied brew install cloudflared.';
@@ -219,7 +218,6 @@ export function setupPanelHtml(nonce: string): string {
         els.repo.value = message.defaultRepo;
         state.installed = message.installed;
         state.runtime = message.runtime;
-        clearNextStartTunnelFlag(message.runtime);
         state.machine = message.machine;
         updateDownloadedStorage(message);
         /* A model switch spans several runtime status changes (old model
@@ -230,7 +228,7 @@ export function setupPanelHtml(nonce: string): string {
           state.modelSwitchRunning = false;
           state.progressMessage = '';
         }
-        state.setupOperationRunning = state.modelSwitchRunning;
+        state.setupOperationRunning = state.modelSwitchRunning || state.cursorConnectRunning;
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -283,7 +281,6 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === '${SETUP_RESPONSE_TYPE.INSTALLED}') {
         state.installed = message.installed;
         state.runtime = message.runtime;
-        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
@@ -304,7 +301,6 @@ export function setupPanelHtml(nonce: string): string {
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.RUNTIME}') {
         state.runtime = message.runtime;
-        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         state.errorMessage = '';
         state.progressMessage = '';
@@ -325,7 +321,6 @@ export function setupPanelHtml(nonce: string): string {
         state.selectedModelName = '';
         state.installed = message.installed;
         state.runtime = message.runtime;
-        clearNextStartTunnelFlag(message.runtime);
         updateDownloadedStorage(message);
         resetCursorActionStateIfEndpointChanged(message.cursorSetupViewModel);
         state.cursorSetupViewModel = message.cursorSetupViewModel;
@@ -338,6 +333,10 @@ export function setupPanelHtml(nonce: string): string {
         setStatus([state.verification && state.verification.message, state.copyResults.setupBlock && state.copyResults.setupBlock.message, state.settings && state.settings.message].filter(Boolean).join(' '));
       }
       if (message.type === '${SETUP_RESPONSE_TYPE.CURSOR_SETUP_PREPARED}') {
+        state.cursorConnectRunning = false;
+        state.setupOperationRunning = false;
+        state.progressMessage = '';
+        state.progressPercent = undefined;
         state.errorMessage = '';
         state.cursorSetupViewModel = message.viewModel;
         state.cursorSetupFreshness = message.cursorSetupFreshness;
@@ -359,6 +358,7 @@ export function setupPanelHtml(nonce: string): string {
       if (message.type === '${SETUP_RESPONSE_TYPE.ERROR}') {
         state.automagicalSetupRunning = false;
         state.modelSwitchRunning = false;
+        state.cursorConnectRunning = false;
         state.setupOperationRunning = false;
         state.progressMessage = '';
         state.progressPercent = undefined;
@@ -387,6 +387,7 @@ export function setupPanelHtml(nonce: string): string {
       // clickable against a server that is about to be replaced.
       const phase = (errored && !running) ? 'error'
         : state.modelSwitchRunning ? 'starting'
+        : state.cursorConnectRunning ? 'starting'
         : running ? 'on'
         : busy ? 'starting' : 'off';
       renderStorage();
@@ -500,16 +501,15 @@ export function setupPanelHtml(nonce: string): string {
         const viewModel = state.cursorSetupViewModel || {};
         const tunnel = (state.runtime && state.runtime.cursorTunnel) || {};
         const cursorReady = Boolean(viewModel.isRunning);
-        const enabledNextStart = state.cursorTunnelEnabledNextStart && !tunnel.enabled;
         els.connect.classList.remove('hidden');
         els.connectLead.textContent = cursorReady
-          ? 'In Cursor: Settings > Models > Add Custom Model. Copy each value into the matching field.'
-          : enabledNextStart
-            ? 'Cursor tunnel is on. Turn the local agent off and on to start the tunnel.'
-            : viewModel.statusMessage || "Cursor's backend cannot reach localhost.";
+          ? 'Cursor Settings is open. In Models, click Add Custom Model and paste these values.'
+          : tunnel.error === 'binary-missing'
+            ? 'Install cloudflared once, then connect Cursor again.'
+            : "Cursor cannot use localhost directly. Local Motion will create a temporary public endpoint and open Cursor Settings.";
         els.fields.style.display = cursorReady ? 'grid' : 'none';
-        els.openCursor.style.display = cursorReady ? '' : 'none';
-        els.enableTunnel.style.display = (!cursorReady && !tunnel.enabled && !enabledNextStart) ? '' : 'none';
+        els.connectCursor.textContent = cursorReady ? 'Copy Setup and Open Settings' : 'Connect Cursor';
+        els.connectCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
         els.installCloudflared.style.display = tunnel.error === 'binary-missing' ? '' : 'none';
         els.valModelId.textContent = cursorReady ? (viewModel.modelId || 'Local Motion') : '';
         els.valApiKey.textContent = cursorReady ? (viewModel.apiKey || '') : '';
@@ -532,12 +532,6 @@ export function setupPanelHtml(nonce: string): string {
     function runtimeDisplayName() {
       const runtime = state.runtime || {};
       return runtime.displayName || runtime.modelId || '';
-    }
-
-    function clearNextStartTunnelFlag(runtime) {
-      if (runtime && runtime.cursorTunnel && runtime.cursorTunnel.enabled) {
-        state.cursorTunnelEnabledNextStart = false;
-      }
     }
 
     /* ------------------------------------------------------------------ */

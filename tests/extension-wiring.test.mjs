@@ -109,7 +109,11 @@ test("setup first screen is a single on/off switch before one advanced disclosur
 
   // The primary control never morphs into Connect, and there is no second
   // memory button anywhere (both were audit P0/P1 hazards).
-  assert.equal(panelSource.includes("'Connect Cursor'"), false);
+  const primaryBody = panelSource.slice(
+    panelSource.indexOf("els.primary.addEventListener('click'"),
+    panelSource.indexOf("/* Each Cursor value copies on its own")
+  );
+  assert.equal(primaryBody.includes("Connect Cursor"), false);
   assert.equal(panelSource.includes("memoryAction"), false);
 
   // The primary toggle binds to runtime on/off only: stop when running, else turn on.
@@ -221,7 +225,7 @@ test("downloaded models can be run directly from storage for manual switching", 
   // when a STATE arrives with the new model actually running — or on error.
   assert.match(panelSource, /state\.modelSwitchRunning = true;/);
   assert.match(panelSource, /state\.modelSwitchRunning \? 'starting'/);
-  assert.match(panelSource, /state\.setupOperationRunning = state\.modelSwitchRunning;/);
+  assert.match(panelSource, /state\.setupOperationRunning = state\.modelSwitchRunning \|\| state\.cursorConnectRunning;/);
   assert.match(
     panelSource,
     /if \(state\.modelSwitchRunning && message\.runtime && message\.runtime\.running\) \{\s*state\.modelSwitchRunning = false;/
@@ -282,7 +286,7 @@ test("runtime status changes refresh provider and native switch", async () => {
   assert.match(runtimeSource, /this\.onStatusChanged\(\)/);
 });
 
-test("prepare Cursor command is registered and starts a reusable installed model first", async () => {
+test("Connect Cursor command is registered and uses the one-step connection path", async () => {
   const packageJson = await readPackageJson();
   const commands = packageJson.contributes.commands.map((command) => command.command);
   assert.equal(packageJson.activationEvents.includes("onCommand:localMotion.prepareCursor"), true);
@@ -291,7 +295,12 @@ test("prepare Cursor command is registered and starts a reusable installed model
   const extensionSource = await readText("../out/extension.js");
   const controllerSource = await readText("../out/app/localMotionController.js");
   assert.equal(extensionSource.includes("localMotion.prepareCursor"), true);
-  assert.match(extensionSource, /controller\.prepareCursorAfterStartingInstalledModel\(\)/);
+  assert.match(extensionSource, /controller\.connectCursor\(\)/);
+  assert.match(controllerSource, /async connectCursor\(\)/);
+  assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
+  assert.match(controllerSource, /this\.runtime\.activeSession\(\)/);
+  assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
+  assert.match(controllerSource, /this\.startInstalledModel\(active/);
   assert.match(controllerSource, /prepareCursorAfterStartingInstalledModel/);
   assert.match(controllerSource, /this\.reusableInstalledModel\(\)/);
   assert.match(controllerSource, /allowLlamaInstallForAutomagicalStart\)\("explicit"\)/);
@@ -410,11 +419,14 @@ test("startup resume setting describes quiet runtime restart", async () => {
   assert.equal(description.includes("prepare Cursor automatically"), false);
 });
 
-test("Cursor tunnel settings are explicit opt-in and next-start only", async () => {
+test("Cursor tunnel settings stay explicit while the UI offers one-step connection", async () => {
   const packageJson = await readPackageJson();
   const extensionSource = await readText("../src/extension.ts");
   const controllerSource = await readText("../src/app/localMotionController.ts");
   const configSource = await readText("../src/app/cursorTunnelConfig.ts");
+  const protocolSource = await readText("../src/setupProtocol.ts");
+  const panelSource = await readText("../src/ui/setupPanelHtml.ts");
+  const panelHostSource = await readText("../src/ui/setupPanel.ts");
   const properties = packageJson.contributes.configuration.properties;
   assert.equal(properties["localMotion.cursorTunnel"].default, false);
   assert.match(properties["localMotion.cursorTunnel"].description, /Cloudflare Quick Tunnel/);
@@ -428,6 +440,14 @@ test("Cursor tunnel settings are explicit opt-in and next-start only", async () 
   assert.match(controllerSource, /cursorTunnelConfigFromWorkspace\(\)/);
   assert.match(configSource, /normalizePublicHttpsTunnelUrl/);
   assert.match(configSource, /manual\.url !== undefined/);
+
+  assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
+  assert.match(panelSource, /id="connectCursor"/);
+  assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
+  assert.equal(panelSource.includes("cursorTunnelEnabledNextStart"), false);
+  assert.equal(panelSource.includes("Turn on Cursor tunnel"), false);
+  assert.equal(panelSource.includes("Turn the local agent off and on"), false);
 });
 
 test("runtime status surfaces the first real Cursor request", async () => {
@@ -489,20 +509,21 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   // The earned, confident line appears only when a real request was observed.
   assert.match(panelSource, /Cursor is using your local model - local compute, Cursor-routed prompts\./);
   assert.match(panelSource, /runtime\.clientObserved/);
-  assert.match(panelSource, /Prompts and files sent from Cursor transit Cursor's backend and a Cloudflare tunnel/);
-  assert.match(panelSource, /Zero Data Retention does not apply to custom keys/);
-  assert.match(panelSource, /Turn on Cursor tunnel/);
-  assert.match(panelSource, /cursorTunnelEnabledNextStart = true/);
-  assert.match(panelSource, /Cursor tunnel is on\. Turn the local agent off and on to start the tunnel\./);
-  assert.match(panelSource, /!cursorReady && !tunnel\.enabled && !enabledNextStart/);
+  assert.match(panelSource, /Prompts sent from Cursor transit Cursor's backend and the tunnel/);
+  assert.match(panelSource, /Connect Cursor/);
+  assert.match(panelSource, /Local Motion will create a temporary public endpoint and open Cursor Settings/);
+  assert.match(panelSource, /Cursor Settings is open\. In Models, click Add Custom Model and paste these values\./);
+  assert.match(panelSource, /Copy Setup and Open Settings/);
   assert.match(panelSource, /Copy brew install cloudflared/);
-  assert.match(panelSource, /ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(panelSource, /COPY_TUNNEL_INSTALL_COMMAND/);
-  assert.match(protocolSource, /ENABLE_CURSOR_TUNNEL: "enableCursorTunnel"/);
+  assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(protocolSource, /COPY_TUNNEL_INSTALL_COMMAND: "copyTunnelInstallCommand"/);
-  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.ENABLE_CURSOR_TUNNEL/);
+  assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.COPY_TUNNEL_INSTALL_COMMAND/);
   assert.match(controllerSource, /update\("cursorTunnel", true, vscode\.ConfigurationTarget\.Global\)/);
+  assert.match(controllerSource, /await this\.runtime\.stop\(\)/);
+  assert.match(controllerSource, /this\.startInstalledModel\(active/);
   assert.match(controllerSource, /writeText\("brew install cloudflared"\)/);
 
   // Once a real request is observed the connect card is dropped; until then it

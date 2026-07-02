@@ -272,6 +272,22 @@ export class LocalMotionController {
     return this.cursorSetup.prepareCursor();
   }
 
+  async connectCursor(): Promise<CursorSetupPreparedResponse> {
+    const status = this.runtime.status();
+    if (status.running && !status.cursorTunnel?.url) {
+      await this.enableCursorTunnel();
+      const active = this.runtime.activeSession();
+      if (active) {
+        await this.runtime.stop();
+        await this.startInstalledModel(active, {
+          allowInstall: allowLlamaInstallForAutomagicalStart("explicit")
+        });
+      }
+    }
+
+    return this.prepareCursorAfterStartingInstalledModel();
+  }
+
   async prepareCursorAfterStartingInstalledModel(): Promise<CursorSetupPreparedResponse> {
     if (!this.runtime.status().running) {
       const installedModel = await this.reusableInstalledModel();

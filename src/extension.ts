@@ -117,7 +117,7 @@ async function prepareCursorCommand(
   setupViewProvider: SetupViewProvider | undefined
 ): Promise<void> {
   await setupViewProvider?.show();
-  const result = await controller.prepareCursorAfterStartingInstalledModel();
+  const result = await controller.connectCursor();
   await setupViewProvider?.refresh();
   refreshStatusBar();
   output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
