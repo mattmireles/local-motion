@@ -10,6 +10,7 @@ export function isLastCopiedCursorSetup(value: unknown): value is LastCopiedCurs
   return isNonEmptyString(value.baseUrl) &&
     isNonEmptyString(value.modelId) &&
     isValidApiKeyLabel(value.apiKeyLabel) &&
+    optionalNonEmptyString(value.apiKeyFingerprint) &&
     isNonEmptyString(value.copiedAt) &&
     (trigger === "prepareCursor" || trigger === "copySetupBlock") &&
     optionalNonEmptyString(value.endpointVerifiedAt);

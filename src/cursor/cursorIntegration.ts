@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AutomagicalSetupCompletion, LastCopiedCursorSetup, RuntimeStatus } from "../types";
 
 export interface CursorSetupViewModel {
@@ -148,6 +149,17 @@ export function shouldMarkAutomagicalSetupCompleted(signals: AutomagicalCompleti
   return signals.endpointVerified && signals.setupCopied && signals.settingsOpened;
 }
 
+/**
+ * Non-reversible fingerprint of the per-session proxy API key. Every model
+ * (re)start mints a new key, so freshness must notice rotation even when the
+ * tunnel URL and model id are unchanged — without ever persisting the secret.
+ * A truncated SHA-256 is enough to compare identity and useless to recover
+ * the key from.
+ */
+export function cursorApiKeyFingerprint(apiKey: string): string {
+  return createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+}
+
 export function lastCopiedCursorSetup(
   viewModel: CursorSetupViewModel,
   trigger: LastCopiedCursorSetup["trigger"],
@@ -158,6 +170,7 @@ export function lastCopiedCursorSetup(
     baseUrl: viewModel.baseUrl,
     modelId: viewModel.modelId,
     apiKeyLabel: "session-key",
+    apiKeyFingerprint: cursorApiKeyFingerprint(viewModel.apiKey),
     copiedAt,
     trigger,
     endpointVerifiedAt
@@ -205,6 +218,18 @@ export function cursorSetupFreshness(
     return {
       status: "stale",
       message: `Cursor setup values may be stale. Last copied ${lastCopied.modelId} at ${lastCopied.baseUrl}; current setup is ${viewModel.modelId} at ${viewModel.baseUrl}.`,
+      lastCopied
+    };
+  }
+
+  // A restart mints a new session key at the same tunnel URL and model id,
+  // so URL/model equality alone can report copied values as current while
+  // Cursor 401s with the old key. Records without a fingerprint predate this
+  // check and cannot prove the key still matches — treat them as stale too.
+  if (lastCopied.apiKeyFingerprint !== cursorApiKeyFingerprint(viewModel.apiKey)) {
+    return {
+      status: "stale",
+      message: `Cursor setup values are stale. The session API key changed since they were copied for ${viewModel.modelId} at ${viewModel.baseUrl} — copy the setup again and update Cursor's API key.`,
       lastCopied
     };
   }

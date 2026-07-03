@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   automagicalSetupCompletion,
+  cursorApiKeyFingerprint,
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
@@ -878,6 +879,56 @@ test("Cursor setup freshness marks changed endpoint stale", () => {
   assert.ok(freshness.message.includes("new.example"));
 });
 
+test("Cursor setup freshness marks rotated session key stale at an unchanged tunnel URL", () => {
+  // Regression: a stable manual tunnel URL keeps baseUrl and modelId identical
+  // across model restarts, but every restart mints a new session API key.
+  // Freshness must not report the copied values as current once the key rotates.
+  const runtimeAtCopy = {
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-key-before-restart",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  };
+  const copied = lastCopiedCursorSetup(
+    cursorSetupViewModel(runtimeAtCopy),
+    "prepareCursor",
+    "2026-06-16T00:00:00.000Z",
+    "2026-06-16T00:00:00.000Z"
+  );
+  assert.equal(copied.apiKeyFingerprint, cursorApiKeyFingerprint("session-key-before-restart"));
+  assert.ok(!JSON.stringify(copied).includes("session-key-before-restart"));
+
+  const afterRestart = cursorSetupViewModel({ ...runtimeAtCopy, apiKey: "session-key-after-restart" });
+  assert.equal(afterRestart.baseUrl, copied.baseUrl);
+  assert.equal(afterRestart.modelId, copied.modelId);
+
+  const freshness = cursorSetupFreshness(afterRestart, copied);
+  assert.equal(freshness.status, "stale");
+  assert.match(freshness.message, /session API key changed/);
+});
+
+test("Cursor setup freshness treats legacy copied records without a key fingerprint as stale", () => {
+  const viewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  const { apiKeyFingerprint, ...legacyCopied } = lastCopiedCursorSetup(
+    viewModel,
+    "prepareCursor",
+    "2026-06-16T00:00:00.000Z",
+    "2026-06-16T00:00:00.000Z"
+  );
+  const freshness = cursorSetupFreshness(viewModel, legacyCopied);
+  assert.equal(freshness.status, "stale");
+  assert.match(freshness.message, /session API key changed/);
+});
+
 test("Cursor setup freshness marks stopped model stale after copied setup values", () => {
   const runningViewModel = cursorSetupViewModel({
     running: true,
@@ -914,6 +965,7 @@ test("last copied Cursor setup records trigger and verification timestamp", () =
       baseUrl: "https://public.example.com/v1",
       modelId: LOCAL_MOTION_MODEL_ID,
       apiKeyLabel: "session-key",
+      apiKeyFingerprint: cursorApiKeyFingerprint("session-secret"),
       copiedAt: "2026-06-16T00:00:00.000Z",
       trigger: "prepareCursor",
       endpointVerifiedAt: "2026-06-16T00:00:01.000Z"

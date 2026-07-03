@@ -125,6 +125,14 @@ export interface LastCopiedCursorSetup {
   baseUrl: string;
   modelId: string;
   apiKeyLabel: "session-key" | "local-motion";
+  /**
+   * Truncated SHA-256 of the session API key that was copied — never the key
+   * itself. Freshness compares this against the live session key so a model
+   * restart (which mints a new key at the same tunnel URL) reads as stale.
+   * Optional because records persisted before this field existed lack it;
+   * those are treated as stale.
+   */
+  apiKeyFingerprint?: string;
   copiedAt: string;
   trigger: "prepareCursor" | "copySetupBlock";
   endpointVerifiedAt?: string;
