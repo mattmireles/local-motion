@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "setup-panel-mock",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4173", "-d", "/private/tmp/claude-505/-Users-mm-Documents-GitHub-local-motion/c401440b-8bd4-42db-9dd6-dd364fd239e1/scratchpad/mock"],
+      "port": 4173
+    }
+  ]
+}
