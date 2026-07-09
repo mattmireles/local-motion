@@ -34,11 +34,11 @@ export function buildChatRequest(modelId: string, messages: OpenAiMessage[]): Op
 
 export function sanitizeExternalChatRequest(input: unknown, fallbackModelId: string): OpenAiChatRequest {
   const source = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  // Single-model proxy: always advertise and forward one id. Cursor (or any
+  // client) may send a typo, catalog alias, or empty model — none of that
+  // should reach llama-server when /v1/models lists only fallbackModelId.
   return {
-    ...buildChatRequest(
-      typeof source.model === "string" && source.model.trim() ? source.model : fallbackModelId,
-      sanitizeMessages(source.messages)
-    ),
+    ...buildChatRequest(fallbackModelId, sanitizeMessages(source.messages)),
     // OpenAI's spec defaults stream to false; an omitted or non-boolean
     // value must yield a single JSON completion, never SSE.
     stream: source.stream === true,

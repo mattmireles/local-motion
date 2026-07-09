@@ -429,6 +429,8 @@ test("setup diagnostics distinguish ready setup from required action", () => {
   });
   assert.equal(ready.status, "ready");
   assert.match(ready.message, /ready/);
+  assert.match(ready.message, /select that custom model in chat \(not Auto\)/);
+  assert.equal(ready.message.includes("if Local Motion is not listed"), false);
   assert.equal(ready.lines.some((line) => line.includes("Cursor private state")), true);
 
   const missingModel = setupDiagnosticSummary({
@@ -488,11 +490,11 @@ test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {
       stop: { bad: true },
       unknown_vendor_field: true
     },
-    "local-motion-model"
+    LOCAL_MOTION_MODEL_ID
   );
 
   assert.deepEqual(request, {
-    model: "local-motion-model",
+    model: LOCAL_MOTION_MODEL_ID,
     messages: [
       { role: "assistant", content: "Ready" },
       { role: "user", content: "Use this context" }
@@ -503,6 +505,21 @@ test("sanitizes Cursor-style chat payloads to OpenAI chat completions", () => {
     max_tokens: 2048,
     stop: undefined
   });
+});
+
+test("proxy chat always rewrites client model to the advertised Local Motion id", () => {
+  assert.equal(
+    sanitizeExternalChatRequest({ model: "gpt-4o", messages: [] }, LOCAL_MOTION_MODEL_ID).model,
+    LOCAL_MOTION_MODEL_ID
+  );
+  assert.equal(
+    sanitizeExternalChatRequest({ model: "local-motion", messages: [] }, LOCAL_MOTION_MODEL_ID).model,
+    LOCAL_MOTION_MODEL_ID
+  );
+  assert.equal(
+    sanitizeExternalChatRequest({ model: "   ", messages: [] }, LOCAL_MOTION_MODEL_ID).model,
+    LOCAL_MOTION_MODEL_ID
+  );
 });
 
 test("defaults omitted stream to false per the OpenAI chat completions spec", () => {
@@ -717,10 +734,12 @@ test("Cursor setup view model uses the public tunnel endpoint", () => {
   assert.ok(viewModel.setupBlock.includes("https://public.example.com/v1"));
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_MODEL_ID));
   assert.ok(viewModel.setupBlock.includes("session-secret"));
-  assert.ok(viewModel.setupBlock.includes("Model name: Local Motion"));
+  assert.ok(viewModel.setupBlock.includes(`Model name: ${LOCAL_MOTION_MODEL_ID}`));
   assert.ok(viewModel.statusMessage.includes("Cursor Settings > Models"));
+  assert.ok(viewModel.statusMessage.includes("Model name is not valid"));
   assert.ok(viewModel.steps.includes("Click Add Custom Model."));
-  assert.ok(viewModel.steps.some((line) => line.includes("https://public.example.com/v1")));
+  assert.ok(viewModel.steps.some((line) => line.includes("select that custom model in chat")));
+  assert.ok(viewModel.steps.some((line) => line.includes("Enable OpenAI API Key")));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "https://public.example.com/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), "session-secret");
   assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);

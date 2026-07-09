@@ -334,10 +334,18 @@ export function setupPanelStyles(): string {
     }
     .connect.hidden { display: none; }
     .connect .connect-lead {
-      margin: 0 0 14px;
+      margin: 0 0 10px;
       color: var(--muted);
       line-height: 1.5;
     }
+    .connect .connect-steps {
+      margin: 0 0 14px;
+      padding-left: 1.25rem;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 12px;
+    }
+    .connect .connect-steps li + li { margin-top: 4px; }
     /* Each Cursor value sits on its own row, copyable on its own. */
     .fields { display: grid; gap: 12px; margin-bottom: 14px; }
     .field label {

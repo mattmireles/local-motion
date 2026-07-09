@@ -16,6 +16,10 @@ export interface CursorSetupViewModel {
 
 export type CursorSetupValueKey = "apiKey" | "baseUrl" | "modelId" | "setupBlock";
 
+/** Shared tail for toast/diagnostic success copy after Cursor values are ready. */
+export const CURSOR_CUSTOM_MODEL_HANDOFF_HINT =
+  "In Cursor Settings > Models, Add Custom Model with the copied Model name, API key, and Base URL, then select that custom model in chat (not Auto).";
+
 export interface CursorSetupFreshness {
   status: "not-copied" | "copied" | "current" | "stale";
   message: string;
@@ -76,15 +80,16 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     localAgentRunning: true,
     setupBlock,
     steps: [
-    "Open Cursor Settings.",
-    "Go to Models.",
-    "Click Add Custom Model.",
-    `Set Model name to ${modelId}.`,
-    `Set API Key to ${apiKey}.`,
-    `Set Base URL to ${baseUrl}.`,
-    "Save it, then select Local Motion from Cursor's model picker."
+      "Open Cursor Settings.",
+      "Go to Models.",
+      "Enable OpenAI API Key and paste the session key.",
+      "Enable Override OpenAI Base URL and paste the Base URL.",
+      "Click Add Custom Model.",
+      `Set Model name to exactly ${modelId} (copy the Model name field — do not type a different slug).`,
+      "Save it, then select that custom model in chat (not Auto)."
     ],
-    statusMessage: "Cursor does not expose a stable extension API for changing its native model picker. Click Add Custom Model in Cursor Settings > Models and use Model name, API key, and Base URL exactly as shown."
+    statusMessage:
+      "Cursor does not expose a stable extension API for changing its native model picker. Click Add Custom Model in Cursor Settings > Models and use Model name, API key, and Base URL exactly as shown. If chat says Model name is not valid, prove the local stack with curl first — that error is Cursor-side catalog validation, not Local Motion."
   };
 }
 

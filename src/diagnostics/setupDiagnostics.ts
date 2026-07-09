@@ -1,4 +1,5 @@
 import type { CursorSetupFreshness } from "../cursor/cursorIntegration";
+import { CURSOR_CUSTOM_MODEL_HANDOFF_HINT } from "../cursor/cursorIntegration";
 
 export interface SetupDiagnosticInput {
   installedModelId?: string;
@@ -67,7 +68,7 @@ export function setupDiagnosticSummary(input: SetupDiagnosticInput): SetupDiagno
 
   return {
     status: "ready",
-    message: "Local Motion setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.",
+    message: `Local Motion setup is ready. ${CURSOR_CUSTOM_MODEL_HANDOFF_HINT}`,
     lines
   };
 }

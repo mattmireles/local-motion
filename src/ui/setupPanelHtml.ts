@@ -2,6 +2,7 @@ import { setupPanelStorageMarkup } from "./setupPanelStorage";
 import { setupPanelStyles } from "./setupPanelStyles";
 import { SETUP_REQUEST_COMMAND, SETUP_RESPONSE_TYPE } from "../setupProtocol";
 import { CANCELLED_START_MESSAGE } from "../runtime/runtimeGuards";
+import { LOCAL_MOTION_MODEL_ID } from "../types";
 
 export function setupPanelHtml(nonce: string): string {
   return `<!DOCTYPE html>
@@ -29,7 +30,8 @@ export function setupPanelHtml(nonce: string): string {
     </section>
 
     <div id="connect" class="connect hidden">
-      <p class="connect-lead">In Cursor: Settings → Models → Add Custom Model. Copy each value into the matching field.</p>
+      <p id="connectLead" class="connect-lead"></p>
+      <ol id="connectSteps" class="connect-steps" hidden></ol>
       <div class="fields">
         <div class="field">
           <label>Model name</label>
@@ -138,6 +140,8 @@ export function setupPanelHtml(nonce: string): string {
       modelChooser: document.getElementById('modelChooser'),
       modelOptions: document.getElementById('modelOptions'),
       openCursor: document.getElementById('openCursor'),
+      connectLead: document.getElementById('connectLead'),
+      connectSteps: document.getElementById('connectSteps'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
       metaLine: document.getElementById('metaLine'),
@@ -515,16 +519,39 @@ export function setupPanelHtml(nonce: string): string {
           button.disabled = cursorDisabled;
         }
         els.openCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
-        els.valModelId.textContent = viewModel.modelId || 'Local Motion';
+        els.valModelId.textContent = viewModel.modelId || ${JSON.stringify(LOCAL_MOTION_MODEL_ID)};
         els.valApiKey.textContent = viewModel.apiKey || '';
         els.valBaseUrl.textContent = viewModel.baseUrl || viewModel.statusMessage || 'Cursor connection is not ready.';
         els.valSetupBlock.textContent = cursorReady ? 'Model name, API key, and Base URL' : 'Unavailable until Cursor connection is ready';
         els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
           ? 'Copy Updated Setup'
           : 'Copy Full Setup';
-        const freshnessMessage = state.cursorSetupFreshness && state.cursorSetupFreshness.message;
-        els.connectNote.textContent = state.connectMessage || freshnessMessage || viewModel.statusMessage || '';
-        els.connectNote.style.display = els.connectNote.textContent ? 'block' : 'none';
+        const steps = Array.isArray(viewModel.steps) ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim()) : [];
+        els.connectLead.textContent = cursorReady
+          ? 'Copy each value into Cursor Settings → Models → Add Custom Model.'
+          : (viewModel.statusMessage || 'Start a local model, then connect Cursor.');
+        els.connectSteps.replaceChildren();
+        if (steps.length > 0) {
+          for (const step of steps) {
+            const item = document.createElement('li');
+            item.textContent = step;
+            els.connectSteps.appendChild(item);
+          }
+          els.connectSteps.hidden = false;
+        } else {
+          els.connectSteps.hidden = true;
+        }
+        const freshness = state.cursorSetupFreshness;
+        const freshnessMessage = freshness && freshness.message;
+        // Operational messages win for live connect/copy feedback. When values
+        // are already current, surface the vendor-catalog triage from statusMessage
+        // so "Model name is not valid" guidance is not buried forever.
+        const note = state.connectMessage
+          || (freshness && freshness.status === 'current' ? (viewModel.statusMessage || freshnessMessage) : freshnessMessage)
+          || viewModel.statusMessage
+          || '';
+        els.connectNote.textContent = note;
+        els.connectNote.style.display = note ? 'block' : 'none';
       }
 
       // One quiet greyed metadata line: the model display name only.

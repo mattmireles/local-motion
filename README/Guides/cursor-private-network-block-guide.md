@@ -112,7 +112,17 @@ Other relevant constraints, all confirmed 2026-07-01 unless dated:
 - **Model-name hijacking:** if the custom model name matches a name Cursor
   recognizes (or contains characters Cursor strips, like colons), requests can
   be misrouted to Cursor's own provider path (staff-acknowledged, Feb 2026).
-  Use an unrecognized name. Local Motion's model ID (`Local Motion`) is safe.
+  Use an unrecognized name. Local Motion's model ID (`Local Motion`) is chosen
+  to avoid catalog collisions.
+- **Model name is not valid:** Cursor chat can reject the selected custom model
+  with this string **before** any request reaches Local Motion. It is Cursor
+  client/backend catalog validation (BYOK), not a Local Motion proxy error.
+  Local Motion returns 401/404/upstream failures — never this text. Staff have
+  acknowledged intermittent catalog rejection of unrecognized custom names
+  ([forum thread 155863](https://forum.cursor.com/t/cursor-is-blocking-all-custom-models/155863);
+  claimed fixed 2026-07-08 — verify on your Cursor build). Also check: OpenAI
+  API Key toggle on (empty model yields `Model name is not valid: ""`), custom
+  model selected explicitly (not Auto), and paid plan.
 - Cursor Settings → Network → **HTTP Compatibility Mode** (force HTTP/1.1)
   fixes *client-side* TLS/HTTP2 failures against custom endpoints ("Client
   network socket disconnected before secure TLS connection was established",
@@ -158,7 +168,15 @@ Run in order; stop at the first failure.
    documented false positives against unreachable URLs. Select the custom
    model explicitly (not Auto) in Ask/Chat and send one message.
 
-6. **If chat works but Agent misbehaves**, suspect the nonstandard payload
+6. **If chat says `Model name is not valid`:** local `curl` already passed in
+   step 1 → this is Cursor-side. Confirm OpenAI API Key is enabled, Override
+   Base URL is the public tunnel `/v1` URL, Model name is exactly
+   `Local Motion` (use Local Motion's Copy button), and the custom model is
+   selected in chat. Update Cursor if you are on a build that still rejects
+   unrecognized custom names. Do not change Local Motion's model id to chase
+   Cursor catalog heuristics without a named repro.
+
+7. **If chat works but Agent misbehaves**, suspect the nonstandard payload
    shape (§3), not reachability — capture the request in the proxy log before
    changing anything else.
 

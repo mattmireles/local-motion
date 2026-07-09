@@ -391,10 +391,16 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
   assert.match(cursorSource, /Click Add Custom Model/);
   assert.match(cursorSource, /Model name: /);
-  assert.match(cursorSource, /Set Model name to /);
+  assert.match(cursorSource, /Set Model name to exactly /);
+  assert.match(cursorSource, /select that custom model in chat/);
+  assert.match(cursorSource, /Model name is not valid/);
   assert.match(cursorSource, /Cursor Settings > Models/);
+  assert.equal(cursorSource.includes("select Local Motion from Cursor's model picker"), false);
   assert.equal(cursorSource.includes("Add or enable an OpenAI-compatible model"), false);
   assert.match(panelSource, /Add Custom Model/);
+  assert.match(panelSource, /connectSteps/);
+  assert.match(panelSource, /viewModel\.steps/);
+  assert.match(panelSource, /LOCAL_MOTION_MODEL_ID/);
   assert.match(panelSource, /running \? 'on'\s*: state\.cursorConnectRunning \? 'starting'/);
 });
 
@@ -705,9 +711,16 @@ test("startup resume setting describes quiet runtime restart", async () => {
 
 test("command palette messages do not claim Cursor is connected before a real request", async () => {
   const extensionSource = await readText("../src/extension.ts");
+  const cursorSource = await readText("../src/cursor/cursorIntegration.ts");
+  const diagnosticsSource = await readText("../src/diagnostics/setupDiagnostics.ts");
   assert.equal(extensionSource.includes("Local Motion is connected"), false);
   assert.match(extensionSource, /local agent is on/);
   assert.match(extensionSource, /Cursor setup is ready/);
+  assert.match(cursorSource, /CURSOR_CUSTOM_MODEL_HANDOFF_HINT/);
+  assert.match(cursorSource, /select that custom model in chat \(not Auto\)/);
+  assert.match(extensionSource, /CURSOR_CUSTOM_MODEL_HANDOFF_HINT/);
+  assert.match(diagnosticsSource, /CURSOR_CUSTOM_MODEL_HANDOFF_HINT/);
+  assert.equal(extensionSource.includes("if Local Motion is not listed"), false);
 });
 
 test("downloads single-flight by target GGUF path", async () => {
@@ -745,7 +758,8 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelSource, /id="openCursor"/);
   assert.match(panelSource, /Open Cursor Settings/);
-  assert.match(panelSource, /In Cursor: Settings/);
+  assert.match(panelSource, /id="connectSteps"/);
+  assert.match(panelSource, /Copy each value into Cursor Settings/);
   assert.match(panelSource, /data-key="setupBlock"/);
   assert.match(panelSource, /Copy Updated Setup/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);

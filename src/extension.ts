@@ -12,6 +12,8 @@ import { LlamaServerManager } from "./runtime/llamaServer";
 import { CANCELLED_START_MESSAGE } from "./runtime/runtimeGuards";
 import { LlamaServerResolver } from "./runtime/llamaServerResolver";
 import { LocalMotionState } from "./state";
+import { LOCAL_MOTION_MODEL_ID } from "./types";
+import { CURSOR_CUSTOM_MODEL_HANDOFF_HINT } from "./cursor/cursorIntegration";
 import { SetupViewProvider } from "./ui/setupPanel";
 
 let runtime: LlamaServerManager | undefined;
@@ -124,7 +126,7 @@ async function prepareCursorCommand(
     const result = await controller.connectCursor();
     output.appendLine([result.verification.message, result.copy.message, result.settings.message].join(" "));
     if (result.verification.ok && result.copy.ok && result.settings.ok) {
-      void vscode.window.showInformationMessage("Cursor setup is ready. In Cursor Settings > Models, click Add Custom Model if Local Motion is not listed.");
+      void vscode.window.showInformationMessage(`Cursor setup is ready. ${CURSOR_CUSTOM_MODEL_HANDOFF_HINT}`);
     } else {
       void vscode.window.showWarningMessage([result.verification.message, result.copy.message, result.settings.message].join(" "));
     }
@@ -270,7 +272,7 @@ function refreshStatusBar(): void {
   const status = runtime?.status();
   if (status?.running) {
     statusBar.text = "$(circle-filled) Local Agent: On";
-    statusBar.tooltip = `${status.modelId ?? "Local Motion"} is loaded. Click to free memory.`;
+    statusBar.tooltip = `${status.modelId ?? LOCAL_MOTION_MODEL_ID} is loaded. Click to free memory.`;
     statusBar.command = "localMotion.freeMemory";
   } else {
     statusBar.text = "$(circle-large-outline) Local Agent: Off";

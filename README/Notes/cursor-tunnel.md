@@ -7,6 +7,83 @@ network block that forced it.
 
 ---
 
+## Issue: Cursor Chat "Model name is not valid" — Active
+
+**First spotted:** 2026-07-08
+**Status:** Active (vendor gate; Local Motion handoff hardened)
+
+### Summary
+
+Cursor chat can show `Model name is not valid` after Local Motion assisted
+setup. The string is not emitted by Local Motion. Local endpoint verification
+and `curl` to `/v1/models` + `/v1/chat/completions` can succeed while Cursor
+still rejects the custom model name via its own catalog validation.
+
+### Symptom
+
+```text
+Model name is not valid
+```
+
+(or `Model name is not valid: ""` / `Model name is not valid: "Local Motion"`)
+
+### Root Cause
+
+Cursor BYOK validates custom model names against its catalog before forwarding
+to the Override OpenAI Base URL. Empty model (API key toggle off) and
+unrecognized names are documented failure modes. Local Motion's id
+`Local Motion` is hijack-safe but still subject to Cursor's gate.
+Not manually confirmed on this machine's Cursor build for the empty-string vs
+catalog-reject split.
+
+### Related Guides
+
+- [Cursor private-network block guide](../Guides/cursor-private-network-block-guide.md) — diagnostic sequence and model-name section.
+
+### Fix
+
+**Files:**
+
+- `src/cursor/cursorIntegration.ts` — honest Add Custom Model steps; status
+  message names the Cursor-side error.
+- `src/runtime/openAiChat.ts` — proxy always rewrites chat `model` to the
+  advertised single-model id (does not fix Cursor pre-request rejection).
+- `src/ui/setupPanelHtml.ts`, `src/extension.ts` — stop hardcoding the brand
+  string; use `LOCAL_MOTION_MODEL_ID`.
+
+Do **not** invent a second `cursorModelId` or rename to a catalog alias without
+a named Cursor repro — that trades hijack risk for speculative validation
+bypass.
+
+### Verification
+
+```bash
+npm run check
+npm test
+```
+
+Manual: with tunnel + session key, run the guide's local `curl` with
+`"model":"Local Motion"`. If curl works and Cursor chat still fails, capture
+the exact error string (empty vs named) and Cursor version.
+
+### Executable Memory
+
+Regression test: `tests/pure-logic.test.mjs` (always-rewrite model; setup copy)
+Regression test: `tests/extension-wiring.test.mjs` (Add Custom Model wording)
+Not testable: Cursor-backend catalog validation end-to-end
+Memory updates: none
+
+### If This Recurs
+
+- [ ] Prove local stack with guide §4 step 1 `curl`.
+- [ ] Confirm OpenAI API Key toggle on and custom model selected (not Auto).
+- [ ] Check Cursor version / Help > Check for Updates (staff claimed catalog
+      rejection fixed 2026-07-08 in forum thread 155863).
+- [ ] Do not change `LOCAL_MOTION_MODEL_ID` without a measured Cursor failure
+      that a specific slug fixes.
+
+---
+
 ## Issue: Cursor Backend Cannot Reach Loopback Base URLs — Resolved
 
 **First spotted:** 2026-07-01
