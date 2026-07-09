@@ -7,6 +7,48 @@ network block that forced it.
 
 ---
 
+## Issue: Stale Plan-001 loopback lastCopied — Resolved
+
+**First spotted:** 2026-07-08
+**Resolved:** 2026-07-08
+**Status:** Resolved
+
+### Summary
+
+Setup panel showed last-copied `http://127.0.0.1:41434/v1` from
+2026-07-01 while the agent was on with no public tunnel. Current code never
+writes loopback into `lastCopied`; the record was a Plan 001 fossil that
+survived upgrades because validators accepted any non-empty Base URL.
+
+### Symptom
+
+```text
+Last copied values were for Local Motion at http://127.0.0.1:41434/v1
+Base URL field shows status text, not https://….trycloudflare.com
+Full Setup: Unavailable until Cursor connection is ready
+```
+
+### Root Cause
+
+`isLastCopiedCursorSetup` did not require public HTTPS. Pre-tunnel copies
+with `apiKeyLabel: "local-motion"` stayed in Cursor `globalStorage` and
+poisoned freshness messaging.
+
+### Fix
+
+- `src/stateValidation.ts` — require public HTTPS Base URL and
+  `apiKeyLabel: "session-key"`.
+- Cleared this machine's stale `localMotion.lastCopiedCursorSetup` from
+  Cursor `state.vscdb`.
+
+### If This Recurs
+
+- [ ] Confirm Base URL in Local Motion is `https://…`, not `127.0.0.1`.
+- [ ] In Cursor Models, Override OpenAI Base URL must match that public URL.
+- [ ] Click Open Cursor Settings again after reload so a fresh tunnel copy lands.
+
+---
+
 ## Issue: Cursor Chat "Model name is not valid" — Active
 
 **First spotted:** 2026-07-08
