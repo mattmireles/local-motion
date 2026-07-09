@@ -80,16 +80,13 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     localAgentRunning: true,
     setupBlock,
     steps: [
-      "Open Cursor Settings.",
-      "Go to Models.",
-      "Enable OpenAI API Key and paste the session key.",
+      "In Cursor Settings → Models, enable OpenAI API Key and paste the key.",
       "Enable Override OpenAI Base URL and paste the Base URL.",
-      "Click Add Custom Model.",
-      `Set Model name to exactly ${modelId} (copy the Model name field — do not type a different slug).`,
-      "Save it, then select that custom model in chat (not Auto)."
+      "Add Custom Model with the exact Model name below.",
+      "Select that custom model in chat (not Auto)."
     ],
     statusMessage:
-      "Cursor does not expose a stable extension API for changing its native model picker. Click Add Custom Model in Cursor Settings > Models and use Model name, API key, and Base URL exactly as shown. If chat says Model name is not valid, prove the local stack with curl first — that error is Cursor-side catalog validation, not Local Motion."
+      "Use Model name, API key, and Base URL exactly as shown. If chat says Model name is not valid, that is Cursor-side catalog validation — prove the local stack with curl first."
   };
 }
 
@@ -143,19 +140,19 @@ function cursorTunnelGuidance(tunnel: RuntimeStatus["cursorTunnel"]): { steps: s
   if (!tunnel?.enabled) {
     // Local compute is up; Cursor handoff is a second explicit step.
     // Host-agnostic on purpose (no appName): VS Code uses vscode.lm without a
-    // tunnel; Cursor needs Open Cursor Settings for the public Base URL.
+    // tunnel; Cursor needs Connect to Cursor for the public Base URL.
     return {
       steps: [
-        "In Cursor: click Open Cursor Settings to create the public Base URL and copy setup values.",
-        "In VS Code: use Local Motion from the built-in model picker — no tunnel needed."
+        "Click Connect to Cursor.",
+        "Local Motion creates a public Base URL and copies the setup values."
       ],
       statusMessage:
-        "Local agent is on. Cursor chat needs Open Cursor Settings (loopback will not work). VS Code can use the built-in Local Motion model picker without this step."
+        "Cursor cannot use localhost. Connect once to create a public Base URL."
     };
   }
   return {
-    steps: ["Preparing the Cursor connection.", "This can take a minute the first time."],
-    statusMessage: "Preparing the Cursor connection."
+    steps: ["Connecting to Cursor.", "This can take a minute the first time."],
+    statusMessage: "Connecting to Cursor…"
   };
 }
 

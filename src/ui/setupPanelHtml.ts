@@ -30,46 +30,53 @@ export function setupPanelHtml(nonce: string): string {
     </section>
 
     <div id="connect" class="connect hidden">
+      <h2 id="connectTitle" class="connect-title">Connect Cursor</h2>
       <p id="connectLead" class="connect-lead"></p>
-      <ol id="connectSteps" class="connect-steps" hidden></ol>
-      <div class="fields">
-        <div class="field">
-          <label>Model name</label>
-          <div class="field-row">
-            <span id="valModelId" class="field-value"></span>
-            <button class="btn ghost copy" data-key="modelId">Copy</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>API key</label>
-          <div class="field-row">
-            <span id="valApiKey" class="field-value"></span>
-            <button class="btn ghost copy" data-key="apiKey">Copy</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Base URL (OpenAI compatible)</label>
-          <div class="field-row">
-            <span id="valBaseUrl" class="field-value"></span>
-            <button class="btn ghost copy" data-key="baseUrl">Copy</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Full setup</label>
-          <div class="field-row">
-            <span id="valSetupBlock" class="field-value">All Cursor fields</span>
-            <button id="copySetupBlock" class="btn ghost copy" data-key="setupBlock">Copy Full Setup</button>
-          </div>
-        </div>
+      <!-- Not-ready: one action. Ready: values appear. Never show empty fields. -->
+      <div id="connectPending" class="connect-pending">
+        <button id="openCursor" class="btn cta">Connect to Cursor</button>
       </div>
-      <div class="row">
-        <button id="openCursor" class="btn cta">Open Cursor Settings</button>
+      <div id="connectReady" class="connect-ready hidden">
+        <ol id="connectSteps" class="connect-steps"></ol>
+        <div class="fields">
+          <div class="field">
+            <label>Model name</label>
+            <div class="field-row">
+              <span id="valModelId" class="field-value"></span>
+              <button class="btn ghost copy" data-key="modelId">Copy</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>API key</label>
+            <div class="field-row">
+              <span id="valApiKey" class="field-value"></span>
+              <button class="btn ghost copy" data-key="apiKey">Copy</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Base URL</label>
+            <div class="field-row">
+              <span id="valBaseUrl" class="field-value"></span>
+              <button class="btn ghost copy" data-key="baseUrl">Copy</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Full setup</label>
+            <div class="field-row">
+              <span id="valSetupBlock" class="field-value">Model name, API key, and Base URL</span>
+              <button id="copySetupBlock" class="btn ghost copy" data-key="setupBlock">Copy All</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button id="openCursorAgain" class="btn ghost">Open Cursor Settings</button>
+        </div>
       </div>
       <!-- The one fact about this product that belongs to the user. It is
            permanent copy, not a dismissable notice, and it is the entire
            privacy surface of the Cursor path — the mechanism stays invisible,
            the consequence does not. -->
-      <p class="note">Model runs on this Mac. Cursor relays chats through its servers.</p>
+      <p class="note privacy">Model runs on this Mac. Cursor relays chats through its servers.</p>
       <p id="connectNote" class="note" role="status" aria-live="polite"></p>
     </div>
 
@@ -132,6 +139,11 @@ export function setupPanelHtml(nonce: string): string {
       progress: document.getElementById('progress'),
       progressFill: document.getElementById('progressFill'),
       connect: document.getElementById('connect'),
+      connectTitle: document.getElementById('connectTitle'),
+      connectLead: document.getElementById('connectLead'),
+      connectPending: document.getElementById('connectPending'),
+      connectReady: document.getElementById('connectReady'),
+      connectSteps: document.getElementById('connectSteps'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
@@ -140,8 +152,7 @@ export function setupPanelHtml(nonce: string): string {
       modelChooser: document.getElementById('modelChooser'),
       modelOptions: document.getElementById('modelOptions'),
       openCursor: document.getElementById('openCursor'),
-      connectLead: document.getElementById('connectLead'),
-      connectSteps: document.getElementById('connectSteps'),
+      openCursorAgain: document.getElementById('openCursorAgain'),
       connectNote: document.getElementById('connectNote'),
       primary: document.getElementById('primary'),
       metaLine: document.getElementById('metaLine'),
@@ -208,16 +219,18 @@ export function setupPanelHtml(nonce: string): string {
         vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.COPY_CURSOR_VALUE}', key: button.dataset.key });
       });
     }
-    els.openCursor.addEventListener('click', () => {
+    function startCursorConnect() {
       state.cursorConnectRunning = true;
       state.setupOperationRunning = true;
       state.progressPercent = undefined;
-      state.progressMessage = 'Opening Cursor Settings…';
-      state.connectMessage = 'Preparing Cursor setup and opening Cursor Settings.';
+      state.progressMessage = 'Connecting to Cursor…';
+      state.connectMessage = 'Creating a public Base URL and copying setup values.';
       render();
       setStatus(state.connectMessage);
       vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.CONNECT_CURSOR}' });
-    });
+    }
+    els.openCursor.addEventListener('click', startCursorConnect);
+    els.openCursorAgain.addEventListener('click', startCursorConnect);
     els.manageStorage.addEventListener('click', () => {
       state.storageOpen = !state.storageOpen;
       renderStorage();
@@ -503,47 +516,52 @@ export function setupPanelHtml(nonce: string): string {
         const viewModel = state.cursorSetupViewModel || {};
         els.connect.classList.remove('hidden');
         const cursorReady = viewModel.isRunning === true;
-        // "can use" is only true after the public Cursor connection exists.
-        // Local agent on ≠ Cursor ready — loopback cannot reach Cursor chat.
+        const connecting = state.cursorConnectRunning || state.setupOperationRunning;
+        // Local agent on ≠ Cursor ready. Until the public Base URL exists,
+        // show one action — never empty fields stuffed with status text.
         els.subline.textContent = cursorReady
-          ? 'Cursor can use your local model.'
-          : 'Open Cursor Settings to finish the Cursor connection.';
-        const cursorDisabled = !cursorReady || state.cursorConnectRunning || state.setupOperationRunning;
-        for (const button of document.querySelectorAll('.connect .copy')) {
-          button.disabled = cursorDisabled;
-        }
-        els.openCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
-        els.valModelId.textContent = viewModel.modelId || ${JSON.stringify(LOCAL_MOTION_MODEL_ID)};
-        els.valApiKey.textContent = viewModel.apiKey || '';
-        els.valBaseUrl.textContent = viewModel.baseUrl || viewModel.statusMessage || 'Cursor connection is not ready.';
-        els.valSetupBlock.textContent = cursorReady ? 'Model name, API key, and Base URL' : 'Unavailable until Cursor connection is ready';
-        els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
-          ? 'Copy Updated Setup'
-          : 'Copy Full Setup';
-        const steps = Array.isArray(viewModel.steps) ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim()) : [];
+          ? 'Copy these values into Cursor Settings → Models.'
+          : 'One more step to use this model in Cursor chat.';
+        els.connectTitle.textContent = cursorReady ? 'Cursor setup' : 'Connect Cursor';
         els.connectLead.textContent = cursorReady
-          ? 'Copy each value into Cursor Settings → Models → Add Custom Model.'
-          : (viewModel.statusMessage || 'Start a local model, then connect Cursor.');
-        els.connectSteps.replaceChildren();
-        if (steps.length > 0) {
+          ? 'Add a custom model with these exact values, then select it in chat (not Auto).'
+          : (viewModel.statusMessage || 'Create a public connection Cursor can reach.');
+        els.connectPending.classList.toggle('hidden', cursorReady);
+        els.connectReady.classList.toggle('hidden', !cursorReady);
+        els.openCursor.disabled = connecting;
+        els.openCursor.textContent = connecting ? 'Connecting…' : 'Connect to Cursor';
+        els.openCursorAgain.disabled = connecting;
+        if (cursorReady) {
+          for (const button of document.querySelectorAll('.connect .copy')) {
+            button.disabled = connecting;
+          }
+          els.valModelId.textContent = viewModel.modelId || ${JSON.stringify(LOCAL_MOTION_MODEL_ID)};
+          els.valApiKey.textContent = viewModel.apiKey || '';
+          els.valBaseUrl.textContent = viewModel.baseUrl || '';
+          els.valSetupBlock.textContent = 'Model name, API key, and Base URL';
+          els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
+            ? 'Copy Updated Setup'
+            : 'Copy All';
+          const steps = Array.isArray(viewModel.steps)
+            ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim())
+            : [];
+          els.connectSteps.replaceChildren();
           for (const step of steps) {
             const item = document.createElement('li');
             item.textContent = step;
             els.connectSteps.appendChild(item);
           }
-          els.connectSteps.hidden = false;
-        } else {
-          els.connectSteps.hidden = true;
         }
         const freshness = state.cursorSetupFreshness;
         const freshnessMessage = freshness && freshness.message;
-        // Operational messages win for live connect/copy feedback. When values
-        // are already current, surface the vendor-catalog triage from statusMessage
-        // so "Model name is not valid" guidance is not buried forever.
-        const note = state.connectMessage
-          || (freshness && freshness.status === 'current' ? (viewModel.statusMessage || freshnessMessage) : freshnessMessage)
-          || viewModel.statusMessage
-          || '';
+        let note = state.connectMessage || '';
+        if (!note && freshness) {
+          if (freshness.status === 'current' && cursorReady) {
+            note = 'If chat says Model name is not valid, that is Cursor-side — prove the local stack with curl first.';
+          } else if (freshness.status !== 'current') {
+            note = freshnessMessage || '';
+          }
+        }
         els.connectNote.textContent = note;
         els.connectNote.style.display = note ? 'block' : 'none';
       }

@@ -333,10 +333,28 @@ export function setupPanelStyles(): string {
       background: var(--panel);
     }
     .connect.hidden { display: none; }
+    .connect .connect-title {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
     .connect .connect-lead {
-      margin: 0 0 10px;
+      margin: 0 0 14px;
       color: var(--muted);
       line-height: 1.5;
+    }
+    .connect .connect-pending {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .connect .connect-pending.hidden,
+    .connect .connect-ready.hidden { display: none; }
+    .connect .connect-pending .btn.cta {
+      width: 100%;
+      justify-content: center;
     }
     .connect .connect-steps {
       margin: 0 0 14px;
@@ -383,6 +401,9 @@ export function setupPanelStyles(): string {
       margin-top: 10px;
       color: var(--faint);
       font-size: 12px;
+    }
+    .connect .note.privacy {
+      margin-top: 14px;
     }
 
     /* One disclosure. Four competing triangles become one. */

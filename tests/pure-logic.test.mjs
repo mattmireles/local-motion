@@ -735,11 +735,10 @@ test("Cursor setup view model uses the public tunnel endpoint", () => {
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_MODEL_ID));
   assert.ok(viewModel.setupBlock.includes("session-secret"));
   assert.ok(viewModel.setupBlock.includes(`Model name: ${LOCAL_MOTION_MODEL_ID}`));
-  assert.ok(viewModel.statusMessage.includes("Cursor Settings > Models"));
   assert.ok(viewModel.statusMessage.includes("Model name is not valid"));
-  assert.ok(viewModel.steps.includes("Click Add Custom Model."));
-  assert.ok(viewModel.steps.some((line) => line.includes("select that custom model in chat")));
-  assert.ok(viewModel.steps.some((line) => line.includes("Enable OpenAI API Key")));
+  assert.ok(viewModel.steps.some((line) => line.includes("Add Custom Model")));
+  assert.ok(viewModel.steps.some((line) => /select that custom model in chat/i.test(line)));
+  assert.ok(viewModel.steps.some((line) => line.includes("OpenAI API Key")));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "https://public.example.com/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), "session-secret");
   assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);
@@ -770,11 +769,10 @@ test("Cursor setup view model refuses localhost and tells the user to connect Cu
   assert.equal(viewModel.isRunning, false);
   assert.equal(viewModel.localAgentRunning, true);
   assert.equal(viewModel.baseUrl, "");
-  assert.match(viewModel.statusMessage, /Open Cursor Settings/);
-  assert.match(viewModel.statusMessage, /VS Code/);
-  assert.doesNotMatch(viewModel.statusMessage, /fully local in VS Code/);
-  assert.ok(viewModel.steps.some((line) => line.includes("Open Cursor Settings")));
-  assert.ok(viewModel.steps.some((line) => line.includes("built-in model picker")));
+  assert.match(viewModel.statusMessage, /Connect once to create a public Base URL/);
+  assert.match(viewModel.statusMessage, /cannot use localhost/i);
+  assert.ok(viewModel.steps.some((line) => line.includes("Connect to Cursor")));
+  assert.ok(viewModel.steps.some((line) => line.includes("public Base URL")));
 });
 
 test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
@@ -995,10 +993,9 @@ test("Cursor setup freshness does not claim the model is stopped when only the t
     lastCopiedCursorSetup(connectedViewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
   );
   assert.equal(freshness.status, "stale");
-  assert.match(freshness.message, /Open Cursor Settings/);
+  assert.match(freshness.message, /Connect once to create a public Base URL/);
   assert.match(freshness.message, /Last copied values/);
   assert.doesNotMatch(freshness.message, /no Local Motion model is running/);
-  assert.match(freshness.message, /VS Code/);
 });
 
 test("Cursor setup freshness preserves tunnel-error guidance when last-copied values exist", () => {

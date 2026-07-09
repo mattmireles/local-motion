@@ -389,15 +389,16 @@ test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
-  assert.match(cursorSource, /Click Add Custom Model/);
+  assert.match(cursorSource, /Add Custom Model/);
   assert.match(cursorSource, /Model name: /);
-  assert.match(cursorSource, /Set Model name to exactly /);
   assert.match(cursorSource, /select that custom model in chat/);
   assert.match(cursorSource, /Model name is not valid/);
-  assert.match(cursorSource, /Cursor Settings > Models/);
+  assert.match(cursorSource, /Connect to Cursor/);
   assert.equal(cursorSource.includes("select Local Motion from Cursor's model picker"), false);
   assert.equal(cursorSource.includes("Add or enable an OpenAI-compatible model"), false);
-  assert.match(panelSource, /Add Custom Model/);
+  assert.match(panelSource, /Connect to Cursor/);
+  assert.match(panelSource, /connectPending/);
+  assert.match(panelSource, /connectReady/);
   assert.match(panelSource, /connectSteps/);
   assert.match(panelSource, /viewModel\.steps/);
   assert.match(panelSource, /LOCAL_MOTION_MODEL_ID/);
@@ -757,9 +758,10 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
 
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelSource, /id="openCursor"/);
-  assert.match(panelSource, /Open Cursor Settings/);
+  assert.match(panelSource, /Connect to Cursor/);
+  assert.match(panelSource, /id="connectPending"/);
+  assert.match(panelSource, /id="connectReady"/);
   assert.match(panelSource, /id="connectSteps"/);
-  assert.match(panelSource, /Copy each value into Cursor Settings/);
   assert.match(panelSource, /data-key="setupBlock"/);
   assert.match(panelSource, /Copy Updated Setup/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
@@ -837,16 +839,16 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // The earned, confident line appears only when a real request was observed.
+  // Until then: one Connect action when not ready; copy fields only when ready.
   assert.match(panelSource, /Cursor is using your local model\./);
-  assert.match(panelSource, /Cursor can use your local model\./);
-  assert.match(panelSource, /Open Cursor Settings to finish the Cursor connection\./);
+  assert.match(panelSource, /One more step to use this model in Cursor chat\./);
+  assert.match(panelSource, /Copy these values into Cursor Settings/);
+  assert.match(panelSource, /connectPending/);
+  assert.match(panelSource, /connectReady/);
+  assert.match(panelSource, /Connect to Cursor/);
   assert.match(panelSource, /viewModel\.isRunning === true/);
   assert.match(panelSource, /runtime\.clientObserved/);
   assert.match(panelSource, /Runs a coding model on this Mac for Cursor\./);
-  assert.match(panelSource, /Open Cursor Settings/);
-  assert.match(panelSource, /Preparing Cursor setup and opening Cursor Settings\./);
-  assert.match(panelSource, /viewModel\.baseUrl \|\| viewModel\.statusMessage/);
-  assert.match(panelSource, /Unavailable until Cursor connection is ready/);
   assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
@@ -868,25 +870,25 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
     assert.match(connectSlice, /this\.startInstalledModel\(active/);
     assert.match(connectSlice, /connectCursor: true/);
   }
-  assert.equal(panelSource.includes("Connect Cursor"), false);
   assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
   assert.equal(panelSource.includes("Cursor-routed prompts"), false);
   assert.match(panelSource, /viewModel\.isRunning === true/);
-  assert.match(panelSource, /button\.disabled = cursorDisabled/);
-  assert.match(panelSource, /els\.openCursor\.disabled = state\.cursorConnectRunning \|\| state\.setupOperationRunning/);
+  assert.match(panelSource, /els\.openCursor\.disabled = connecting/);
+  assert.equal(panelSource.includes("viewModel.baseUrl || viewModel.statusMessage"), false);
+  assert.equal(panelSource.includes("Unavailable until Cursor connection is ready"), false);
 
   // The permanent one-line disclosure is the entire privacy surface of the
   // Cursor path: the mechanism stays invisible, the consequence does not.
   assert.match(panelSource, /Model runs on this Mac\. Cursor relays chats through its servers\./);
 
   // Once a real request is observed the connect card is dropped; until then it
-  // stays visible. It must not vanish when Cursor Settings opens, so the old
-  // freshness-collapse branch is gone entirely. Subline honesty lives in the
-  // same branch: "can use" only after cursorReady, never while Base URL is empty.
+  // stays visible. Not-ready shows connectPending only; ready shows values.
   assert.match(
     panelSource,
     /if \(inUse\) \{[\s\S]*?els\.connect\.classList\.add\('hidden'\);[\s\S]*?\} else \{[\s\S]*?els\.connect\.classList\.remove\('hidden'\)/
   );
+  assert.match(panelSource, /connectPending\.classList\.toggle\('hidden', cursorReady\)/);
+  assert.match(panelSource, /connectReady\.classList\.toggle\('hidden', !cursorReady\)/);
   assert.equal(panelSource.includes("current && !handoffFailed"), false);
 });
 
