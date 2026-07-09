@@ -356,14 +356,6 @@ export function setupPanelStyles(): string {
       width: 100%;
       justify-content: center;
     }
-    .connect .connect-steps {
-      margin: 0 0 14px;
-      padding-left: 1.25rem;
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 12px;
-    }
-    .connect .connect-steps li + li { margin-top: 4px; }
     /* Each Cursor value sits on its own row, copyable on its own. */
     .fields { display: grid; gap: 12px; margin-bottom: 14px; }
     .field label {
@@ -406,12 +398,15 @@ export function setupPanelStyles(): string {
       margin-top: 14px;
     }
 
-    /* One disclosure. Four competing triangles become one. */
-    details.advanced {
+    /* Shared disclosure pattern: Advanced, then Setup below it. */
+    details.disclosure {
       margin-top: 26px;
       border-top: 1px solid var(--line);
     }
-    details.advanced > summary {
+    details.disclosure.setup {
+      margin-top: 0;
+    }
+    details.disclosure > summary {
       cursor: pointer;
       list-style: none;
       padding: 16px 0 4px;
@@ -420,18 +415,18 @@ export function setupPanelStyles(): string {
       font-weight: 600;
       user-select: none;
     }
-    details.advanced > summary::-webkit-details-marker { display: none; }
-    details.advanced > summary::before {
+    details.disclosure > summary::-webkit-details-marker { display: none; }
+    details.disclosure > summary::before {
       content: "›";
       display: inline-block;
       margin-right: 8px;
       transition: transform 160ms ease;
     }
-    details.advanced[open] > summary::before { transform: rotate(90deg); }
-    .advanced-body { padding: 8px 0 4px; }
-    .advanced-block { padding: 16px 0; }
-    .advanced-block + .advanced-block { border-top: 1px solid var(--line); }
-    .advanced-block h2 {
+    details.disclosure[open] > summary::before { transform: rotate(90deg); }
+    .disclosure-body { padding: 8px 0 4px; }
+    .disclosure-block { padding: 16px 0; }
+    .disclosure-block + .disclosure-block { border-top: 1px solid var(--line); }
+    .disclosure-block h2 {
       font-size: 12px;
       margin: 0 0 12px;
       font-weight: 600;
@@ -439,6 +434,20 @@ export function setupPanelStyles(): string {
       text-transform: uppercase;
       color: var(--faint);
     }
+    .setup-guide-lead {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+    .setup-guide-steps {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+    .setup-guide-steps li + li { margin-top: 6px; }
 
     label {
       display: block;

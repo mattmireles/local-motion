@@ -97,25 +97,34 @@ test("local agent switch commands and status bar are registered", async () => {
   assert.match(extensionSource, /localMotion\.freeMemory/);
 });
 
-test("setup first screen is a single on/off switch before one advanced disclosure", async () => {
+test("setup first screen is a single on/off switch before Advanced and Setup disclosures", async () => {
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
 
-  // The live switch and the connect beat appear before the single Advanced disclosure.
+  // The live switch and the connect beat appear before Advanced, then Setup.
   const primaryIndex = panelSource.indexOf('id="primary"');
   const connectIndex = panelSource.indexOf('id="connect"');
   const advancedIndex = panelSource.indexOf("<summary>Advanced</summary>");
+  const setupIndex = panelSource.indexOf("<summary>Setup</summary>");
   assert.notEqual(primaryIndex, -1);
   assert.notEqual(connectIndex, -1);
   assert.notEqual(advancedIndex, -1);
+  assert.notEqual(setupIndex, -1);
   assert.equal(primaryIndex < advancedIndex, true);
   assert.equal(connectIndex < advancedIndex, true);
+  assert.equal(advancedIndex < setupIndex, true);
 
-  // The old four-triangle wizard layout is gone: exactly one disclosure now.
+  // The old four-triangle wizard layout is gone. Setup instructions live in
+  // their own disclosure below Advanced — always reachable, never buried in
+  // the connect card.
   assert.equal(panelSource.includes("Advanced model controls"), false);
   assert.equal(panelSource.includes("Cursor connection details"), false);
   assert.equal(panelSource.includes("Mac and memory details"), false);
   assert.equal(panelSource.includes('class="hero"'), false);
   assert.equal(panelSource.includes("header-actions"), false);
+  assert.match(panelSource, /id="setupGuide"/);
+  assert.match(panelSource, /id="setupGuideSteps"/);
+  assert.match(panelSource, /renderSetupGuide/);
+  assert.equal(panelSource.includes('id="connectSteps"'), false);
 
   // The primary control never morphs into Connect, and there is no second
   // memory button anywhere (both were audit P0/P1 hazards).
@@ -399,7 +408,8 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   assert.match(panelSource, /Connect to Cursor/);
   assert.match(panelSource, /connectPending/);
   assert.match(panelSource, /connectReady/);
-  assert.match(panelSource, /connectSteps/);
+  assert.match(panelSource, /setupGuideSteps/);
+  assert.match(panelSource, /renderSetupGuide/);
   assert.match(panelSource, /viewModel\.steps/);
   assert.match(panelSource, /LOCAL_MOTION_MODEL_ID/);
   assert.match(panelSource, /running \? 'on'\s*: state\.cursorConnectRunning \? 'starting'/);
@@ -761,7 +771,8 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   assert.match(panelSource, /Connect to Cursor/);
   assert.match(panelSource, /id="connectPending"/);
   assert.match(panelSource, /id="connectReady"/);
-  assert.match(panelSource, /id="connectSteps"/);
+  assert.match(panelSource, /id="setupGuide"/);
+  assert.match(panelSource, /id="setupGuideSteps"/);
   assert.match(panelSource, /data-key="setupBlock"/);
   assert.match(panelSource, /Copy Updated Setup/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);

@@ -37,7 +37,6 @@ export function setupPanelHtml(nonce: string): string {
         <button id="openCursor" class="btn cta">Connect to Cursor</button>
       </div>
       <div id="connectReady" class="connect-ready hidden">
-        <ol id="connectSteps" class="connect-steps"></ol>
         <div class="fields">
           <div class="field">
             <label>Model name</label>
@@ -88,18 +87,26 @@ export function setupPanelHtml(nonce: string): string {
 
     ${setupPanelStorageMarkup()}
 
-    <details class="advanced">
+    <details class="disclosure advanced">
       <summary>Advanced</summary>
-      <div class="advanced-body">
-        <section class="advanced-block">
+      <div class="disclosure-body">
+        <section class="disclosure-block">
           <h2>This Mac</h2>
           <div id="machine" class="grid"></div>
         </section>
 
-        <section class="advanced-block">
+        <section class="disclosure-block">
           <h2>Activity log</h2>
           <pre id="status">Waiting for machine profile.</pre>
         </section>
+      </div>
+    </details>
+
+    <details id="setupGuide" class="disclosure setup">
+      <summary>Setup</summary>
+      <div class="disclosure-body">
+        <p id="setupGuideLead" class="setup-guide-lead">How to connect Cursor chat to the local model.</p>
+        <ol id="setupGuideSteps" class="setup-guide-steps"></ol>
       </div>
     </details>
   </main>
@@ -143,7 +150,8 @@ export function setupPanelHtml(nonce: string): string {
       connectLead: document.getElementById('connectLead'),
       connectPending: document.getElementById('connectPending'),
       connectReady: document.getElementById('connectReady'),
-      connectSteps: document.getElementById('connectSteps'),
+      setupGuideLead: document.getElementById('setupGuideLead'),
+      setupGuideSteps: document.getElementById('setupGuideSteps'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
@@ -403,6 +411,7 @@ export function setupPanelHtml(nonce: string): string {
         : 'off';
       renderModelOptions();
       renderStorage();
+      renderSetupGuide();
 
       // A failed turn-on speaks in place, replacing the headline.
       if (phase === 'error') {
@@ -542,15 +551,6 @@ export function setupPanelHtml(nonce: string): string {
           els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
             ? 'Copy Updated Setup'
             : 'Copy All';
-          const steps = Array.isArray(viewModel.steps)
-            ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim())
-            : [];
-          els.connectSteps.replaceChildren();
-          for (const step of steps) {
-            const item = document.createElement('li');
-            item.textContent = step;
-            els.connectSteps.appendChild(item);
-          }
         }
         const freshness = state.cursorSetupFreshness;
         const freshnessMessage = freshness && freshness.message;
@@ -581,6 +581,43 @@ export function setupPanelHtml(nonce: string): string {
         els.metaLine.textContent = name;
       } else {
         els.metaLine.style.display = 'none';
+      }
+    }
+
+    function renderSetupGuide() {
+      const viewModel = state.cursorSetupViewModel || {};
+      const cursorReady = viewModel.isRunning === true;
+      const steps = Array.isArray(viewModel.steps)
+        ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim())
+        : [];
+      els.setupGuideLead.textContent = cursorReady
+        ? 'Paste these values into Cursor Settings → Models, then select the custom model in chat (not Auto).'
+        : (viewModel.statusMessage || 'Turn on the local agent, then connect Cursor.');
+      els.setupGuideSteps.replaceChildren();
+      if (steps.length === 0) {
+        const fallback = cursorReady
+          ? [
+              'In Cursor Settings → Models, enable OpenAI API Key and paste the key.',
+              'Enable Override OpenAI Base URL and paste the Base URL.',
+              'Add Custom Model with the exact Model name.',
+              'Select that custom model in chat (not Auto).'
+            ]
+          : [
+              'Turn on the local agent.',
+              'Click Connect to Cursor.',
+              'Copy Model name, API key, and Base URL into Cursor Settings → Models.'
+            ];
+        for (const step of fallback) {
+          const item = document.createElement('li');
+          item.textContent = step;
+          els.setupGuideSteps.appendChild(item);
+        }
+        return;
+      }
+      for (const step of steps) {
+        const item = document.createElement('li');
+        item.textContent = step;
+        els.setupGuideSteps.appendChild(item);
       }
     }
 
