@@ -839,6 +839,8 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   // The earned, confident line appears only when a real request was observed.
   assert.match(panelSource, /Cursor is using your local model\./);
   assert.match(panelSource, /Cursor can use your local model\./);
+  assert.match(panelSource, /Open Cursor Settings to finish the Cursor connection\./);
+  assert.match(panelSource, /viewModel\.isRunning === true/);
   assert.match(panelSource, /runtime\.clientObserved/);
   assert.match(panelSource, /Runs a coding model on this Mac for Cursor\./);
   assert.match(panelSource, /Open Cursor Settings/);
@@ -879,10 +881,11 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
 
   // Once a real request is observed the connect card is dropped; until then it
   // stays visible. It must not vanish when Cursor Settings opens, so the old
-  // freshness-collapse branch is gone entirely.
+  // freshness-collapse branch is gone entirely. Subline honesty lives in the
+  // same branch: "can use" only after cursorReady, never while Base URL is empty.
   assert.match(
     panelSource,
-    /if \(inUse\) \{\s*els\.connect\.classList\.add\('hidden'\);\s*\} else \{[\s\S]*?els\.connect\.classList\.remove\('hidden'\)/
+    /if \(inUse\) \{[\s\S]*?els\.connect\.classList\.add\('hidden'\);[\s\S]*?\} else \{[\s\S]*?els\.connect\.classList\.remove\('hidden'\)/
   );
   assert.equal(panelSource.includes("current && !handoffFailed"), false);
 });

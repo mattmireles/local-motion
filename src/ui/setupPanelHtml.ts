@@ -484,11 +484,6 @@ export function setupPanelHtml(nonce: string): string {
       }
 
       els.headline.textContent = 'Local agent is on';
-      // "is using" is earned only by a real inbound request; otherwise the
-      // honest claim is the softer "can use".
-      els.subline.textContent = inUse
-        ? 'Cursor is using your local model.'
-        : 'Cursor can use your local model.';
       els.progress.classList.add('hidden');
 
       // A clean symmetric on/off toggle, never a destructive-sounding morph.
@@ -498,22 +493,21 @@ export function setupPanelHtml(nonce: string): string {
       els.primary.title = option && option.status !== 'running' ? 'Stops the current model and starts the selected one' : 'Frees the model from memory';
       els.primary.disabled = false;
 
-      // A post-start failure (copy, verify, open settings) surfaces in place
-      // while the agent itself stays on, instead of hiding in the activity log.
-      if (state.errorMessage) {
-        els.subline.textContent = state.errorMessage;
-        els.subline.classList.add('error');
-      }
-
       // Once a real request has arrived there is nothing left to do, so drop
       // the card. Until then the values stay put so the user can copy them into
       // Cursor — they must NEVER vanish just because Cursor Settings opened.
       if (inUse) {
+        els.subline.textContent = 'Cursor is using your local model.';
         els.connect.classList.add('hidden');
       } else {
         const viewModel = state.cursorSetupViewModel || {};
         els.connect.classList.remove('hidden');
         const cursorReady = viewModel.isRunning === true;
+        // "can use" is only true after the public Cursor connection exists.
+        // Local agent on ≠ Cursor ready — loopback cannot reach Cursor chat.
+        els.subline.textContent = cursorReady
+          ? 'Cursor can use your local model.'
+          : 'Open Cursor Settings to finish the Cursor connection.';
         const cursorDisabled = !cursorReady || state.cursorConnectRunning || state.setupOperationRunning;
         for (const button of document.querySelectorAll('.connect .copy')) {
           button.disabled = cursorDisabled;
@@ -552,6 +546,13 @@ export function setupPanelHtml(nonce: string): string {
           || '';
         els.connectNote.textContent = note;
         els.connectNote.style.display = note ? 'block' : 'none';
+      }
+
+      // A post-start failure (copy, verify, open settings) surfaces in place
+      // while the agent itself stays on, instead of hiding in the activity log.
+      if (state.errorMessage) {
+        els.subline.textContent = state.errorMessage;
+        els.subline.classList.add('error');
       }
 
       // One quiet greyed metadata line: the model display name only.
