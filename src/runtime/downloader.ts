@@ -38,11 +38,10 @@ export interface DownloadOptions {
   concurrency?: number;
   chunkSizeBytes?: number;
   parallelMinBytes?: number;
-  // Hugging Face omits an LFS oid (our sha256 source) for some siblings, so
-  // integrity falls back to a byte-count match alone. Callers with a UI
-  // (the extension host) should surface this where a user will see it
-  // (e.g. a warning notification); a console.warn always fires regardless,
-  // for the extension host's developer log.
+  // Hugging Face sometimes omits LFS hash metadata (lfs.sha256 / legacy
+  // lfs.oid), so integrity falls back to a byte-count match alone. Callers
+  // with a UI should surface this where a user will see it; a console.warn
+  // always fires for the extension host's developer log.
   onChecksumWarning?: (message: string) => void;
 }
 
@@ -754,15 +753,12 @@ async function validateExistingFile(
   }
 }
 
-// Hugging Face only exposes an LFS oid (our sha256 source) for siblings
-// tracked via Git LFS. A handful of small or non-standard repos omit it, in
-// which case integrity falls back to a byte-count match alone. HF exposes
-// no other content hash to verify against, so this can't be fixed by
-// computing a checksum — it can only be made visible. console.warn covers
-// the extension host's developer log; onChecksumWarning lets a caller with
-// a UI (the controller) surface it somewhere a user will actually see.
+// Hugging Face usually exposes lfs.sha256 (or legacy lfs.oid) for LFS-tracked
+// siblings. When both are absent, integrity falls back to byte-count match
+// alone — HF exposes no other content hash. console.warn covers the extension
+// host log; onChecksumWarning lets a UI caller surface it to the user.
 function warnMissingChecksum(repoId: string, fileName: string, onChecksumWarning?: (message: string) => void): void {
-  const message = `Local Motion: no SHA-256 available for ${repoId}/${fileName} (Hugging Face did not report an LFS oid). Verifying download size only.`;
+  const message = `Local Motion: no SHA-256 available for ${repoId}/${fileName} (Hugging Face did not report an LFS hash). Verifying download size only.`;
   console.warn(message);
   onChecksumWarning?.(message);
 }

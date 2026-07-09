@@ -14,7 +14,9 @@ interface HuggingFaceModel {
   siblings?: Array<{
     rfilename?: string;
     size?: number;
-    lfs?: { size?: number; oid?: string };
+    // HF Hub blobs=true historically used lfs.oid ("sha256:<hex>"); current
+    // responses often put the bare hex on lfs.sha256 with no oid field.
+    lfs?: { size?: number; oid?: string; sha256?: string };
   }>;
 }
 
@@ -39,7 +41,7 @@ export async function listQuantizations(
         repoId,
         fileName,
         sizeBytes: sibling.lfs?.size ?? sibling.size ?? (await readRemoteSize(url)),
-        sha256: parseSha256(sibling.lfs?.oid),
+        sha256: parseSha256(sibling.lfs?.sha256 ?? sibling.lfs?.oid),
         revision,
         quantization: quantizationFromFileName(fileName),
         downloadUrl: url
@@ -85,11 +87,12 @@ function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response
   });
 }
 
-function parseSha256(oid: string | undefined): string | undefined {
-  if (!oid) {
+function parseSha256(value: string | undefined): string | undefined {
+  if (!value) {
     return undefined;
   }
-  return oid.startsWith("sha256:") ? oid.slice("sha256:".length) : oid;
+  // Accept both "sha256:<hex>" (legacy lfs.oid) and bare hex (lfs.sha256).
+  return value.startsWith("sha256:") ? value.slice("sha256:".length) : value;
 }
 
 function downloadUrl(repoId: string, fileName: string, revision: string): string {

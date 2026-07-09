@@ -517,7 +517,7 @@ export function setupPanelHtml(nonce: string): string {
         els.openCursor.disabled = state.cursorConnectRunning || state.setupOperationRunning;
         els.valModelId.textContent = viewModel.modelId || 'Local Motion';
         els.valApiKey.textContent = viewModel.apiKey || '';
-        els.valBaseUrl.textContent = viewModel.baseUrl || (viewModel.statusMessage || 'Cursor connection is not ready.');
+        els.valBaseUrl.textContent = viewModel.baseUrl || viewModel.statusMessage || 'Cursor connection is not ready.';
         els.valSetupBlock.textContent = cursorReady ? 'Model name, API key, and Base URL' : 'Unavailable until Cursor connection is ready';
         els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
           ? 'Copy Updated Setup'

@@ -740,7 +740,7 @@ test("Cursor setup view model does not duplicate a tunnel v1 suffix", () => {
   assert.equal(viewModel.baseUrl, "https://public.example.com/v1");
 });
 
-test("Cursor setup view model refuses localhost and explains the VS Code path when no tunnel exists", () => {
+test("Cursor setup view model refuses localhost and tells the user to connect Cursor when no tunnel exists", () => {
   const viewModel = cursorSetupViewModel({
     running: true,
     baseUrl: "http://127.0.0.1:50000/v1",
@@ -749,9 +749,13 @@ test("Cursor setup view model refuses localhost and explains the VS Code path wh
     message: "running"
   });
   assert.equal(viewModel.isRunning, false);
+  assert.equal(viewModel.localAgentRunning, true);
   assert.equal(viewModel.baseUrl, "");
-  assert.match(viewModel.statusMessage, /fully local in VS Code/);
-  assert.ok(viewModel.steps.some((line) => line.includes("inside Cursor")));
+  assert.match(viewModel.statusMessage, /Open Cursor Settings/);
+  assert.match(viewModel.statusMessage, /VS Code/);
+  assert.doesNotMatch(viewModel.statusMessage, /fully local in VS Code/);
+  assert.ok(viewModel.steps.some((line) => line.includes("Open Cursor Settings")));
+  assert.ok(viewModel.steps.some((line) => line.includes("built-in model picker")));
 });
 
 test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
@@ -948,6 +952,61 @@ test("Cursor setup freshness marks stopped model stale after copied setup values
   );
   assert.equal(freshness.status, "stale");
   assert.ok(freshness.message.includes("no Local Motion model is running"));
+});
+
+test("Cursor setup freshness does not claim the model is stopped when only the tunnel is missing", () => {
+  const connectedViewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  const localOnlyViewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:41434/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: false },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  const freshness = cursorSetupFreshness(
+    localOnlyViewModel,
+    lastCopiedCursorSetup(connectedViewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
+  );
+  assert.equal(freshness.status, "stale");
+  assert.match(freshness.message, /Open Cursor Settings/);
+  assert.match(freshness.message, /Last copied values/);
+  assert.doesNotMatch(freshness.message, /no Local Motion model is running/);
+  assert.match(freshness.message, /VS Code/);
+});
+
+test("Cursor setup freshness preserves tunnel-error guidance when last-copied values exist", () => {
+  const connectedViewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:50000/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "manual", url: "https://public.example.com" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  const brokenTunnelViewModel = cursorSetupViewModel({
+    running: true,
+    baseUrl: "http://127.0.0.1:41434/v1",
+    apiKey: "session-secret",
+    cursorTunnel: { enabled: true, source: "managed", error: "binary-missing" },
+    modelId: LOCAL_MOTION_MODEL_ID,
+    message: "running"
+  });
+  const freshness = cursorSetupFreshness(
+    brokenTunnelViewModel,
+    lastCopiedCursorSetup(connectedViewModel, "copySetupBlock", "2026-06-16T00:00:00.000Z")
+  );
+  assert.equal(freshness.status, "stale");
+  assert.match(freshness.message, /cloudflared/);
+  assert.match(freshness.message, /Last copied values/);
+  assert.doesNotMatch(freshness.message, /no Local Motion model is running/);
 });
 
 test("last copied Cursor setup records trigger and verification timestamp", () => {

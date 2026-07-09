@@ -829,7 +829,8 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.match(panelSource, /Runs a coding model on this Mac for Cursor\./);
   assert.match(panelSource, /Open Cursor Settings/);
   assert.match(panelSource, /Preparing Cursor setup and opening Cursor Settings\./);
-  assert.match(panelSource, /Cursor connection is not ready/);
+  assert.match(panelSource, /viewModel\.baseUrl \|\| viewModel\.statusMessage/);
+  assert.match(panelSource, /Unavailable until Cursor connection is ready/);
   assert.match(panelSource, /CONNECT_CURSOR/);
   assert.match(protocolSource, /CONNECT_CURSOR: "connectCursor"/);
   assert.match(panelHostSource, /case SETUP_REQUEST_COMMAND\.CONNECT_CURSOR/);
