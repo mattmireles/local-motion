@@ -1,4 +1,5 @@
 import type { LocalModelOptionId } from "./models/defaultRepos";
+import { normalizePublicHttpsTunnelUrl } from "./cursor/tunnelUrl";
 import type { AutomagicalSetupCompletion, InstalledModel, LastCopiedCursorSetup } from "./types";
 
 export function isLastCopiedCursorSetup(value: unknown): value is LastCopiedCursorSetup {
@@ -7,9 +8,12 @@ export function isLastCopiedCursorSetup(value: unknown): value is LastCopiedCurs
   }
 
   const trigger = value.trigger;
-  return isNonEmptyString(value.baseUrl) &&
+  // Loopback / private Base URLs are pre-tunnel Plan 001 fossils. Current
+  // Cursor handoff only copies public HTTPS tunnel URLs — reject the rest so
+  // freshness cannot nag about a dead 127.0.0.1 copy forever.
+  return isPublicHttpsCursorBaseUrl(value.baseUrl) &&
     isNonEmptyString(value.modelId) &&
-    isValidApiKeyLabel(value.apiKeyLabel) &&
+    value.apiKeyLabel === "session-key" &&
     optionalNonEmptyString(value.apiKeyFingerprint) &&
     isNonEmptyString(value.copiedAt) &&
     (trigger === "prepareCursor" || trigger === "copySetupBlock") &&
@@ -18,9 +22,9 @@ export function isLastCopiedCursorSetup(value: unknown): value is LastCopiedCurs
 
 export function isAutomagicalSetupCompletion(value: unknown): value is AutomagicalSetupCompletion {
   return isRecord(value) &&
-    isNonEmptyString(value.baseUrl) &&
+    isPublicHttpsCursorBaseUrl(value.baseUrl) &&
     isNonEmptyString(value.modelId) &&
-    isValidApiKeyLabel(value.apiKeyLabel) &&
+    value.apiKeyLabel === "session-key" &&
     isNonEmptyString(value.cursorSetupCopiedAt) &&
     isNonEmptyString(value.endpointVerifiedAt) &&
     isNonEmptyString(value.completedAt);
@@ -68,6 +72,10 @@ function optionalNumber(value: unknown): boolean {
   return value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0);
 }
 
-function isValidApiKeyLabel(value: unknown): value is "session-key" | "local-motion" {
-  return value === "session-key" || value === "local-motion";
+function isPublicHttpsCursorBaseUrl(value: unknown): boolean {
+  if (typeof value !== "string" || value.length === 0) {
+    return false;
+  }
+  const normalized = normalizePublicHttpsTunnelUrl(value);
+  return !normalized.invalid && normalized.url !== undefined;
 }

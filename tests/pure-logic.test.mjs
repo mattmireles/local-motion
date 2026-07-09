@@ -1253,7 +1253,7 @@ test("startup resume does not install missing llama dependency", () => {
 
 test("state validators reject stale persisted setup shapes", () => {
   const copied = {
-    baseUrl: "http://127.0.0.1:41434/v1",
+    baseUrl: "https://public.example.com/v1",
     modelId: LOCAL_MOTION_MODEL_ID,
     apiKeyLabel: "session-key",
     copiedAt: "2026-06-16T00:00:00.000Z",
@@ -1261,7 +1261,7 @@ test("state validators reject stale persisted setup shapes", () => {
     endpointVerifiedAt: "2026-06-16T00:00:01.000Z"
   };
   const completion = {
-    baseUrl: "http://127.0.0.1:41434/v1",
+    baseUrl: "https://public.example.com/v1",
     modelId: LOCAL_MOTION_MODEL_ID,
     apiKeyLabel: "session-key",
     cursorSetupCopiedAt: "2026-06-16T00:00:00.000Z",
@@ -1270,13 +1270,15 @@ test("state validators reject stale persisted setup shapes", () => {
   };
 
   assert.equal(isLastCopiedCursorSetup(copied), true);
-  assert.equal(isLastCopiedCursorSetup({ ...copied, apiKeyLabel: "local-motion" }), true);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, baseUrl: "http://127.0.0.1:41434/v1" }), false);
+  assert.equal(isLastCopiedCursorSetup({ ...copied, apiKeyLabel: "local-motion" }), false);
   assert.equal(isLastCopiedCursorSetup({ ...copied, trigger: "bad" }), false);
   assert.equal(isLastCopiedCursorSetup({ ...copied, apiKeyLabel: "wrong-key" }), false);
   assert.equal(isLastCopiedCursorSetup({ ...copied, baseUrl: "" }), false);
   assert.equal(isLastCopiedCursorSetup(true), false);
   assert.equal(isAutomagicalSetupCompletion(completion), true);
-  assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "local-motion" }), true);
+  assert.equal(isAutomagicalSetupCompletion({ ...completion, baseUrl: "http://127.0.0.1:41434/v1" }), false);
+  assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "local-motion" }), false);
   assert.equal(isAutomagicalSetupCompletion({ ...completion, apiKeyLabel: "wrong-key" }), false);
   assert.equal(isAutomagicalSetupCompletion({ ...completion, endpointVerifiedAt: "" }), false);
   assert.equal(isAutomagicalSetupCompletion(true), false);
