@@ -7,6 +7,83 @@ network block that forced it.
 
 ---
 
+## Issue: Home-router NXDOMAIN kills working Quick Tunnels — Resolved
+
+**First spotted:** 2026-07-09
+**Resolved:** 2026-07-09
+**Status:** Resolved
+
+### Summary
+
+Connect to Cursor failed with "The Cursor connection did not become reachable"
+even though `cloudflared` had registered a Quick Tunnel. Local `dns.lookup` /
+router dig returned NXDOMAIN for fresh `*.trycloudflare.com` names while
+Cloudflare DNS-over-HTTPS already had the A record. The old probe killed the
+working tunnel after 90s. Fixed by DoH resolve + HTTPS probe to the IP with
+SNI/Host, requiring origin `/health` 401/2xx (not Cloudflare edge 530/502).
+
+### Symptom
+
+```text
+The Cursor connection did not become reachable. Turn the local agent off and on to retry…
+Cursor settings were not opened because endpoint verification failed. Start a local model before verifying Cursor setup.
+```
+
+Connect button appeared to do nothing (card hid under "Starting local agent").
+
+### Root Cause
+
+1. Readiness used `dns.lookup` (system/router resolver). Some home routers
+   NXDOMAIN fresh trycloudflare hostnames; Cursor's backend uses public DNS.
+2. Probe success accepted any HTTP status — Cloudflare 530/1033 would have
+   been a false positive once DoH worked.
+3. Connect UX hid the connect card during the wait.
+
+### Related Guides
+
+- [Cursor private-network block guide](../Guides/cursor-private-network-block-guide.md)
+- [Honest Cursor Tunnel Handoff Plan](../Plans/002-cursor-tunnel-handoff-plan.md)
+
+### Fix
+
+**Files:**
+
+- `src/runtime/tunnelReachability.ts` — DoH (Cloudflare + Google) + SNI HTTPS
+  `/health`; `isOriginHealthStatus` requires 401 or 2xx.
+- `src/runtime/llamaServer.ts` — up to 3 Quick Tunnel attempts with fresh
+  hostnames; stop failed children before retry; abort the current probe when
+  cloudflared exits mid-wait so a dead child does not burn the full timeout.
+- `src/ui/setupPanelHtml.ts` — Connecting… card stays visible; static Setup
+  guide; honest verify copy when tunnel missing.
+- `src/cursor/cursorSetupWorkflow.ts` / `cursorIntegration.ts` — clearer
+  failure messages.
+
+### Verification
+
+```bash
+npm run check && npm test
+# Live: spawn cloudflared Quick Tunnel to :41434, then:
+node -e "import('./out/runtime/tunnelReachability.js').then(m=>m.tunnelHttpReachable(process.argv[1],60000).then(console.log))" "$URL"
+# Expect true in ~4–10s while plain fetch still ENOTFOUND on this Mac.
+```
+
+### Executable Memory
+
+Regression test: `tests/cursor-tunnel.test.mjs` (`ipv4FromDohAnswer`,
+`isOriginHealthStatus`, abort)
+Regression test: `tests/extension-wiring.test.mjs` / `serialization-contract.test.mjs`
+Not testable: Cursor-backend chat through the tunnel from this shell
+Memory updates: none
+
+### If This Recurs
+
+- [ ] Confirm plain `dig`/`dns.lookup` NXDOMAIN while DoH returns an A record.
+- [ ] Confirm probe requires 401/2xx, not 530/502.
+- [ ] Set `localMotion.cursorTunnelUrl` to a Named Tunnel if Quick Tunnels stay flaky.
+- [ ] Reload Cursor after reinstalling the VSIX.
+
+---
+
 ## Issue: Stale Plan-001 loopback lastCopied — Resolved
 
 **First spotted:** 2026-07-08

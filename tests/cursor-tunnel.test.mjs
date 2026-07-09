@@ -275,3 +275,125 @@ test("runtime child exit cleanup stops the tunnel kill switch", () => {
   assert.equal(proxyCleared, true);
   assert.equal(statusChanges, 1);
 });
+
+test("ipv4FromDohAnswer reads the first A record from DNS-JSON", async () => {
+  const { ipv4FromDohAnswer } = await import("../out/runtime/tunnelReachability.js");
+  assert.equal(
+    ipv4FromDohAnswer({
+      Status: 0,
+      Answer: [
+        { type: 5, data: "cname.example.com." },
+        { type: 1, data: "104.16.230.132" },
+        { type: 1, data: "104.16.231.132" }
+      ]
+    }),
+    "104.16.230.132"
+  );
+  assert.equal(ipv4FromDohAnswer({ Status: 3, Answer: [] }), undefined);
+  assert.equal(ipv4FromDohAnswer({ Status: 0 }), undefined);
+  assert.equal(ipv4FromDohAnswer(null), undefined);
+});
+
+test("isOriginHealthStatus accepts origin 401/2xx and rejects Cloudflare edge 5xx", async () => {
+  // Regression (2026-07-09 audit P0): DNS + TLS to the edge is not enough —
+  // Cloudflare 530/1033 and 502 mean the connector is not ready yet.
+  const { isOriginHealthStatus } = await import("../out/runtime/tunnelReachability.js");
+  assert.equal(isOriginHealthStatus(401), true);
+  assert.equal(isOriginHealthStatus(200), true);
+  assert.equal(isOriginHealthStatus(204), true);
+  assert.equal(isOriginHealthStatus(502), false);
+  assert.equal(isOriginHealthStatus(530), false);
+  assert.equal(isOriginHealthStatus(404), false);
+  assert.equal(isOriginHealthStatus(0), false);
+});
+
+test("tunnelHttpReachable aborts promptly when the start signal fires", async () => {
+  const { tunnelHttpReachable } = await import("../out/runtime/tunnelReachability.js");
+  const abort = new AbortController();
+  abort.abort();
+  await assert.rejects(
+    () => tunnelHttpReachable("https://able-baker-charlie.trycloudflare.com", 5_000, abort.signal),
+    /Local model startup was cancelled\./
+  );
+});
+
+test("probeManagedQuickTunnels retries a fresh hostname when cloudflared exits mid-probe", async () => {
+  // Regression (2026-07-09 external audit P1/P2): a dead child must abort the
+  // current probe and start attempt 2 — not burn the full reachability window.
+  const { probeManagedQuickTunnels } = await import("../out/runtime/tunnelReachability.js");
+  const starts = [];
+  const stops = [];
+  const failures = [];
+  const exitHooks = [];
+  let probeCalls = 0;
+  const result = await probeManagedQuickTunnels({
+    attempts: 2,
+    reachabilityTimeoutMs: 30_000,
+    startTunnel: async ({ onExit }) => {
+      const index = starts.length + 1;
+      const url = `https://attempt-${index}.trycloudflare.com`;
+      starts.push(url);
+      exitHooks.push(onExit);
+      return {
+        url,
+        stop: async () => {
+          stops.push(url);
+        }
+      };
+    },
+    probe: async (url, _timeoutMs, abortSignal) => {
+      probeCalls += 1;
+      if (url.includes("attempt-1")) {
+        // Child dies after the probe has started waiting on abortSignal.
+        queueMicrotask(() => exitHooks[0]());
+        await new Promise((resolve, reject) => {
+          if (abortSignal.aborted) {
+            reject(new Error("Local model startup was cancelled."));
+            return;
+          }
+          abortSignal.addEventListener("abort", () => {
+            reject(new Error("Local model startup was cancelled."));
+          }, { once: true });
+        });
+        return false;
+      }
+      return true;
+    },
+    onAttemptFailed: (info) => failures.push(info)
+  });
+
+  assert.deepEqual(starts, [
+    "https://attempt-1.trycloudflare.com",
+    "https://attempt-2.trycloudflare.com"
+  ]);
+  assert.equal(stops.includes("https://attempt-1.trycloudflare.com"), true);
+  assert.equal(probeCalls, 2);
+  assert.equal(failures.some((f) => f.reason === "exited" && f.attempt === 1), true);
+  assert.equal("error" in result, false);
+  if (!("error" in result)) {
+    assert.equal(result.url, "https://attempt-2.trycloudflare.com");
+  }
+});
+
+test("probeManagedQuickTunnels forwards post-success exits to onLiveTunnelExited", async () => {
+  // Regression (2026-07-09 external audit round 3 P1): after Connect succeeds,
+  // a later cloudflared death must still clear runtime tunnel state.
+  const { probeManagedQuickTunnels } = await import("../out/runtime/tunnelReachability.js");
+  const liveExits = [];
+  let exitHook;
+  const result = await probeManagedQuickTunnels({
+    attempts: 1,
+    startTunnel: async ({ onExit }) => {
+      exitHook = onExit;
+      return {
+        url: "https://live.trycloudflare.com",
+        stop: async () => undefined
+      };
+    },
+    probe: async () => true,
+    onLiveTunnelExited: (tunnel) => liveExits.push(tunnel.url)
+  });
+  assert.equal("error" in result, false);
+  exitHook();
+  assert.deepEqual(liveExits, ["https://live.trycloudflare.com"]);
+});

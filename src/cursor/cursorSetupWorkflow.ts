@@ -167,7 +167,13 @@ export class CursorSetupWorkflow {
 
   private async verifyViewModelEndpoint(viewModel: CursorSetupViewModel): Promise<CursorEndpointVerification> {
     if (!viewModel.isRunning) {
-      return { type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION, ok: false, message: "Start a local model before verifying Cursor setup." };
+      return {
+        type: SETUP_RESPONSE_TYPE.CURSOR_ENDPOINT_VERIFICATION,
+        ok: false,
+        message: viewModel.localAgentRunning
+          ? (viewModel.statusMessage || "The Cursor connection is not ready yet. Click Connect to Cursor and wait for the public Base URL.")
+          : "Start a local model before verifying Cursor setup."
+      };
     }
 
     const controller = new AbortController();

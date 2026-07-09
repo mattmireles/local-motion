@@ -736,9 +736,6 @@ test("Cursor setup view model uses the public tunnel endpoint", () => {
   assert.ok(viewModel.setupBlock.includes("session-secret"));
   assert.ok(viewModel.setupBlock.includes(`Model name: ${LOCAL_MOTION_MODEL_ID}`));
   assert.ok(viewModel.statusMessage.includes("Model name is not valid"));
-  assert.ok(viewModel.steps.some((line) => line.includes("Add Custom Model")));
-  assert.ok(viewModel.steps.some((line) => /select that custom model in chat/i.test(line)));
-  assert.ok(viewModel.steps.some((line) => line.includes("OpenAI API Key")));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "https://public.example.com/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), "session-secret");
   assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);
@@ -771,8 +768,6 @@ test("Cursor setup view model refuses localhost and tells the user to connect Cu
   assert.equal(viewModel.baseUrl, "");
   assert.match(viewModel.statusMessage, /Connect once to create a public Base URL/);
   assert.match(viewModel.statusMessage, /cannot use localhost/i);
-  assert.ok(viewModel.steps.some((line) => line.includes("Connect to Cursor")));
-  assert.ok(viewModel.steps.some((line) => line.includes("public Base URL")));
 });
 
 test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
@@ -806,14 +801,14 @@ test("manual Cursor tunnel URL normalization requires public HTTPS", () => {
 
 test("Cursor setup view model explains tunnel error states while local runtime stays up", () => {
   const expected = [
-    ["invalid-url", /must be a public HTTPS tunnel URL/, /private IPs/],
-    ["binary-missing", /could not install its connection helper/, /Install Homebrew/],
-    ["start-timeout", /did not become reachable/, /public HTTPS tunnel/],
-    ["dns-unresolved", /did not become reachable/, /public HTTPS tunnel/],
-    ["exited", /Cursor connection stopped/, /off and on to reconnect/]
+    ["invalid-url", /must be a public HTTPS tunnel URL/],
+    ["binary-missing", /could not install its connection helper/],
+    ["start-timeout", /did not become reachable/, /Click Connect to Cursor to retry/],
+    ["dns-unresolved", /did not become reachable/, /Click Connect to Cursor to retry/],
+    ["exited", /Cursor connection stopped/]
   ];
 
-  for (const [error, statusPattern, stepPattern] of expected) {
+  for (const [error, statusPattern, extraPattern] of expected) {
     const viewModel = cursorSetupViewModel({
       running: true,
       baseUrl: "http://127.0.0.1:50000/v1",
@@ -825,7 +820,9 @@ test("Cursor setup view model explains tunnel error states while local runtime s
     assert.equal(viewModel.isRunning, false);
     assert.equal(viewModel.baseUrl, "");
     assert.match(viewModel.statusMessage, statusPattern);
-    assert.ok(viewModel.steps.some((line) => stepPattern.test(line)));
+    if (extraPattern) {
+      assert.match(viewModel.statusMessage, extraPattern);
+    }
   }
 });
 
@@ -839,7 +836,6 @@ test("Cursor setup view model does not invent endpoint values when stopped", () 
   assert.equal(viewModel.modelId, "");
   assert.equal(viewModel.apiKey, "");
   assert.equal(viewModel.statusMessage, "No model is running.");
-  assert.ok(viewModel.steps.some((line) => line.includes("Start a local model")));
 });
 
 test("Cursor setup freshness recognizes unchanged copied endpoint", () => {

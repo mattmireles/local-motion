@@ -10,7 +10,6 @@ export interface CursorSetupViewModel {
   /** True when local compute is up, even if the Cursor tunnel is not. */
   localAgentRunning: boolean;
   setupBlock: string;
-  steps: string[];
   statusMessage: string;
 }
 
@@ -46,7 +45,6 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
 
   if (!isRunning) {
     const needsTunnel = localAgentRunning && !tunnelUrl;
-    const tunnelGuidance = needsTunnel ? cursorTunnelGuidance(status.cursorTunnel) : undefined;
     return {
       baseUrl,
       apiKey,
@@ -56,12 +54,9 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
       setupBlock: needsTunnel
         ? "The Cursor connection is not ready yet."
         : "Start a local model in Local Motion before preparing Cursor.",
-      steps: tunnelGuidance?.steps ?? [
-        "Start a local model in Local Motion.",
-        "Return here to prepare Cursor with the active Base URL and model ID."
-      ],
-      statusMessage: tunnelGuidance?.statusMessage ??
-        (status.message || "Start a local model before configuring Cursor.")
+      statusMessage: needsTunnel
+        ? cursorTunnelStatusMessage(status.cursorTunnel)
+        : (status.message || "Start a local model before configuring Cursor.")
     };
   }
 
@@ -79,12 +74,6 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     isRunning: true,
     localAgentRunning: true,
     setupBlock,
-    steps: [
-      "In Cursor Settings → Models, enable OpenAI API Key and paste the key.",
-      "Enable Override OpenAI Base URL and paste the Base URL.",
-      "Add Custom Model with the exact Model name below.",
-      "Select that custom model in chat (not Auto)."
-    ],
     statusMessage:
       "Use Model name, API key, and Base URL exactly as shown. If chat says Model name is not valid, that is Cursor-side catalog validation — prove the local stack with curl first."
   };
@@ -95,65 +84,27 @@ function cursorTunnelBaseUrl(url: string): string {
   return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 }
 
-/** One source of tunnel-failure facts; steps and statusMessage are projections. */
-function cursorTunnelGuidance(tunnel: RuntimeStatus["cursorTunnel"]): { steps: string[]; statusMessage: string } {
+/** Tunnel-failure / connect-needed copy for the connect card — not the Setup guide. */
+function cursorTunnelStatusMessage(tunnel: RuntimeStatus["cursorTunnel"]): string {
   if (tunnel?.error === "invalid-url") {
-    return {
-      steps: [
-        "Set localMotion.cursorTunnelUrl to a public HTTPS tunnel URL.",
-        "Localhost, private IPs, plain HTTP, and invalid URLs cannot be used with Cursor."
-      ],
-      statusMessage:
-        "localMotion.cursorTunnelUrl must be a public HTTPS tunnel URL. Cursor's backend cannot reach localhost or private network URLs."
-    };
+    return "localMotion.cursorTunnelUrl must be a public HTTPS tunnel URL. Cursor's backend cannot reach localhost or private network URLs.";
   }
   if (tunnel?.error === "binary-missing") {
-    return {
-      steps: [
-        "Local Motion could not install its connection helper (cloudflared).",
-        "Install Homebrew, then turn the local agent off and on — or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."
-      ],
-      statusMessage:
-        "Local Motion could not install its connection helper (cloudflared). Install Homebrew and turn the local agent off and on, or set localMotion.cursorTunnelUrl."
-    };
+    return "Local Motion could not install its connection helper (cloudflared). Install Homebrew and turn the local agent off and on, or set localMotion.cursorTunnelUrl.";
   }
   if (tunnel?.error === "start-timeout" || tunnel?.error === "dns-unresolved") {
-    return {
-      steps: [
-        "The Cursor connection did not become reachable.",
-        "Turn the local agent off and on to retry, or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."
-      ],
-      statusMessage:
-        "The Cursor connection did not become reachable. Turn the local agent off and on to retry, or set localMotion.cursorTunnelUrl."
-    };
+    return "The Cursor connection did not become reachable. Click Connect to Cursor to retry with a fresh public URL, or set localMotion.cursorTunnelUrl to a stable Named Tunnel.";
   }
   if (tunnel?.error === "exited") {
-    return {
-      steps: [
-        "The Cursor connection stopped.",
-        "Turn the local agent off and on to reconnect, or set localMotion.cursorTunnelUrl to a public HTTPS tunnel."
-      ],
-      statusMessage:
-        "The Cursor connection stopped. Turn the local agent off and on to reconnect, or set localMotion.cursorTunnelUrl."
-    };
+    return "The Cursor connection stopped. Turn the local agent off and on to reconnect, or set localMotion.cursorTunnelUrl.";
   }
   if (!tunnel?.enabled) {
     // Local compute is up; Cursor handoff is a second explicit step.
     // Host-agnostic on purpose (no appName): VS Code uses vscode.lm without a
     // tunnel; Cursor needs Connect to Cursor for the public Base URL.
-    return {
-      steps: [
-        "Click Connect to Cursor.",
-        "Local Motion creates a public Base URL and copies the setup values."
-      ],
-      statusMessage:
-        "Cursor cannot use localhost. Connect once to create a public Base URL."
-    };
+    return "Cursor cannot use localhost. Connect once to create a public Base URL.";
   }
-  return {
-    steps: ["Connecting to Cursor.", "This can take a minute the first time."],
-    statusMessage: "Connecting to Cursor…"
-  };
+  return "Connecting to Cursor…";
 }
 
 export function cursorSetupValue(viewModel: CursorSetupViewModel, key: CursorSetupValueKey): string {

@@ -105,8 +105,13 @@ export function setupPanelHtml(nonce: string): string {
     <details id="setupGuide" class="disclosure setup">
       <summary>Setup</summary>
       <div class="disclosure-body">
-        <p id="setupGuideLead" class="setup-guide-lead">How to connect Cursor chat to the local model.</p>
-        <ol id="setupGuideSteps" class="setup-guide-steps"></ol>
+        <p class="setup-guide-lead">How to connect Cursor chat to the local model.</p>
+        <ol class="setup-guide-steps">
+          <li>Turn on a local model in Local Motion.</li>
+          <li>Click Connect to Cursor and wait for the public Base URL.</li>
+          <li>In Cursor Settings → Models, paste Model name, API key, and Base URL.</li>
+          <li>Add Custom Model with that Model name, then select it in chat (not Auto).</li>
+        </ol>
       </div>
     </details>
   </main>
@@ -150,8 +155,6 @@ export function setupPanelHtml(nonce: string): string {
       connectLead: document.getElementById('connectLead'),
       connectPending: document.getElementById('connectPending'),
       connectReady: document.getElementById('connectReady'),
-      setupGuideLead: document.getElementById('setupGuideLead'),
-      setupGuideSteps: document.getElementById('setupGuideSteps'),
       valModelId: document.getElementById('valModelId'),
       valApiKey: document.getElementById('valApiKey'),
       valBaseUrl: document.getElementById('valBaseUrl'),
@@ -183,7 +186,7 @@ export function setupPanelHtml(nonce: string): string {
       // architecture, and the host suppresses the post-download restart.
       // The download itself continues (cancellable from its notification).
       // A Cursor-connect respawn gets the same escape hatch — a stalled
-      // tunnel heal (cloudflared install, DNS wait) must never strand the
+      // tunnel heal (cloudflared install, public URL wait) must never strand the
       // panel on Starting with no way out; stop cancels the heal cleanly.
       if ((state.modelSwitchRunning && state.runtime && state.runtime.running) || state.cursorConnectRunning) {
         els.primary.disabled = true;
@@ -232,7 +235,7 @@ export function setupPanelHtml(nonce: string): string {
       state.setupOperationRunning = true;
       state.progressPercent = undefined;
       state.progressMessage = 'Connecting to Cursor…';
-      state.connectMessage = 'Creating a public Base URL and copying setup values.';
+      state.connectMessage = 'Creating a public Base URL. This can take a few minutes.';
       render();
       setStatus(state.connectMessage);
       vscode.postMessage({ command: '${SETUP_REQUEST_COMMAND.CONNECT_CURSOR}' });
@@ -411,7 +414,6 @@ export function setupPanelHtml(nonce: string): string {
         : 'off';
       renderModelOptions();
       renderStorage();
-      renderSetupGuide();
 
       // A failed turn-on speaks in place, replacing the headline.
       if (phase === 'error') {
@@ -466,7 +468,37 @@ export function setupPanelHtml(nonce: string): string {
       els.primary.disabled = false;
     }
 
+    function renderConnectingCard() {
+      els.connect.classList.remove('hidden');
+      els.connectTitle.textContent = 'Connecting…';
+      els.connectLead.textContent = state.connectMessage || 'Creating a public Base URL. This can take a few minutes.';
+      els.connectPending.classList.remove('hidden');
+      els.connectReady.classList.add('hidden');
+      els.openCursor.disabled = true;
+      els.openCursor.textContent = 'Connecting…';
+      els.openCursorAgain.disabled = true;
+      els.connectNote.textContent = '';
+      els.connectNote.style.display = 'none';
+    }
+
     function renderStarting() {
+      // Connect must never look like a dead click: keep the connect card
+      // visible with Connecting… while the tunnel (or a model start for
+      // Connect) runs. Hiding it under "Starting local agent" was the
+      // "nothing happens" failure mode.
+      if (state.cursorConnectRunning) {
+        els.headline.textContent = 'Connecting to Cursor';
+        els.subline.textContent = state.progressMessage || 'Creating a public Base URL…';
+        els.progress.classList.add('hidden');
+        els.progress.removeAttribute('aria-valuenow');
+        renderConnectingCard();
+        els.metaLine.style.display = 'none';
+        els.primary.textContent = 'Turn Off Local Agent';
+        els.primary.disabled = false;
+        els.primary.removeAttribute('title');
+        return;
+      }
+
       els.headline.textContent = 'Starting local agent';
       els.subline.textContent = state.progressMessage || 'Loading…';
       els.connect.classList.add('hidden');
@@ -483,11 +515,9 @@ export function setupPanelHtml(nonce: string): string {
       }
 
       // While a replacement downloads, the running model stays stoppable —
-      // the exact flow the interrupt architecture exists for — and a
-      // Cursor-connect heal keeps the same escape hatch while its tunnel
-      // work runs. A fresh start keeps the disabled 'Starting…': nothing
-      // is running to turn off.
-      if ((state.modelSwitchRunning && state.runtime && state.runtime.running) || state.cursorConnectRunning) {
+      // the exact flow the interrupt architecture exists for. A fresh start
+      // keeps the disabled 'Starting…': nothing is running to turn off.
+      if (state.modelSwitchRunning && state.runtime && state.runtime.running) {
         els.primary.textContent = 'Turn Off Local Agent';
         els.primary.disabled = false;
       } else {
@@ -525,45 +555,53 @@ export function setupPanelHtml(nonce: string): string {
         const viewModel = state.cursorSetupViewModel || {};
         els.connect.classList.remove('hidden');
         const cursorReady = viewModel.isRunning === true;
-        const connecting = state.cursorConnectRunning || state.setupOperationRunning;
+        // Only Connect itself owns the Connecting surface — a download or
+        // other setup lock must not relabel the Cursor card.
+        const connecting = state.cursorConnectRunning === true;
         // Local agent on ≠ Cursor ready. Until the public Base URL exists,
         // show one action — never empty fields stuffed with status text.
-        els.subline.textContent = cursorReady
-          ? 'Copy these values into Cursor Settings → Models.'
-          : 'One more step to use this model in Cursor chat.';
-        els.connectTitle.textContent = cursorReady ? 'Cursor setup' : 'Connect Cursor';
-        els.connectLead.textContent = cursorReady
-          ? 'Add a custom model with these exact values, then select it in chat (not Auto).'
-          : (viewModel.statusMessage || 'Create a public connection Cursor can reach.');
-        els.connectPending.classList.toggle('hidden', cursorReady);
-        els.connectReady.classList.toggle('hidden', !cursorReady);
-        els.openCursor.disabled = connecting;
-        els.openCursor.textContent = connecting ? 'Connecting…' : 'Connect to Cursor';
-        els.openCursorAgain.disabled = connecting;
-        if (cursorReady) {
-          for (const button of document.querySelectorAll('.connect .copy')) {
-            button.disabled = connecting;
+        if (connecting) {
+          els.headline.textContent = 'Connecting to Cursor';
+          els.subline.textContent = state.progressMessage || 'Creating a public Base URL…';
+          renderConnectingCard();
+        } else {
+          els.subline.textContent = cursorReady
+            ? 'Copy these values into Cursor Settings → Models.'
+            : 'One more step to use this model in Cursor chat.';
+          els.connectTitle.textContent = cursorReady ? 'Cursor setup' : 'Connect Cursor';
+          els.connectLead.textContent = cursorReady
+            ? 'Add a custom model with these exact values, then select it in chat (not Auto).'
+            : (viewModel.statusMessage || 'Create a public connection Cursor can reach.');
+          els.connectPending.classList.toggle('hidden', cursorReady);
+          els.connectReady.classList.toggle('hidden', !cursorReady);
+          els.openCursor.disabled = false;
+          els.openCursor.textContent = 'Connect to Cursor';
+          els.openCursorAgain.disabled = false;
+          if (cursorReady) {
+            for (const button of document.querySelectorAll('.connect .copy')) {
+              button.disabled = false;
+            }
+            els.valModelId.textContent = viewModel.modelId || ${JSON.stringify(LOCAL_MOTION_MODEL_ID)};
+            els.valApiKey.textContent = viewModel.apiKey || '';
+            els.valBaseUrl.textContent = viewModel.baseUrl || '';
+            els.valSetupBlock.textContent = 'Model name, API key, and Base URL';
+            els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
+              ? 'Copy Updated Setup'
+              : 'Copy All';
           }
-          els.valModelId.textContent = viewModel.modelId || ${JSON.stringify(LOCAL_MOTION_MODEL_ID)};
-          els.valApiKey.textContent = viewModel.apiKey || '';
-          els.valBaseUrl.textContent = viewModel.baseUrl || '';
-          els.valSetupBlock.textContent = 'Model name, API key, and Base URL';
-          els.copySetupBlock.textContent = state.cursorSetupFreshness && state.cursorSetupFreshness.status === 'stale'
-            ? 'Copy Updated Setup'
-            : 'Copy All';
-        }
-        const freshness = state.cursorSetupFreshness;
-        const freshnessMessage = freshness && freshness.message;
-        let note = state.connectMessage || '';
-        if (!note && freshness) {
-          if (freshness.status === 'current' && cursorReady) {
-            note = 'If chat says Model name is not valid, that is Cursor-side — prove the local stack with curl first.';
-          } else if (freshness.status !== 'current') {
-            note = freshnessMessage || '';
+          const freshness = state.cursorSetupFreshness;
+          const freshnessMessage = freshness && freshness.message;
+          let note = state.connectMessage || '';
+          if (!note && freshness) {
+            if (freshness.status === 'current' && cursorReady) {
+              note = 'If chat says Model name is not valid, that is Cursor-side — prove the local stack with curl first.';
+            } else if (freshness.status !== 'current') {
+              note = freshnessMessage || '';
+            }
           }
+          els.connectNote.textContent = note;
+          els.connectNote.style.display = note ? 'block' : 'none';
         }
-        els.connectNote.textContent = note;
-        els.connectNote.style.display = note ? 'block' : 'none';
       }
 
       // A post-start failure (copy, verify, open settings) surfaces in place
@@ -581,43 +619,6 @@ export function setupPanelHtml(nonce: string): string {
         els.metaLine.textContent = name;
       } else {
         els.metaLine.style.display = 'none';
-      }
-    }
-
-    function renderSetupGuide() {
-      const viewModel = state.cursorSetupViewModel || {};
-      const cursorReady = viewModel.isRunning === true;
-      const steps = Array.isArray(viewModel.steps)
-        ? viewModel.steps.filter((step) => typeof step === 'string' && step.trim())
-        : [];
-      els.setupGuideLead.textContent = cursorReady
-        ? 'Paste these values into Cursor Settings → Models, then select the custom model in chat (not Auto).'
-        : (viewModel.statusMessage || 'Turn on the local agent, then connect Cursor.');
-      els.setupGuideSteps.replaceChildren();
-      if (steps.length === 0) {
-        const fallback = cursorReady
-          ? [
-              'In Cursor Settings → Models, enable OpenAI API Key and paste the key.',
-              'Enable Override OpenAI Base URL and paste the Base URL.',
-              'Add Custom Model with the exact Model name.',
-              'Select that custom model in chat (not Auto).'
-            ]
-          : [
-              'Turn on the local agent.',
-              'Click Connect to Cursor.',
-              'Copy Model name, API key, and Base URL into Cursor Settings → Models.'
-            ];
-        for (const step of fallback) {
-          const item = document.createElement('li');
-          item.textContent = step;
-          els.setupGuideSteps.appendChild(item);
-        }
-        return;
-      }
-      for (const step of steps) {
-        const item = document.createElement('li');
-        item.textContent = step;
-        els.setupGuideSteps.appendChild(item);
       }
     }
 

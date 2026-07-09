@@ -1,5 +1,4 @@
 import * as childProcess from "node:child_process";
-import * as dns from "node:dns/promises";
 import * as fs from "node:fs";
 import { promisify } from "node:util";
 import * as vscode from "vscode";
@@ -12,6 +11,10 @@ import { attachRuntimeChildExitHandler } from "./runtimeChildExit";
 import { CANCELLED_START_MESSAGE, isStartStale } from "./runtimeGuards";
 import { OpenAiProxy } from "./openAiProxy";
 import { releasePortHolder, reserveLocalhostPort } from "./ports";
+import {
+  TUNNEL_REACHABILITY_ATTEMPTS,
+  probeManagedQuickTunnels
+} from "./tunnelReachability";
 
 const execFile = promisify(childProcess.execFile);
 
@@ -20,12 +23,6 @@ export interface CursorTunnelConfig {
   manualUrl?: string;
   manualUrlInvalid?: boolean;
 }
-
-// Fresh trycloudflare hostnames can take up to ~90 seconds to propagate
-// through public DNS (observed during the Phase 2 spike for Plan 002). The
-// wait presents as "Preparing the Cursor endpoint…" in the setup panel, so a
-// long window here trades silent failure for visible patience.
-const TUNNEL_DNS_TIMEOUT_MS = 90_000;
 
 /**
  * The `localMotion.contextTokens` ceiling, clamped to the bounds declared in
@@ -397,32 +394,35 @@ export class LlamaServerManager {
     const cloudflared = await findCloudflared() ?? await this.installCloudflared(abortSignal);
     // Turn Off is an interrupt even here: the tunnel phase runs after the
     // last health checkpoint and can otherwise pin stop() on the start
-    // queue for the brew install plus up to 90s of DNS retries.
+    // queue for the brew install plus reachability retries.
     abortIfNeeded();
     if (!cloudflared) {
       return { enabled: true, source: "managed", error: "binary-missing" };
     }
     try {
       const proxyPort = Number(new URL(proxyBaseUrl).port);
-      const tunnel = await startQuickTunnel(cloudflared, proxyPort, {
-        onExit: () => this.handleTunnelExit(tunnel),
-        abortSignal
-      });
-      try {
-        if (!await tunnelDnsResolves(tunnel.url, TUNNEL_DNS_TIMEOUT_MS, abortSignal)) {
-          this.output.appendLine(`cloudflared tunnel hostname did not resolve: ${new URL(tunnel.url).hostname}`);
-          await tunnel.stop();
-          abortIfNeeded();
-          return { enabled: true, source: "managed", error: "dns-unresolved" };
+      const result = await probeManagedQuickTunnels({
+        abortSignal,
+        abortIfNeeded,
+        startTunnel: ({ onExit, abortSignal: tunnelAbort }) =>
+          startQuickTunnel(cloudflared, proxyPort, {
+            onExit: () => onExit(),
+            abortSignal: tunnelAbort
+          }),
+        onLiveTunnelExited: (tunnel) => this.handleTunnelExit(tunnel),
+        onAttemptFailed: ({ attempt, hostname, reason }) => {
+          this.output.appendLine(
+            reason === "exited"
+              ? `cloudflared exited during reachability probe (${hostname}); attempt ${attempt}/${TUNNEL_REACHABILITY_ATTEMPTS}.`
+              : `cloudflared Quick Tunnel not reachable yet (${hostname}); attempt ${attempt}/${TUNNEL_REACHABILITY_ATTEMPTS}.`
+          );
         }
-        abortIfNeeded();
-      } catch (error) {
-        // A cancellation mid-DNS must not leak the tunnel child.
-        await tunnel.stop();
-        throw error;
+      });
+      if ("error" in result) {
+        return { enabled: true, source: "managed", error: result.error };
       }
-      this.tunnel = tunnel;
-      return { enabled: true, source: "managed", url: tunnel.url };
+      this.tunnel = result.tunnel;
+      return { enabled: true, source: "managed", url: result.url };
     } catch (error) {
       if (error instanceof Error && error.message === CANCELLED_START_MESSAGE) {
         throw error;
@@ -488,30 +488,4 @@ async function commandPath(command: string): Promise<string | undefined> {
 
 function configuredProxyPort(): number {
   return vscode.workspace.getConfiguration("localMotion").get<number>("proxyPort", 41434);
-}
-
-async function tunnelDnsResolves(url: string, timeoutMs = TUNNEL_DNS_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<boolean> {
-  const hostname = new URL(url).hostname;
-  const deadline = Date.now() + timeoutMs;
-  do {
-    // Checked at the TOP of each tick: a stop that landed during the
-    // previous lookup or delay exits before another lookup is issued.
-    // (A single in-flight dns.lookup cannot be interrupted — Node's
-    // resolver takes no signal — so the residue is one OS resolver
-    // timeout, not the rest of the 90s window.)
-    if (abortSignal?.aborted) {
-      return false;
-    }
-    try {
-      await dns.lookup(hostname);
-      return true;
-    } catch {
-      await delay(500);
-    }
-  } while (Date.now() < deadline);
-  return false;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -143,9 +143,10 @@ test("controller serializes setup operations before downloads and model switches
   const proxyStartIndex = llamaSource2.indexOf("await proxy.start(");
   assert.equal(proxyStartIndex < lastCheckIndex && lastCheckIndex < publishIndex, true);
 
-  // The DNS retry loop checks the abort signal at the TOP of each tick.
-  const dnsBody = llamaSource2.slice(llamaSource2.indexOf("async function tunnelDnsResolves"));
-  assert.equal(dnsBody.indexOf("abortSignal?.aborted") < dnsBody.indexOf("await dns.lookup"), true);
+  // The tunnel reachability loop checks the abort signal at the TOP of each tick.
+  const reachSource = await readText("../src/runtime/tunnelReachability.ts");
+  const reachBody = reachSource.slice(reachSource.indexOf("export async function tunnelHttpReachable"));
+  assert.equal(reachBody.indexOf("abortSignal?.aborted") < reachBody.indexOf("await resolveIpv4ViaDoh"), true);
 
   // The palette Connect command logs a cancelled start without warning
   // about the outcome the user chose.
@@ -170,13 +171,18 @@ test("controller serializes setup operations before downloads and model switches
     .join("\n").match(/"Local model startup was cancelled\."/g) ?? [];
   assert.equal(literalCount.length, 0);
 
-  // Regression (same round): Turn Off stays an interrupt through the tunnel
-  // phase — the DNS retry loop observes the start abort signal and the
-  // tunnel steps re-check abortIfNeeded, so stop() cannot be pinned on the
-  // start queue for the full 90s DNS window.
-  assert.match(llamaSource, /tunnelDnsResolves\(tunnel\.url, TUNNEL_DNS_TIMEOUT_MS, abortSignal\)/);
-  assert.match(llamaSource, /abortSignal\?: AbortSignal\): Promise<boolean>/);
+  // Regression: Turn Off stays an interrupt through the tunnel phase — the
+  // HTTP reachability loop observes the start abort signal and the tunnel
+  // steps re-check abortIfNeeded, so stop() cannot be pinned on the start
+  // queue for the full reachability window.
+  // Regression: Turn Off stays an interrupt through the tunnel phase — the
+  // managed Quick Tunnel probe observes the start abort signal and the tunnel
+  // steps re-check abortIfNeeded, so stop() cannot be pinned on the start
+  // queue for the full reachability window.
+  assert.match(llamaSource, /probeManagedQuickTunnels\(\{/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /abortSignal\?: AbortSignal/);
   assert.match(llamaSource, /this\.startCursorTunnel\(tunnelConfig, proxyBaseUrl, abortIfNeeded, startAbort\.signal\)/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /attemptAbort\.abort\(\)/);
 
   // The unlocked PREPARE_CURSOR side-effect path is deleted: the webview
   // never posted it, and the palette command routes through connectCursor.
@@ -188,12 +194,13 @@ test("controller serializes setup operations before downloads and model switches
   // the running model stays stoppable from the panel's primary button — the
   // exact flow the interrupt architecture exists for must not have a dead
   // Turn Off. Fresh starts keep the disabled "Starting…".
+  // Cursor-connect keeps its own Connecting surface with Turn Off (2026-07-09):
+  // hiding the connect card under "Starting local agent" looked like a dead button.
   const panelHtml = await readText("../src/ui/setupPanelHtml.ts");
-  // Both escape-hatch surfaces (click handler + starting render) cover the
-  // switch-install case AND the Cursor-connect heal (round 11: a stalled
-  // tunnel heal stranded the panel on Starting with no Turn Off).
-  const switchStopHits = panelHtml.match(/\(state\.modelSwitchRunning && state\.runtime && state\.runtime\.running\) \|\| state\.cursorConnectRunning/g) ?? [];
-  assert.equal(switchStopHits.length, 2);
+  assert.match(panelHtml, /state\.modelSwitchRunning && state\.runtime && state\.runtime\.running/);
+  assert.match(panelHtml, /state\.cursorConnectRunning/);
+  assert.match(panelHtml, /Connecting to Cursor/);
+  assert.match(panelHtml, /els\.openCursor\.textContent = 'Connecting…'/);
   assert.match(panelHtml, /els\.primary\.textContent = 'Turn Off Local Agent';\s*\n\s*els\.primary\.disabled = false;/);
 
   // An invalid configured manual tunnel URL surfaces via respawn instead of
@@ -206,7 +213,8 @@ test("controller serializes setup operations before downloads and model switches
   const cloudflaredSource = await readText("../src/runtime/cloudflaredTunnel.ts");
   assert.match(cloudflaredSource, /abortSignal\?: AbortSignal/);
   assert.match(cloudflaredSource, /options\.abortSignal\?\.addEventListener\("abort", onAbort, \{ once: true \}\)/);
-  assert.match(llamaSource, /onExit: \(\) => this\.handleTunnelExit\(tunnel\),\s*\n\s*abortSignal/);
+  assert.match(llamaSource, /startTunnel: \(\{ onExit, abortSignal: tunnelAbort \}\) =>/);
+  assert.match(llamaSource, /onExit: \(\) => onExit\(\)/);
 });
 
 

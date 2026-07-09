@@ -122,8 +122,11 @@ test("setup first screen is a single on/off switch before Advanced and Setup dis
   assert.equal(panelSource.includes('class="hero"'), false);
   assert.equal(panelSource.includes("header-actions"), false);
   assert.match(panelSource, /id="setupGuide"/);
-  assert.match(panelSource, /id="setupGuideSteps"/);
-  assert.match(panelSource, /renderSetupGuide/);
+  assert.match(panelSource, /setup-guide-steps/);
+  assert.match(panelSource, /Turn on a local model in Local Motion/);
+  assert.match(panelSource, /Click Connect to Cursor/);
+  assert.equal(panelSource.includes("renderSetupGuide"), false);
+  assert.equal(panelSource.includes("viewModel.steps"), false);
   assert.equal(panelSource.includes('id="connectSteps"'), false);
 
   // The primary control never morphs into Connect, and there is no second
@@ -408,9 +411,10 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   assert.match(panelSource, /Connect to Cursor/);
   assert.match(panelSource, /connectPending/);
   assert.match(panelSource, /connectReady/);
-  assert.match(panelSource, /setupGuideSteps/);
-  assert.match(panelSource, /renderSetupGuide/);
-  assert.match(panelSource, /viewModel\.steps/);
+  assert.match(panelSource, /setupGuide/);
+  assert.match(panelSource, /setup-guide-steps/);
+  assert.equal(panelSource.includes("renderSetupGuide"), false);
+  assert.equal(panelSource.includes("viewModel.steps"), false);
   assert.match(panelSource, /LOCAL_MOTION_MODEL_ID/);
   assert.match(panelSource, /running \? 'on'\s*: state\.cursorConnectRunning \? 'starting'/);
 });
@@ -772,7 +776,8 @@ test("Cursor tunnel plumbing stays hidden behind the restored one-step setup car
   assert.match(panelSource, /id="connectPending"/);
   assert.match(panelSource, /id="connectReady"/);
   assert.match(panelSource, /id="setupGuide"/);
-  assert.match(panelSource, /id="setupGuideSteps"/);
+  assert.match(panelSource, /setup-guide-steps/);
+  assert.equal(panelSource.includes("renderSetupGuide"), false);
   assert.match(panelSource, /data-key="setupBlock"/);
   assert.match(panelSource, /Copy Updated Setup/);
   assert.match(panelSource, /command: '\$\{SETUP_REQUEST_COMMAND\.CONNECT_CURSOR\}'/);
@@ -825,18 +830,26 @@ test("runtime owns the Cursor tunnel next to the proxy and stops it on crashes",
   assert.match(runtimeSource, /manualUrlInvalid/);
   assert.match(runtimeSource, /findCloudflared\(\)/);
   assert.match(runtimeSource, /startQuickTunnel/);
-  assert.match(runtimeSource, /tunnelDnsResolves/);
-  assert.match(runtimeSource, /await tunnel\.stop\(\)/);
+  assert.match(runtimeSource, /probeManagedQuickTunnels/);
   assert.match(runtimeSource, /error: "binary-missing"/);
   // cloudflared is installed on demand like llama.cpp; binary-missing is only
   // reachable when Homebrew is absent or the install fails.
   assert.match(runtimeSource, /await findCloudflared\(\) \?\? await this\.installCloudflared\(abortSignal\)/);
   assert.match(runtimeSource, /\["install", "cloudflared"\]/);
-  // Fresh trycloudflare hostnames can take ~90s to propagate through DNS.
-  assert.match(runtimeSource, /TUNNEL_DNS_TIMEOUT_MS = 90_000/);
+  // Quick Tunnel readiness uses DoH + SNI HTTPS (not dig/dns.lookup): some
+  // home routers NXDOMAIN fresh trycloudflare names while Cloudflare DoH
+  // already has the A record. Retry with a fresh hostname when one stalls.
+  assert.match(runtimeSource, /from "\.\/tunnelReachability"/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /TUNNEL_REACHABILITY_TIMEOUT_MS/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /tunnelHttpReachable/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /cloudflare-dns\.com\/dns-query/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /servername: hostname/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /cachedIp/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /export async function probeManagedQuickTunnels/);
+  assert.match(await readText("../tests/cursor-tunnel.test.mjs"), /retries a fresh hostname when cloudflared exits mid-probe/);
   assert.match(runtimeSource, /error: "start-timeout"/);
   assert.match(runtimeSource, /error: "exited"/);
-  assert.match(runtimeSource, /error: "dns-unresolved"/);
+  assert.match(await readText("../src/runtime/tunnelReachability.ts"), /error: "dns-unresolved"/);
   assert.match(runtimeSource, /error: "invalid-url"/);
   assert.match(typesSource, /source\?: "managed" \| "manual"/);
   assert.match(typesSource, /dns-unresolved/);
@@ -884,7 +897,8 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
   assert.equal(panelSource.includes("Copy brew install cloudflared"), false);
   assert.equal(panelSource.includes("Cursor-routed prompts"), false);
   assert.match(panelSource, /viewModel\.isRunning === true/);
-  assert.match(panelSource, /els\.openCursor\.disabled = connecting/);
+  assert.match(panelSource, /renderConnectingCard/);
+  assert.match(panelSource, /els\.openCursor\.textContent = 'Connecting…'/);
   assert.equal(panelSource.includes("viewModel.baseUrl || viewModel.statusMessage"), false);
   assert.equal(panelSource.includes("Unavailable until Cursor connection is ready"), false);
 
@@ -898,8 +912,8 @@ test("setup ON state confirms a real Cursor request without re-nagging", async (
     panelSource,
     /if \(inUse\) \{[\s\S]*?els\.connect\.classList\.add\('hidden'\);[\s\S]*?\} else \{[\s\S]*?els\.connect\.classList\.remove\('hidden'\)/
   );
-  assert.match(panelSource, /connectPending\.classList\.toggle\('hidden', cursorReady\)/);
-  assert.match(panelSource, /connectReady\.classList\.toggle\('hidden', !cursorReady\)/);
+  assert.match(panelSource, /renderConnectingCard/);
+  assert.match(panelSource, /Connecting to Cursor/);
   assert.equal(panelSource.includes("current && !handoffFailed"), false);
 });
 
