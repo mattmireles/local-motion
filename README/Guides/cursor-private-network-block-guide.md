@@ -4,6 +4,9 @@ July 1, 2026
 
 ## Related Documentation
 
+- **[Cursor custom-model validation debugging guide](cursor-custom-model-validation-guide.md)**:
+  Provider-toggle, identifier, credential, and live-chat proof after the public
+  tunnel exists.
 - **[Local Native LLM Extensions for VS Code and Cursor on macOS](vs-code-local-ai-hugging-face-guide.md)**:
   Sidecar architecture background; Phase 6 covers the instruction-only Cursor
   setup path this guide constrains.

@@ -17,7 +17,7 @@ export type CursorSetupValueKey = "apiKey" | "baseUrl" | "modelId" | "setupBlock
 
 /** Shared tail for toast/diagnostic success copy after Cursor values are ready. */
 export const CURSOR_CUSTOM_MODEL_HANDOFF_HINT =
-  "In Cursor Settings > Models, Add Custom Model with the copied Model name, API key, and Base URL, then select that custom model in chat (not Auto).";
+  "In Cursor Settings > Models, turn on OpenAI API Key and paste the session key. Turn on Override OpenAI Base URL and paste the Base URL. Add Custom Model with the Model name, then select that custom model in chat (not Auto).";
 
 export interface CursorSetupFreshness {
   status: "not-copied" | "copied" | "current" | "stale";
@@ -62,9 +62,10 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
 
   const setupBlock = [
     "Local Motion Cursor setup",
-    `Model name: ${modelId}`,
-    `OpenAI API Key: ${apiKey}`,
-    `Override OpenAI Base URL: ${baseUrl}`
+    `1. Turn on OpenAI API Key: ${apiKey}`,
+    `2. Turn on Override OpenAI Base URL: ${baseUrl}`,
+    `3. Add Custom Model with Model name: ${modelId}`,
+    `4. Select ${modelId} in chat (not Auto).`
   ].join("\n");
 
   return {
@@ -75,7 +76,7 @@ export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewMode
     localAgentRunning: true,
     setupBlock,
     statusMessage:
-      "Use Model name, API key, and Base URL exactly as shown. If chat says Model name is not valid, that is Cursor-side catalog validation — prove the local stack with curl first."
+      "Turn on OpenAI API Key before selecting the custom model. If that toggle is off, Cursor shows Model name is not valid before sending a request."
   };
 }
 

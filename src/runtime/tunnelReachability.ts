@@ -17,6 +17,45 @@ const DOH_ENDPOINTS = [
   (hostname: string) => `https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`
 ] as const;
 
+interface PublicDnsFetchDependencies {
+  directFetch(input: string, init?: RequestInit): Promise<Response>;
+  resolveIpv4(hostname: string, abortSignal?: AbortSignal): Promise<string | undefined>;
+  fetchViaIp(url: URL, ip: string, init?: RequestInit): Promise<Response>;
+}
+
+/**
+ * Fetch a public HTTPS URL even when the Mac's system resolver has cached a
+ * false NXDOMAIN for a fresh Quick Tunnel. Cursor's backend uses public DNS,
+ * so local router DNS must not block the final authenticated setup proof after
+ * the same tunnel already passed the DoH reachability gate.
+ */
+export async function fetchWithPublicDnsFallback(
+  input: string,
+  init?: RequestInit,
+  dependencies: PublicDnsFetchDependencies = {
+    directFetch: (url, requestInit) => fetch(url, requestInit),
+    resolveIpv4: resolveIpv4ViaDoh,
+    fetchViaIp: fetchHttpsViaIp
+  }
+): Promise<Response> {
+  try {
+    return await dependencies.directFetch(input, init);
+  } catch (directError) {
+    if (init?.signal?.aborted) {
+      throw directError;
+    }
+    const url = new URL(input);
+    if (url.protocol !== "https:") {
+      throw directError;
+    }
+    const ip = await dependencies.resolveIpv4(url.hostname, init?.signal ?? undefined);
+    if (!ip) {
+      throw directError;
+    }
+    return dependencies.fetchViaIp(url, ip, init);
+  }
+}
+
 /** Pull the first A-record IP from a DNS-JSON (RFC 8427) response body. */
 export function ipv4FromDohAnswer(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") {
@@ -170,6 +209,46 @@ function httpsGetStatus(hostname: string, ip: string, path: string, abortSignal?
     req.on("close", () => {
       abortSignal?.removeEventListener("abort", onAbort);
     });
+  });
+}
+
+function fetchHttpsViaIp(url: URL, ip: string, init?: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    if (init?.signal?.aborted) {
+      reject(init.signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+      return;
+    }
+    const headers = Object.fromEntries(new Headers(init?.headers).entries());
+    headers.host = url.host;
+    headers["accept-encoding"] = "identity";
+    const request = https.request(
+      {
+        host: ip,
+        port: url.port || 443,
+        servername: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        method: init?.method ?? "GET",
+        headers
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.once("end", () => {
+          resolve(new Response(Buffer.concat(chunks), {
+            status: response.statusCode ?? 500,
+            statusText: response.statusMessage,
+            headers: response.headers as HeadersInit
+          }));
+        });
+      }
+    );
+    const onAbort = (): void => {
+      request.destroy(init?.signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    init?.signal?.addEventListener("abort", onAbort, { once: true });
+    request.once("error", reject);
+    request.once("close", () => init?.signal?.removeEventListener("abort", onAbort));
+    request.end();
   });
 }
 

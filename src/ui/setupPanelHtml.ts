@@ -109,8 +109,9 @@ export function setupPanelHtml(nonce: string): string {
         <ol class="setup-guide-steps">
           <li>Turn on a local model in Local Motion.</li>
           <li>Click Connect to Cursor and wait for the public Base URL.</li>
-          <li>In Cursor Settings → Models, paste Model name, API key, and Base URL.</li>
-          <li>Add Custom Model with that Model name, then select it in chat (not Auto).</li>
+          <li>In Cursor Settings → Models, turn on OpenAI API Key and paste the session key.</li>
+          <li>Turn on Override OpenAI Base URL and paste the Base URL.</li>
+          <li>Add Custom Model with the Model name, then select it in chat (not Auto).</li>
         </ol>
       </div>
     </details>
@@ -570,7 +571,7 @@ export function setupPanelHtml(nonce: string): string {
             : 'One more step to use this model in Cursor chat.';
           els.connectTitle.textContent = cursorReady ? 'Cursor setup' : 'Connect Cursor';
           els.connectLead.textContent = cursorReady
-            ? 'Add a custom model with these exact values, then select it in chat (not Auto).'
+          ? 'Turn on OpenAI API Key, then add the custom model with these exact values.'
             : (viewModel.statusMessage || 'Create a public connection Cursor can reach.');
           els.connectPending.classList.toggle('hidden', cursorReady);
           els.connectReady.classList.toggle('hidden', !cursorReady);
@@ -594,7 +595,7 @@ export function setupPanelHtml(nonce: string): string {
           let note = state.connectMessage || '';
           if (!note && freshness) {
             if (freshness.status === 'current' && cursorReady) {
-              note = 'If chat says Model name is not valid, that is Cursor-side — prove the local stack with curl first.';
+              note = 'OpenAI API Key must stay on. If that toggle is off, Cursor rejects the model before Local Motion receives the prompt.';
             } else if (freshness.status !== 'current') {
               note = freshnessMessage || '';
             }

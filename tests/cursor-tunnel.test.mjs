@@ -307,6 +307,38 @@ test("isOriginHealthStatus accepts origin 401/2xx and rejects Cloudflare edge 5x
   assert.equal(isOriginHealthStatus(0), false);
 });
 
+test("Cursor endpoint verification falls back to public DNS after local router NXDOMAIN", async () => {
+  const { fetchWithPublicDnsFallback } = await import("../out/runtime/tunnelReachability.js");
+  const seen = [];
+  const response = await fetchWithPublicDnsFallback(
+    "https://fresh-tunnel.trycloudflare.com/v1/models",
+    { headers: { Authorization: "Bearer session-key" } },
+    {
+      directFetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+      resolveIpv4: async (hostname) => {
+        seen.push(["resolve", hostname]);
+        return "104.16.230.132";
+      },
+      fetchViaIp: async (url, ip, init) => {
+        seen.push(["fetch", url.hostname, ip, new Headers(init.headers).get("authorization")]);
+        return new Response(JSON.stringify({ data: [{ id: "Local Motion" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(await response.json(), { data: [{ id: "Local Motion" }] });
+  assert.deepEqual(seen, [
+    ["resolve", "fresh-tunnel.trycloudflare.com"],
+    ["fetch", "fresh-tunnel.trycloudflare.com", "104.16.230.132", "Bearer session-key"]
+  ]);
+});
+
 test("tunnelHttpReachable aborts promptly when the start signal fires", async () => {
   const { tunnelHttpReachable } = await import("../out/runtime/tunnelReachability.js");
   const abort = new AbortController();

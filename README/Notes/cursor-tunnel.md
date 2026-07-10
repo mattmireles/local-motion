@@ -126,80 +126,102 @@ poisoned freshness messaging.
 
 ---
 
-## Issue: Cursor Chat "Model name is not valid" — Active
+## Issue: Cursor Chat "Model name is not valid" — Resolved
 
 **First spotted:** 2026-07-08
-**Status:** Active (vendor gate; Local Motion handoff hardened)
+**Resolved:** 2026-07-09
+**Status:** Resolved
 
 ### Summary
 
-Cursor chat can show `Model name is not valid` after Local Motion assisted
-setup. The string is not emitted by Local Motion. Local endpoint verification
-and `curl` to `/v1/models` + `/v1/chat/completions` can succeed while Cursor
-still rejects the custom model name via its own catalog validation.
+Cursor 3.10.20 listed and selected `Local Motion` but rejected chat before the
+proxy received a request. Cursor had saved the session key and enabled the Base
+URL override, but the separate OpenAI API-key provider toggle was off. Turning
+that provider on made the exact spaced `Local Motion` identifier work; no alias
+or model rename was required.
 
 ### Symptom
 
 ```text
-Model name is not valid
+Model name is not valid: "Local Motion"
 ```
-
-(or `Model name is not valid: ""` / `Model name is not valid: "Local Motion"`)
 
 ### Root Cause
 
-Cursor BYOK validates custom model names against its catalog before forwarding
-to the Override OpenAI Base URL. Empty model (API key toggle off) and
-unrecognized names are documented failure modes. Local Motion's id
-`Local Motion` is hijack-safe but still subject to Cursor's gate.
-Not manually confirmed on this machine's Cursor build for the empty-string vs
-catalog-reject split.
+Cursor persisted `useOpenAIKey: false` even though the key field said
+`Secret saved`, the Base URL override was on, and `Local Motion` appeared in the
+picker. With the provider disabled, Cursor rejected the selection before
+custom-endpoint routing.
+
+The repair exposed a second local defect: the managed Quick Tunnel passed the
+DoH + SNI reachability probe, but final authenticated `/v1/models`
+verification still used ordinary `fetch`. The home router's stale NXDOMAIN
+therefore produced `fetch failed` and blocked setup copy even though Cursor's
+backend could resolve and use the tunnel.
 
 ### Related Guides
 
 - [Cursor private-network block guide](../Guides/cursor-private-network-block-guide.md) — diagnostic sequence and model-name section.
+- [Cursor custom-model validation guide](../Guides/cursor-custom-model-validation-guide.md)
+  — verified provider state, failure matrix, and live proof procedure.
 
 ### Fix
 
 **Files:**
 
 - `src/cursor/cursorIntegration.ts` — honest Add Custom Model steps; status
-  message names the Cursor-side error.
-- `src/runtime/openAiChat.ts` — proxy always rewrites chat `model` to the
-  advertised single-model id (does not fix Cursor pre-request rejection).
-- `src/ui/setupPanelHtml.ts`, `src/extension.ts` — stop hardcoding the brand
-  string; use `LOCAL_MOTION_MODEL_ID`.
+  and copied setup now say to turn on OpenAI API Key before selecting the
+  model.
+- `src/ui/setupPanelHtml.ts` — ready-state lead, permanent setup guide, and
+  post-copy note all name the required provider toggle.
+- `src/runtime/tunnelReachability.ts` — final authenticated verification falls
+  back to public DNS-over-HTTPS and connects by IP with TLS SNI / Host
+  preserved after local DNS failure.
+- `src/app/localMotionController.ts` — Cursor setup verification uses that
+  public-DNS fallback.
 
 Do **not** invent a second `cursorModelId` or rename to a catalog alias without
-a named Cursor repro — that trades hijack risk for speculative validation
-bypass.
+a measured Cursor repro. The create-guide draft proposed `cus-local-motion`,
+but the live test falsified the premise: `Local Motion` worked unchanged once
+the provider toggle was on.
 
 ### Verification
 
 ```bash
 npm run check
+npm run lint
 npm test
+npm run package
 ```
 
-Manual: with tunnel + session key, run the guide's local `curl` with
-`"model":"Local Motion"`. If curl works and Cursor chat still fails, capture
-the exact error string (empty vs named) and Cursor version.
+All gates passed with 142 tests. The rebuilt VSIX installed successfully in
+Cursor 3.10.20.
+
+Live proof 1 repaired the current settings in Cursor, selected `Local Motion`,
+submitted `Reply with exactly: LOCAL MOTION WORKS`, and rendered
+`LOCAL MOTION WORKS`.
+
+Live proof 2 used the rebuilt extension. A fresh Quick Tunnel succeeded through
+the public-DNS fallback, setup reported ready, Cursor selected `Local Motion`,
+and `Reply with exactly: FIXED BUILD WORKS` rendered `FIXED BUILD WORKS`.
+The active `llama-server` log recorded 13,516 prompt tokens and six generated
+tokens for that request.
 
 ### Executable Memory
 
-Regression test: `tests/pure-logic.test.mjs` (always-rewrite model; setup copy)
-Regression test: `tests/extension-wiring.test.mjs` (Add Custom Model wording)
-Not testable: Cursor-backend catalog validation end-to-end
+Regression test: `tests/cursor-tunnel.test.mjs` (`Cursor endpoint verification falls back to public DNS after local router NXDOMAIN`)
+Regression test: `tests/extension-wiring.test.mjs` (`Cursor setup instructions match Cursor's Add Custom Model flow`)
+Regression test: `tests/pure-logic.test.mjs` (setup block requires both OpenAI toggles)
 Memory updates: none
 
 ### If This Recurs
 
-- [ ] Prove local stack with guide §4 step 1 `curl`.
-- [ ] Confirm OpenAI API Key toggle on and custom model selected (not Auto).
-- [ ] Check Cursor version / Help > Check for Updates (staff claimed catalog
-      rejection fixed 2026-07-08 in forum thread 155863).
-- [ ] Do not change `LOCAL_MOTION_MODEL_ID` without a measured Cursor failure
-      that a specific slug fixes.
+- [ ] Confirm OpenAI API Key is on; `Secret saved` alone is not enough.
+- [ ] Copy the current session key and tunnel URL after every Local Motion
+      restart.
+- [ ] Require one real Cursor chat response; `/v1/models` alone is not proof.
+- [ ] If setup says `fetch failed`, test public DoH before blaming the tunnel.
+- [ ] Do not rename `LOCAL_MOTION_MODEL_ID` without an A/B Cursor repro.
 
 ---
 

@@ -20,6 +20,7 @@ import { LocalMotionProvider } from "../provider/localMotionProvider";
 import { downloadGguf, type DownloadProgress } from "../runtime/downloader";
 import { contextTokensCap, LlamaServerManager } from "../runtime/llamaServer";
 import { LlamaServerResolver } from "../runtime/llamaServerResolver";
+import { fetchWithPublicDnsFallback } from "../runtime/tunnelReachability";
 import {
   SETUP_RESPONSE_TYPE,
   type AutomagicalSetupCompleteResponse,
@@ -88,7 +89,7 @@ export class LocalMotionController {
             await vscode.commands.executeCommand("workbench.action.openSettings", query);
           }
         },
-        fetch: (input, init) => fetch(input, init),
+        fetch: fetchWithPublicDnsFallback,
         now: () => new Date().toISOString()
       }
     );

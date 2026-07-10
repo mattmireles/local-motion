@@ -735,7 +735,9 @@ test("Cursor setup view model uses the public tunnel endpoint", () => {
   assert.ok(viewModel.setupBlock.includes(LOCAL_MOTION_MODEL_ID));
   assert.ok(viewModel.setupBlock.includes("session-secret"));
   assert.ok(viewModel.setupBlock.includes(`Model name: ${LOCAL_MOTION_MODEL_ID}`));
-  assert.ok(viewModel.statusMessage.includes("Model name is not valid"));
+  assert.ok(viewModel.setupBlock.includes("Turn on OpenAI API Key"));
+  assert.ok(viewModel.setupBlock.includes("Turn on Override OpenAI Base URL"));
+  assert.ok(viewModel.statusMessage.includes("toggle is off"));
   assert.equal(cursorSetupValue(viewModel, "baseUrl"), "https://public.example.com/v1");
   assert.equal(cursorSetupValue(viewModel, "apiKey"), "session-secret");
   assert.equal(cursorSetupValue(viewModel, "modelId"), LOCAL_MOTION_MODEL_ID);

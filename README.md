@@ -133,6 +133,11 @@ and leaves one-click copy controls visible for:
 - Add Custom Model: the active Local Motion model ID
 - Full setup block
 
+In Cursor's API Keys section, **turn on OpenAI API Key** after pasting the
+session key. A saved key with that provider toggle off makes Cursor reject the
+selected custom model before it sends any request. See the
+[custom-model validation debugging guide](README/Guides/cursor-custom-model-validation-guide.md).
+
 ## Cursor Coverage
 
 Cursor does not expose a stable extension API for mutating its native model

@@ -402,6 +402,8 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   const cursorSource = await readText("../out/cursor/cursorIntegration.js");
   const panelSource = await readText("../src/ui/setupPanelHtml.ts");
   assert.match(cursorSource, /Add Custom Model/);
+  assert.match(cursorSource, /turn on OpenAI API Key/);
+  assert.match(cursorSource, /Turn on Override OpenAI Base URL/);
   assert.match(cursorSource, /Model name: /);
   assert.match(cursorSource, /select that custom model in chat/);
   assert.match(cursorSource, /Model name is not valid/);
@@ -413,6 +415,10 @@ test("Cursor setup instructions match Cursor's Add Custom Model flow", async () 
   assert.match(panelSource, /connectReady/);
   assert.match(panelSource, /setupGuide/);
   assert.match(panelSource, /setup-guide-steps/);
+  assert.match(panelSource, /turn on OpenAI API Key/);
+  assert.match(panelSource, /Turn on Override OpenAI Base URL/);
+  assert.match(panelSource, /OpenAI API Key must stay on/);
+  assert.equal(panelSource.includes("that is Cursor-side — prove the local stack"), false);
   assert.equal(panelSource.includes("renderSetupGuide"), false);
   assert.equal(panelSource.includes("viewModel.steps"), false);
   assert.match(panelSource, /LOCAL_MOTION_MODEL_ID/);
