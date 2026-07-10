@@ -7,6 +7,80 @@ network block that forced it.
 
 ---
 
+## Issue: Setup Cursor falls through to VS Code Settings — Active
+
+**First spotted:** 2026-07-10
+**Status:** Fixed locally; reload-and-click proof pending
+
+### Summary
+
+`Connect Cursor` caught every failure from Cursor's native settings command and
+opened the VS Code settings editor instead. That editor cannot configure
+Cursor's custom model, yet Local Motion reported a successful Cursor handoff.
+The fallback is removed: Cursor uses its native settings command, while VS Code
+copies the values and gives the manual Cursor path.
+
+### Symptom
+
+```text
+Click Connect Cursor
+→ VS Code Settings opens instead of Cursor Settings → Models
+```
+
+### Root Cause
+
+`LocalMotionController` treated a failed `cursor.openCursorSettings` call as a
+reason to run `workbench.action.openSettings`. The latter opens only the host
+editor's VS Code Settings surface. In a plain VS Code host, there is no stable
+public API for an extension to open Cursor's private settings in another app.
+
+### Related Guides
+
+- [Cursor custom-model validation guide](../Guides/cursor-custom-model-validation-guide.md)
+  — required Cursor Models path and setup values.
+- [Cursor private-network block guide](../Guides/cursor-private-network-block-guide.md)
+  — supported, instruction-only Cursor boundary.
+
+### Fix
+
+**Files:**
+
+- `src/app/localMotionController.ts` — route only Cursor hosts to
+  `cursor.openCursorSettings`; otherwise give a specific manual instruction.
+- `src/cursor/cursorIntegration.ts` — pure Cursor-host predicate.
+- `tests/pure-logic.test.mjs` / `tests/extension-wiring.test.mjs` — host and
+  no-redirect regressions.
+- `README.md` — remove the claim that plain VS Code opens a usable settings
+  editor for Cursor setup.
+
+### Verification
+
+```bash
+npm run check && npm run lint && npm test && npm run package
+# 143 passing tests; rebuilt VSIX force-installed into local Cursor.
+```
+
+Cursor 3.10.20 still registers `cursor.openCursorSettings` in its workbench
+bundle. The active Cursor extension host must be reloaded, then `Connect
+Cursor` must be clicked once to prove the live settings surface.
+
+### Executable Memory
+
+Regression test: `tests/pure-logic.test.mjs` (`recognizes Cursor hosts before
+opening proprietary Settings`) and `tests/extension-wiring.test.mjs` (`Cursor
+setup never redirects to the VS Code settings editor`)
+Not testable: live settings navigation from this non-interactive session
+Memory updates: none
+
+### If This Recurs
+
+- [ ] In Cursor, run `Connect Cursor` after `Developer: Reload Window`.
+- [ ] Confirm Cursor Settings opens; do not accept VS Code Settings as success.
+- [ ] If Cursor's native command fails, use the copied values in
+      **Cursor Settings → Models** manually.
+
+---
+
 ## Issue: Home-router NXDOMAIN kills working Quick Tunnels — Resolved
 
 **First spotted:** 2026-07-09

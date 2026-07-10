@@ -381,21 +381,17 @@ test("the runtime owns the context fit; no start path can pass the raw setting t
   assert.match(controllerSource, /contextTokens: candidate\.compatibility\.fittedContextTokens/);
 });
 
-test("Open Cursor Settings targets Cursor's own settings, not the VS Code editor", async () => {
+test("Cursor setup never redirects to the VS Code settings editor", async () => {
   const controllerSource = await readText("../src/app/localMotionController.ts");
 
   // Cursor has two settings surfaces. Add Custom Model lives in Cursor
-  // Settings (command cursor.openCursorSettings); workbench.action.openSettings
-  // opens the VS Code settings editor, which filtered "Cursor Models" to two
-  // unrelated entries. The native command must be tried first, with the VS
-  // Code editor only as the non-Cursor fallback.
-  const nativeIndex = controllerSource.indexOf('executeCommand("cursor.openCursorSettings")');
-  const fallbackIndex = controllerSource.indexOf('executeCommand("workbench.action.openSettings", query)');
-  assert.notEqual(nativeIndex, -1);
-  assert.notEqual(fallbackIndex, -1);
-  assert.equal(nativeIndex < fallbackIndex, true);
-  const between = controllerSource.slice(nativeIndex, fallbackIndex);
-  assert.match(between, /catch/);
+  // Settings. In a VS Code host there is no supported way to open Cursor's
+  // private settings, so surface a manual instruction rather than redirecting
+  // the user to a lookalike editor that cannot configure Cursor.
+  assert.match(controllerSource, /isCursorApp\(vscode\.env\.appName\)/);
+  assert.match(controllerSource, /executeCommand\("cursor\.openCursorSettings"\)/);
+  assert.match(controllerSource, /Open Cursor Settings → Models in Cursor/);
+  assert.equal(controllerSource.includes("workbench.action.openSettings"), false);
 });
 
 test("Cursor setup instructions match Cursor's Add Custom Model flow", async () => {

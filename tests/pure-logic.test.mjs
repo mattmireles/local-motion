@@ -6,6 +6,7 @@ import {
   cursorSetupFreshness,
   cursorSetupValue,
   cursorSetupViewModel,
+  isCursorApp,
   isCursorSetupValueKey,
   lastCopiedCursorSetup,
   shouldMarkAutomagicalSetupCompleted,
@@ -1150,6 +1151,13 @@ test("validates Cursor setup copy keys at runtime", () => {
   assert.equal(isCursorSetupValueKey("setupBlock"), true);
   assert.equal(isCursorSetupValueKey("bad"), false);
   assert.equal(isCursorSetupValueKey(undefined), false);
+});
+
+test("recognizes Cursor hosts before opening proprietary Settings", () => {
+  assert.equal(isCursorApp("Cursor"), true);
+  assert.equal(isCursorApp("Cursor Nightly"), true);
+  assert.equal(isCursorApp("Visual Studio Code"), false);
+  assert.equal(isCursorApp("Code - Insiders"), false);
 });
 
 test("opens setup onboarding only for first startup without an installed model", () => {

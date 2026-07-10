@@ -125,8 +125,10 @@ For advanced manual control:
 
 `Connect Cursor to Local Agent` verifies `GET /v1/models` through the
 Cursor-facing tunnel with the current session key, copies the full setup block,
-opens Cursor Settings (in plain VS Code, the filtered settings editor instead),
-and leaves one-click copy controls visible for:
+and opens Cursor Settings when Local Motion runs in Cursor. From plain VS Code,
+it copies the values and tells you to open **Cursor Settings → Models** yourself;
+it never redirects you to VS Code Settings. One-click copy controls remain
+available for:
 
 - OpenAI API Key: the current session key
 - Override OpenAI Base URL: the active public Cursor tunnel Base URL

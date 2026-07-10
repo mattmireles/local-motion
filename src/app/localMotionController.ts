@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { cursorTunnelConfigFromWorkspace } from "./cursorTunnelConfig";
-import type { CursorSetupValueKey } from "../cursor/cursorIntegration";
+import { isCursorApp, type CursorSetupValueKey } from "../cursor/cursorIntegration";
 import { CursorSetupWorkflow } from "../cursor/cursorSetupWorkflow";
 import { setupDiagnosticSummary, type SetupDiagnosticSummary } from "../diagnostics/setupDiagnostics";
 import { chooseOptionCandidate, chooserQuantizations, fitContextTokens, fitRequiredMemoryBytes, MINIMUM_USABLE_CONTEXT_TOKENS, quantizationFromFileName } from "../models/compatibility";
@@ -77,16 +77,18 @@ export class LocalMotionController {
         writeClipboardText: async (value) => {
           await vscode.env.clipboard.writeText(value);
         },
-        openSettings: async (query) => {
+        openSettings: async () => {
           // Cursor's Add Custom Model flow lives in Cursor Settings — a
-          // separate surface from the VS Code settings editor, opened by a
-          // Cursor-only command (confirmed in Cursor's workbench bundle).
-          // Plain VS Code lacks that command and falls back to the
-          // filtered settings editor.
+          // separate surface from VS Code Settings, opened by Cursor's own
+          // command. Opening VS Code Settings from a Cursor handoff is a
+          // false success: it cannot configure Cursor's custom model.
+          if (!isCursorApp(vscode.env.appName)) {
+            throw new Error("Open Cursor Settings → Models in Cursor. Local Motion copied the setup values, but VS Code cannot open Cursor's private settings.");
+          }
           try {
             await vscode.commands.executeCommand("cursor.openCursorSettings");
           } catch {
-            await vscode.commands.executeCommand("workbench.action.openSettings", query);
+            throw new Error("Cursor Settings did not open. Open Cursor Settings → Models manually; Local Motion copied the setup values.");
           }
         },
         fetch: fetchWithPublicDnsFallback,

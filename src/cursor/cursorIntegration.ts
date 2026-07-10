@@ -35,6 +35,11 @@ export function isCursorSetupValueKey(value: unknown): value is CursorSetupValue
   return value === "apiKey" || value === "baseUrl" || value === "modelId" || value === "setupBlock";
 }
 
+/** Cursor owns a separate Settings surface; plain VS Code cannot open it. */
+export function isCursorApp(appName: string): boolean {
+  return appName.trim().toLowerCase().startsWith("cursor");
+}
+
 export function cursorSetupViewModel(status: RuntimeStatus): CursorSetupViewModel {
   const tunnelUrl = status.cursorTunnel?.url ? cursorTunnelBaseUrl(status.cursorTunnel.url) : "";
   const baseUrl = tunnelUrl;
