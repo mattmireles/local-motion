@@ -208,6 +208,13 @@ completion.
 Open this folder in VS Code or Cursor, run the Extension Development Host, and
 execute `Local Motion: Open Local Agent`.
 
+## Contributing and Security
+
+Found a defect or have an idea worth trying? Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). Do not put a vulnerability, session key, or
+private prompt in an issue; use the private reporting path in
+[SECURITY.md](SECURITY.md).
+
 ## Publishing
 
 Local Motion publishes to the Visual Studio Marketplace with `vsce`.
