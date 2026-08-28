@@ -16,7 +16,7 @@ Canonical docs for `create-plan` in Local Motion.
 
 - `README.md` for the current product surface.
 - `README/Guides/vs-code-local-ai-hugging-face-guide.md` for architecture.
-- `README/Templates/Plans-template.md` for plan structure.
+- `assets/Plans-template.md` (canonical; README/Templates is a symlink) for plan structure.
 - Existing neighboring plans under `README/Plans/` for naming and verification style.
 
 ## Cross-Links

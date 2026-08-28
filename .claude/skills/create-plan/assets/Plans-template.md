@@ -81,12 +81,18 @@ High-level approach before diving into phases. Include a simple diagram if helpf
 ## Implementation Phases
 
 > Do one phase at a time. Verify before proceeding.
+>
+> Each phase lists **Skills:** an implementer must read before starting.
+> Reuse existing skills. Do not create a new skill per phase unless unique
+> policy exists that no current skill covers. `execute-plan` and
+> `phase-audit` apply to every phase; do not repeat them unless they are the
+> only skills that phase needs.
 
 ### Phase 0: Prerequisites
 
 **Goal:** [What this phase accomplishes]
 
-**Skills:** [Skills to use in this phase, e.g. `local-motion`, `phase-audit`]
+**Skills:** [Skills to use in this phase, e.g. `phase-audit`]
 
 **Tasks:**
 
