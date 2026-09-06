@@ -63,13 +63,12 @@ time.
      - integrate concrete findings into the code and the plan
      - if the external reviewer is unavailable, fails, or times out, run the
        same rubric locally and note the missing reviewer path
-   - 4c. **Plan update at phase completion.** After audit findings for this
-     phase are fixed (4b), update the plan file **before** the phase commit
-     (4d): check every task checkbox that belongs to the finished phase, align
-     verification text with what shipped, and make it clear in the document that
-     **this phase is complete**. Do not land a phase commit with that phase’s
-     boxes still unchecked for work that was done, or with the plan still
-     reading as if the phase is in progress when it is finished.
+   - 4c. Update the plan only after the audit findings are fixed. Check
+     completed task boxes and keep unfinished boxes open. Change the top-level
+     status only when the whole plan moves between `Planned`, `In-Progress`,
+     and `Complete`; never summarize phase state there. Do not append
+     verification narratives, test counts, review summaries, dated
+     checkpoints, session IDs, or evidence ledgers.
    - 4d. Commit only your changes. Stage only the files for the completed
      phase and write a comprehensive commit message -- include the what and
      the why.
@@ -81,6 +80,23 @@ time.
    - monitor GitHub Actions until the run completes when workflows exist
    - otherwise run `npm run check`, `npm run lint`, and `npm test`
    - fix regressions and repeat until green
+
+## Progress and Evidence Contract
+
+- The task checkboxes under each phase are the only progress tracker.
+- Each checkbox owns one independently completable fact. Do not add roll-up
+  boxes derived from child boxes or mirror work owned by another phase.
+- A checked box means its stated verification passed. Git history and CI are
+  the normal evidence; do not save routine test, typecheck, full-check, or
+  review output under `README/`.
+- Create a separate evidence artifact only for an important fact that cannot be
+  reproduced from the commit and CI. Store it under
+  `README/Notes/receipts/plan-NNN/`.
+- Keep an exceptional evidence artifact compact. It must contain no secrets,
+  credentials, customer or job input/output content, or personal data.
+- Put durable root causes, platform traps, and reusable engineering lessons in
+  the appropriate notes file. Notes never carry phase status.
+- Rewrite stale plan text instead of preserving an execution history.
 
 ## Worktree Rules
 
