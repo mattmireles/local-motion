@@ -39,7 +39,7 @@ cross_agent_run_codex() {
   local out_raw="${output_dir}/codex-${artifact_prefix}.raw"
   local out_log="${output_dir}/codex-${artifact_prefix}.log"
 
-  if codex exec -C "${repo_root}" --sandbox read-only \
+  if codex exec --model gpt-6-sol -c 'model_reasoning_effort="high"' -C "${repo_root}" --sandbox read-only \
     -c 'service_tier="fast"' \
     --output-last-message "${out_md}" \
     - <"${prompt_file}" >"${out_raw}" 2>"${out_log}"; then
@@ -79,7 +79,7 @@ cross_agent_run_claude() {
 
   (
     cd "${repo_root}"
-    claude -p --permission-mode plan \
+    claude -p --model claude-opus-5-5 --effort high --permission-mode plan \
       --tools "Read,Grep,Glob" \
       --output-format json \
       <"${prompt_file}" >"${out_raw}" 2>"${out_log}"
