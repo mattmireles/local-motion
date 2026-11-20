@@ -12,20 +12,24 @@ description: Use this skill when writing code that calls the Gemini API for text
 
 ### Current Models (Use These)
 
-- `gemini-3.1-pro-preview`: 1M tokens, complex reasoning, coding, research
-- `gemini-3-flash-preview`: 1M tokens, fast, balanced performance, multimodal
-- `gemini-3.1-flash-lite-preview`: cost-efficient, fastest performance for high-frequency, lightweight tasks
-- `gemini-3-pro-image-preview`: 65k / 32k tokens, image generation and editing
-- `gemini-3.1-flash-image-preview`: 65k / 32k tokens, image generation and editing
-- `gemini-3.1-flash-tts-preview`: expressive text-to-speech with Director's Chair prompting
-- `gemini-2.5-pro`: 1M tokens, complex reasoning, coding, research
-- `gemini-2.5-flash`: 1M tokens, fast, balanced performance, multimodal
+From the official model list (ai.google.dev/gemini-api/docs/models, read
+2026-11-19). All Gemini 4 models take text, image, audio, video and PDF input
+with a 1M-token context.
+
+- `gemini-4-carbon`: strongest reasoning; complex software engineering, scientific reasoning
+- `gemini-4-neon`: frontier-level intelligence with fast task completion; the default (it replaced Argon, owner 2026-11-19)
+- `gemini-4-hydrogen`: fast and efficient for everyday coding and agentic work
+- `gemini-4-argon`: efficient frontier reasoning; use `gemini-4-neon` instead unless asked
+- `gemini-3.1-flash-lite`: cost-efficient, fastest for high-frequency, lightweight tasks
+- `gemini-3-pro-image`, `gemini-3.1-flash-image`: image generation and editing
+- `gemini-3.8-flash-tts`, `gemini-3.8-flash-lite-tts`: text-to-speech
 - `gemma-4-31b-it`: Gemma 4 dense model, 31B parameters
 - `gemma-4-26b-a4b-it`: Gemma 4 MoE model, 26B total / 4B active parameters
 
 > [!WARNING]
-> Models like `gemini-2.0-*`, `gemini-1.5-*` are **legacy and deprecated**. Never use them.
-> **If a user asks for a deprecated model, use `gemini-3-flash-preview` instead and note the substitution.**
+> Models like `gemini-2.5-*`, `gemini-2.0-*`, `gemini-1.5-*` are **legacy and deprecated**. Never use them.
+> Gemini 3.x text models are the previous generation.
+> **If a user asks for a deprecated model, use `gemini-4-neon` instead and note the substitution.**
 
 ### Current Agents
 
@@ -62,7 +66,7 @@ from google import genai
 client = genai.Client()
 
 interaction = client.interactions.create(
-    model="gemini-3-flash-preview",
+    model="gemini-4-neon",
     input="Tell me a short joke about programming."
 )
 print(interaction.steps[-1].content[0].text)
@@ -75,7 +79,7 @@ import { GoogleGenAI } from "@google/genai";
 const client = new GoogleGenAI({});
 
 const interaction = await client.interactions.create({
-    model: "gemini-3-flash-preview",
+    model: "gemini-4-neon",
     input: "Tell me a short joke about programming.",
 });
 console.log(interaction.steps.at(-1).content[0].text);
@@ -86,12 +90,12 @@ console.log(interaction.steps.at(-1).content[0].text);
 ### Python
 ```python
 interaction1 = client.interactions.create(
-    model="gemini-3-flash-preview",
+    model="gemini-4-neon",
     input="Hi, my name is Phil."
 )
 # Second turn — server remembers context
 interaction2 = client.interactions.create(
-    model="gemini-3-flash-preview",
+    model="gemini-4-neon",
     input="What is my name?",
     previous_interaction_id=interaction1.id
 )
@@ -101,11 +105,11 @@ print(interaction2.steps[-1].content[0].text)
 ### JavaScript/TypeScript
 ```typescript
 const interaction1 = await client.interactions.create({
-    model: "gemini-3-flash-preview",
+    model: "gemini-4-neon",
     input: "Hi, my name is Phil.",
 });
 const interaction2 = await client.interactions.create({
-    model: "gemini-3-flash-preview",
+    model: "gemini-4-neon",
     input: "What is my name?",
     previous_interaction_id: interaction1.id,
 });
@@ -170,7 +174,7 @@ Advanced features: collaborative planning, native visualization, MCP integration
 ### Python
 ```python
 for event in client.interactions.create(
-    model="gemini-3-flash-preview",
+    model="gemini-4-neon",
     input="Explain quantum entanglement in simple terms.",
     stream=True,
 ):
@@ -186,7 +190,7 @@ for event in client.interactions.create(
 ### JavaScript/TypeScript
 ```typescript
 const stream = await client.interactions.create({
-    model: "gemini-3-flash-preview",
+    model: "gemini-4-neon",
     input: "Explain quantum entanglement in simple terms.",
     stream: true,
 });
@@ -248,7 +252,7 @@ for await (const event of stream) {
 
 **Advanced Features:**
 - [Deep Research](https://ai.google.dev/gemini-api/docs/interactions/deep-research.md.txt)
-- [Gemini 3](https://ai.google.dev/gemini-api/docs/interactions/gemini-3.md.txt)
+- [Latest Gemini model](https://ai.google.dev/gemini-api/docs/latest-model)
 - [Flex Inference](https://ai.google.dev/gemini-api/docs/interactions/flex-inference.md.txt)
 - [Priority Inference](https://ai.google.dev/gemini-api/docs/interactions/priority-inference.md.txt)
 

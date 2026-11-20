@@ -50,17 +50,17 @@ For full before/after code examples, fetch the [Migration Guide](https://ai.goog
 
 | Model | Status | Drop-in Replacement |
 |-------|--------|-------------------|
-| `gemini-2.0-flash` | Deprecated | `gemini-3-flash-preview` |
-| `gemini-2.0-flash-lite` | Deprecated | `gemini-3.1-flash-lite-preview` |
-| `gemini-1.5-pro` | Deprecated | `gemini-3.1-pro-preview` |
-| `gemini-1.5-flash` | Deprecated | `gemini-3-flash-preview` |
+| `gemini-2.0-flash` | Deprecated | `gemini-4-neon` |
+| `gemini-2.0-flash-lite` | Deprecated | `gemini-3.1-flash-lite` |
+| `gemini-1.5-pro` | Deprecated | `gemini-4-neon` |
+| `gemini-1.5-flash` | Deprecated | `gemini-4-neon` |
 
 ### Active Legacy Models (migration recommended)
 
 | Current Model | Recommended Target | Why |
 |--------------|-------------------|-----|
-| `gemini-2.5-flash` | `gemini-3-flash-preview` | Latest Flash with Interactions API support |
-| `gemini-2.5-pro` | `gemini-3.1-pro-preview` | Latest Pro with 1M context, complex reasoning |
+| `gemini-2.5-flash` | `gemini-4-hydrogen` | Fast Gemini 4 model with Interactions API support |
+| `gemini-2.5-pro` | `gemini-4-neon` | Gemini 4 default with 1M context, complex reasoning |
 
 > **Note:** Within the Interactions API, model upgrades are generally drop-in — change the model string and verify. The breaking changes are at the **API level** (generateContent → Interactions), not between model generations.
 
@@ -89,8 +89,8 @@ Every item is tagged: **`[BLOCKS]`** items cause errors or broken behavior if mi
 
 - [ ] Replaced `gemini-2.0-*` model strings with current equivalents
 - [ ] Replaced `gemini-1.5-*` model strings with current equivalents
-- [ ] Consider upgrading `gemini-2.5-flash` → `gemini-3-flash-preview`
-- [ ] Consider upgrading `gemini-2.5-pro` → `gemini-3.1-pro-preview`
+- [ ] Consider upgrading `gemini-2.5-flash` → `gemini-4-hydrogen`
+- [ ] Consider upgrading `gemini-2.5-pro` → `gemini-4-neon`
 
 ---
 
